@@ -1,0 +1,20 @@
+{
+    "name": "Unity.ML-Agents.CommunicatorObjects",
+    "rootNamespace": "",
+    "references": [],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "System.IO.Abstractions.dll",
+        "Grpc.Core.dll",
+        "Google.Protobuf_MLAgents.dll"
+    ],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "UNITY_EDITOR || UNITY_STANDALONE"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

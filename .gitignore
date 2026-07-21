@@ -1,0 +1,31 @@
+# Unity generated
+/Library/
+/Temp/
+/Logs/
+/obj/
+/UserSettings/
+/MemoryCaptures/
+/Recordings/
+
+# IDE / generated project files
+*.csproj
+*.slnx
+*.sln
+.vscode/
+.idea/
+
+# Build outputs (APKs etc. are artifacts, rebuild from source)
+/Builds/
+
+# Python training environment (rebuild from Training/ml-agents source; see CLAUDE.md pins)
+/Training/venv/
+
+# Training run outputs (checkpoints/TensorBoard; deployed models live in Assets/Agents/)
+/Training/results/
+
+# OS noise
+Thumbs.db
+.DS_Store
+
+# Android build intermediates
+/.utmp/

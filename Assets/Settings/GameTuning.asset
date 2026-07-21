@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4d9004317199f8a4da7181d02831a31a, type: 3}
+  m_Name: GameTuning
+  m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Systems_GameTuning
+  minOrtho: 1.56
+  maxOrtho: 3.5
+  verticalOffset: -0.05
+  horizontalMargin: 0.35
+  smoothing: 4
+  pointsToWin: 3
+  roundTimeoutSeconds: 30
+  betweenRoundsPause: 2.5
+  graceSeconds: 0.4
+  downGraceSeconds: 0.2
