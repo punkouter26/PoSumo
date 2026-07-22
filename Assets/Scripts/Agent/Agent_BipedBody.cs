@@ -189,7 +189,7 @@ namespace PoSumo
                     // head stays round and sits at the neck (world y ~1.64).
                     var head = new GameObject("Head");
                     head.transform.SetParent(go.transform, false);
-                    head.transform.localPosition = new Vector3(0f, 0.21f / d.h, 0f);
+                    head.transform.localPosition = new Vector3(0f, 0.25f / d.h, 0f);
                     var hsr = head.AddComponent<SpriteRenderer>();
                     hsr.sortingOrder = 1;
                     float parentW = d.w * widthScale;
@@ -204,7 +204,7 @@ namespace PoSumo
                     {
                         hsr.sprite = CircleSprite();
                         hsr.color = new Color(0.95f, 0.8f, 0.65f);
-                        head.transform.localScale = new Vector3(0.24f / parentW, 0.24f / d.h, 1f);
+                        head.transform.localScale = new Vector3(0.312f / parentW, 0.312f / d.h, 1f);
                     }
                     var hc = head.AddComponent<CircleCollider2D>();
                     hc.sharedMaterial = _bodyMat;
@@ -265,6 +265,13 @@ namespace PoSumo
                 _initialLocalPos[i] = Parts[i].transform.localPosition;
                 _initialLocalRot[i] = Parts[i].transform.localRotation;
             }
+
+            // Soft contact shadow so the body reads as grounded.
+            var shadow = new GameObject("BlobShadow");
+            shadow.transform.SetParent(transform, false);
+            var blob = shadow.AddComponent<Systems_BlobShadow>();
+            blob.target = Torso;
+            blob.baseWidth = 0.9f * widthScale;
         }
 
         public void ResetPose()
@@ -304,7 +311,7 @@ namespace PoSumo
 
         public float JointSpeedNorm(int j) => Joints[j].jointSpeed * facingSign / 600f;
 
-        /// Swap the face sprite, aspect-fitting to ~0.3 m tall regardless of
+        /// Swap the face sprite, aspect-fitting to ~0.39 m tall regardless of
         /// the source image size (mood images vary a few pixels each).
         public void SetHeadSprite(Sprite s)
         {
@@ -313,7 +320,7 @@ namespace PoSumo
             HeadRenderer.color = Color.white;
             HeadRenderer.flipX = facingSign < 0;
             float sy = Mathf.Max(0.0001f, s.bounds.size.y);
-            const float TARGET_H = 0.3f;
+            const float TARGET_H = 0.39f;
             HeadRenderer.transform.localScale =
                 new Vector3(TARGET_H / (sy * _headCellW), TARGET_H / (sy * _headCellH), 1f);
         }

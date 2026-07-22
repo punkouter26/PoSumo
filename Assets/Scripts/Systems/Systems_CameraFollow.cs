@@ -8,14 +8,16 @@ namespace PoSumo
     [RequireComponent(typeof(Camera))]
     public class Systems_CameraFollow : MonoBehaviour
     {
-        // min 1.56: close-up during engagement (head ~7.7% of screen height).
-        // max 3.5: wide enough that both wrestlers always stay in frame,
-        // including at spawn separation. NOTE: scene-serialized values win over
-        // these defaults — change the component in the scene, not just here.
-        public float minOrtho = 1.56f;
+        // min 1.9: tightest zoom that still fits a full body (~1.85 m) in the
+        // top half of the frame with the feet at screen center.
+        // max 3.5: in portrait the visible width is ortho * aspect (~0.45), so
+        // anything tighter crops the wrestlers off-screen at spawn separation.
+        // NOTE: GameTuning.asset (and scene-serialized values) win over these
+        // defaults — change the asset, not just here.
+        public float minOrtho = 1.9f;
         public float maxOrtho = 3.5f;
-        public float verticalOffset = -0.05f; // relative to the wrestlers' average torso height
-        public float horizontalMargin = 0.35f;
+        public float feetDrop = 0.95f; // camera centers this far below the average torso — at the feet
+        public float horizontalMargin = 0.5f;
         public float smoothing = 4f;
         public Systems_GameTuning tuning;
 
@@ -44,7 +46,7 @@ namespace PoSumo
             {
                 minOrtho = tuning.minOrtho;
                 maxOrtho = tuning.maxOrtho;
-                verticalOffset = tuning.verticalOffset;
+                feetDrop = tuning.feetDrop;
                 horizontalMargin = tuning.horizontalMargin;
                 smoothing = tuning.smoothing;
             }
@@ -67,17 +69,21 @@ namespace PoSumo
             float orthoNeeded = halfWidthNeeded / _cam.aspect;
             float targetOrtho = Mathf.Clamp(orthoNeeded, minOrtho, maxOrtho);
 
-            float midY = (_a.Torso.position.y + _b.Torso.position.y) * 0.5f + verticalOffset;
-
-            if (_focus != null && Time.realtimeSinceStartup < _focusUntil)
-            {
-                mid = Mathf.Lerp(mid, _focus.position.x, 0.75f);
-                midY = Mathf.Lerp(midY, _focus.position.y + verticalOffset, 0.75f);
-                targetOrtho = Mathf.Min(targetOrtho, _focusOrtho);
-            }
+            bool focusActive = _focus != null && Time.realtimeSinceStartup < _focusUntil;
+            if (focusActive) targetOrtho = Mathf.Min(targetOrtho, _focusOrtho);
 
             float t = 1f - Mathf.Exp(-smoothing * Time.deltaTime);
             _cam.orthographicSize = Mathf.Lerp(_cam.orthographicSize, targetOrtho, t);
+
+            // Vertical center of the frame sits at the wrestlers' feet.
+            float midY = (_a.Torso.position.y + _b.Torso.position.y) * 0.5f - feetDrop;
+
+            if (focusActive)
+            {
+                mid = Mathf.Lerp(mid, _focus.position.x, 0.75f);
+                midY = Mathf.Lerp(midY, _focus.position.y, 0.75f);
+            }
+
             var p = transform.position;
             transform.position = new Vector3(Mathf.Lerp(p.x, mid, t), Mathf.Lerp(p.y, midY, t), p.z);
         }

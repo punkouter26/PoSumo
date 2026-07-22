@@ -6,8 +6,8 @@ using UnityEngine.InputSystem;
 
 namespace PoSumo
 {
-    /// Broadcast-style match HUD: one compact panel per wrestler in the top
-    /// screen corners (empty backdrop space — never covers the ring), toggled
+    /// Broadcast-style match HUD: one compact panel per wrestler in the bottom
+    /// screen corners, below the wrestlers' feet, toggled
     /// with Tab or the STATS chip. Stats aggregate over the WHOLE match (reset
     /// on rematch), sampled only while a round is live:
     ///   DOMINANCE — pairwise-normalized composite (territory/KD/shoves/balance)
@@ -23,7 +23,7 @@ namespace PoSumo
         public PanelSettings panelSettings;
         public bool startVisible = true;
 
-        const float AVG_PUSH_MAX = 900f;    // bar scale for contact-averaged push
+        const float AVG_PUSH_MAX = 500f;    // bar scale for contact-averaged push
         const float SHOVE_FORCE_N = 400f;   // momentum transfer that counts as a shove
         const float SHOVE_COOLDOWN = 0.5f;  // seconds between countable shoves
         const float TOUCH_DIST = 1.2f;      // torso distance treated as "in contact"
@@ -36,7 +36,7 @@ namespace PoSumo
 
         class PanelRefs
         {
-            public Label dom, territory, kd, shoves, work, pushVal, footer;
+            public Label dom, territory, kd, shoves, work, balVal, pushVal, footer;
             public VisualElement root, balFill, pushFill;
         }
 
@@ -110,8 +110,8 @@ namespace PoSumo
             var d = new VisualElement();
             d.style.height = 1;
             d.style.backgroundColor = new Color(1f, 1f, 1f, 0.12f);
-            d.style.marginTop = 5;
-            d.style.marginBottom = 5;
+            d.style.marginTop = 8;
+            d.style.marginBottom = 8;
             return d;
         }
 
@@ -124,7 +124,7 @@ namespace PoSumo
             row.style.height = valueSize + 7;
 
             var lbl = new Label(label);
-            lbl.style.fontSize = 11;
+            lbl.style.fontSize = 19;
             lbl.style.color = LabelDim;
             row.Add(lbl);
 
@@ -133,6 +133,8 @@ namespace PoSumo
             val.style.color = ValueBright;
             val.style.unityFontStyleAndWeight = FontStyle.Bold;
             val.style.unityTextAlign = TextAnchor.MiddleRight;
+            val.style.minWidth = 96;
+            val.style.flexShrink = 0;
             row.Add(val);
 
             parent.Add(row);
@@ -147,20 +149,20 @@ namespace PoSumo
             caption.style.marginTop = 3;
 
             var lbl = new Label(label);
-            lbl.style.fontSize = 10;
+            lbl.style.fontSize = 17;
             lbl.style.color = LabelDim;
             caption.Add(lbl);
 
             valueLabel = new Label("");
-            valueLabel.style.fontSize = 10;
+            valueLabel.style.fontSize = 17;
             valueLabel.style.color = LabelDim;
             caption.Add(valueLabel);
             parent.Add(caption);
 
             var bar = new VisualElement();
-            bar.style.height = 7;
-            bar.style.marginTop = 2;
-            bar.style.marginBottom = 2;
+            bar.style.height = 13;
+            bar.style.marginTop = 4;
+            bar.style.marginBottom = 4;
             bar.style.backgroundColor = BarBg;
             bar.style.borderTopLeftRadius = 2;
             bar.style.borderTopRightRadius = 2;
@@ -184,38 +186,38 @@ namespace PoSumo
             var p = new VisualElement();
             refs.root = p;
             p.style.position = Position.Absolute;
-            p.style.top = 12;
-            if (left) p.style.left = 10; else p.style.right = 10;
-            p.style.width = 172;
+            p.style.bottom = 12;
+            if (left) p.style.left = 8; else p.style.right = 8;
+            p.style.width = Length.Percent(48);
             p.style.backgroundColor = PanelBg;
-            p.style.borderTopWidth = 3;
+            p.style.borderTopWidth = 5;
             p.style.borderTopColor = accent;
             p.style.borderBottomLeftRadius = 8;
             p.style.borderBottomRightRadius = 8;
-            p.style.paddingLeft = 12; p.style.paddingRight = 12;
-            p.style.paddingTop = 8; p.style.paddingBottom = 9;
+            p.style.paddingLeft = 19; p.style.paddingRight = 19;
+            p.style.paddingTop = 13; p.style.paddingBottom = 16;
 
             var name = new Label(fighterName);
-            name.style.fontSize = 19;
+            name.style.fontSize = 34;
             name.style.color = accent;
             name.style.unityFontStyleAndWeight = FontStyle.Bold;
-            name.style.marginBottom = 2;
+            name.style.marginBottom = 5;
             p.Add(name);
 
-            refs.dom = StatRow(p, "DOMINANCE", 16);
+            refs.dom = StatRow(p, "DOMINANCE", 28);
             p.Add(Divider());
-            refs.territory = StatRow(p, "TERRITORY", 12);
-            refs.kd = StatRow(p, "KNOCKDOWNS", 12);
-            refs.shoves = StatRow(p, "SHOVES · BEST", 12);
-            refs.work = StatRow(p, "WORK RATE", 12);
+            refs.territory = StatRow(p, "TERRITORY", 20);
+            refs.kd = StatRow(p, "KNOCKDOWNS", 20);
+            refs.shoves = StatRow(p, "SHOVES · BEST", 20);
+            refs.work = StatRow(p, "WORK RATE", 20);
             p.Add(Divider());
-            refs.balFill = BarRow(p, "BALANCE", new Color(0.35f, 0.75f, 0.4f), out _);
+            refs.balFill = BarRow(p, "BALANCE", new Color(0.35f, 0.75f, 0.4f), out refs.balVal);
             refs.pushFill = BarRow(p, "PUSH (in contact)", new Color(0.95f, 0.55f, 0.2f), out refs.pushVal);
 
             refs.footer = new Label("");
-            refs.footer.style.fontSize = 10;
+            refs.footer.style.fontSize = 17;
             refs.footer.style.color = LabelDim;
-            refs.footer.style.marginTop = 4;
+            refs.footer.style.marginTop = 7;
             p.Add(refs.footer);
 
             return refs;
@@ -233,10 +235,10 @@ namespace PoSumo
             root.Add(_panelA.root);
             root.Add(_panelB.root);
 
-            // Touch-friendly toggle chip, bottom-right corner — Tab works too.
+            // Touch-friendly toggle chip, top-right corner — Tab works too.
             var toggle = new Button(() => { _visible = !_visible; ApplyVisibility(); }) { text = "STATS" };
             toggle.style.position = Position.Absolute;
-            toggle.style.bottom = 10;
+            toggle.style.top = 10;
             toggle.style.right = 10;
             toggle.style.width = 76;
             toggle.style.height = 34;
@@ -397,10 +399,11 @@ namespace PoSumo
 
             p.territory.text = $"{agg.territorySamples / n * 100f:F0}%";
             p.kd.text = $"{agg.kdDealt}–{agg.kdSuffered}";
-            p.shoves.text = agg.shoves > 0 ? $"{agg.shoves} · {agg.bestPush:F0}N" : "0";
+            p.shoves.text = $"{agg.shoves} · {agg.bestPush:F0} N";
             p.work.text = $"{agg.sumWork / n * 100f:F0}%";
 
             float avgBal = agg.sumBal / n;
+            p.balVal.text = $"{avgBal * 100f:F0}%";
             p.balFill.style.width = Length.Percent(avgBal * 100f);
             p.balFill.style.backgroundColor = avgBal > 0.7f
                 ? new Color(0.35f, 0.75f, 0.4f)

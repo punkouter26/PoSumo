@@ -9,10 +9,11 @@ namespace PoSumo
     public class Systems_GameTuning : ScriptableObject
     {
         [Header("Camera")]
-        public float minOrtho = 1.56f;
+        public float minOrtho = 1.9f;
         public float maxOrtho = 3.5f;
-        public float verticalOffset = -0.05f;
-        public float horizontalMargin = 0.35f;
+        [Tooltip("Camera centers this far below the wrestlers' average torso — at the feet.")]
+        public float feetDrop = 0.95f;
+        public float horizontalMargin = 0.5f;
         public float smoothing = 4f;
 
         [Header("Match")]

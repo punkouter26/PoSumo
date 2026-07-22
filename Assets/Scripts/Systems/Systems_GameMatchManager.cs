@@ -40,8 +40,6 @@ namespace PoSumo
         public bool enablePresentation = true;
         [Tooltip("Spawn Systems_MatchAudio (impacts, crowd, gong) at startup.")]
         public bool enableAudio = true;
-        [Tooltip("Spawn Systems_BrainView (policy overlay, toggle with B) at startup.")]
-        public bool enableBrainView = true;
         [Tooltip("Spawn Systems_FaceMood (Matt's expression follows dominance) at startup.")]
         public bool enableFaceMood = true;
 
@@ -72,8 +70,16 @@ namespace PoSumo
         public event System.Action MatchReset;
         Label _scoreLabel, _banner, _clock;
         Button _rematchBtn;
-        VisualElement _overlay;
+        VisualElement _overlay, _resultCard;
+        Label _resultTitle, _resultScore;
         Color _scoreBaseColor = new Color(0.95f, 0.93f, 0.85f);
+
+        static TextShadow OutlineShadow => new TextShadow
+        {
+            offset = new Vector2(0f, 2f),
+            blurRadius = 4f,
+            color = new Color(0f, 0f, 0f, 0.85f),
+        };
 
         void Start()
         {
@@ -109,7 +115,7 @@ namespace PoSumo
             SpawnCompanionSystems();
         }
 
-        /// Presentation, audio and brain-view are runtime-spawned children so
+        /// Presentation, audio and face-mood are runtime-spawned children so
         /// scenes stay manager-only and older scenes pick them up automatically.
         void SpawnCompanionSystems()
         {
@@ -124,12 +130,6 @@ namespace PoSumo
                 var go = new GameObject("MatchAudio");
                 go.transform.SetParent(transform, false);
                 go.AddComponent<Systems_MatchAudio>();
-            }
-            if (enableBrainView && FindAnyObjectByType<Systems_BrainView>() == null)
-            {
-                var go = new GameObject("BrainView");
-                go.transform.SetParent(transform, false);
-                go.AddComponent<Systems_BrainView>();
             }
             if (enableFaceMood && FindAnyObjectByType<Systems_FaceMood>() == null)
             {
@@ -152,50 +152,96 @@ namespace PoSumo
             _overlay.style.position = Position.Absolute;
             _overlay.style.top = 0; _overlay.style.bottom = 0;
             _overlay.style.left = 0; _overlay.style.right = 0;
-            _overlay.style.backgroundColor = new Color(0f, 0f, 0f, 0.55f);
+            _overlay.style.backgroundColor = new Color(0f, 0f, 0f, 0.7f);
             _overlay.style.display = DisplayStyle.None;
             root.Add(_overlay);
 
+            // Score + clock live in the dead band between the dohyo and the
+            // stat panels — never over the wrestlers, clear of any notch.
+            var scoreBlock = new VisualElement();
+            scoreBlock.style.position = Position.Absolute;
+            scoreBlock.style.bottom = 480;
+            scoreBlock.style.left = 0;
+            scoreBlock.style.right = 0;
+            scoreBlock.style.alignItems = Align.Center;
+            root.Add(scoreBlock);
+
+            var scoreCard = new VisualElement();
+            scoreCard.style.backgroundColor = new Color(0f, 0f, 0f, 0.45f);
+            scoreCard.style.borderTopLeftRadius = 12;
+            scoreCard.style.borderTopRightRadius = 12;
+            scoreCard.style.borderBottomLeftRadius = 12;
+            scoreCard.style.borderBottomRightRadius = 12;
+            scoreCard.style.paddingLeft = 22; scoreCard.style.paddingRight = 22;
+            scoreCard.style.paddingTop = 6; scoreCard.style.paddingBottom = 8;
+            scoreCard.style.alignItems = Align.Center;
+            scoreBlock.Add(scoreCard);
+
             _scoreLabel = new Label();
-            _scoreLabel.style.position = Position.Absolute;
-            _scoreLabel.style.top = 18;
-            _scoreLabel.style.left = 0;
-            _scoreLabel.style.right = 0;
             _scoreLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
             _scoreLabel.style.fontSize = 44;
             _scoreLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
             _scoreLabel.style.color = _scoreBaseColor;
-            root.Add(_scoreLabel);
+            _scoreLabel.style.textShadow = OutlineShadow;
+            scoreCard.Add(_scoreLabel);
 
             _clock = new Label();
-            _clock.style.position = Position.Absolute;
-            _clock.style.top = 74;
-            _clock.style.left = 0;
-            _clock.style.right = 0;
             _clock.style.unityTextAlign = TextAnchor.MiddleCenter;
             _clock.style.fontSize = 26;
             _clock.style.color = new Color(0.8f, 0.76f, 0.68f);
-            root.Add(_clock);
+            _clock.style.textShadow = OutlineShadow;
+            scoreCard.Add(_clock);
 
+            // Round callout rides the dohyo floor band so it never covers a fighter.
             _banner = new Label();
             _banner.style.position = Position.Absolute;
-            _banner.style.top = Length.Percent(15);
+            _banner.style.top = Length.Percent(49);
             _banner.style.left = 0;
             _banner.style.right = 0;
             _banner.style.unityTextAlign = TextAnchor.MiddleCenter;
             _banner.style.fontSize = 56;
             _banner.style.unityFontStyleAndWeight = FontStyle.Bold;
             _banner.style.color = new Color(1f, 0.85f, 0.3f);
+            _banner.style.textShadow = OutlineShadow;
             _banner.style.display = DisplayStyle.None;
             root.Add(_banner);
 
+            // Match-over: one centered results card owns the moment.
+            _resultCard = new VisualElement();
+            _resultCard.style.position = Position.Absolute;
+            _resultCard.style.top = Length.Percent(32);
+            _resultCard.style.left = Length.Percent(12);
+            _resultCard.style.right = Length.Percent(12);
+            _resultCard.style.backgroundColor = new Color(0.05f, 0.045f, 0.06f, 0.94f);
+            _resultCard.style.borderTopWidth = 5;
+            _resultCard.style.borderTopLeftRadius = 14;
+            _resultCard.style.borderTopRightRadius = 14;
+            _resultCard.style.borderBottomLeftRadius = 14;
+            _resultCard.style.borderBottomRightRadius = 14;
+            _resultCard.style.paddingLeft = 24; _resultCard.style.paddingRight = 24;
+            _resultCard.style.paddingTop = 22; _resultCard.style.paddingBottom = 22;
+            _resultCard.style.alignItems = Align.Stretch;
+            _resultCard.style.display = DisplayStyle.None;
+            root.Add(_resultCard);
+
+            _resultTitle = new Label();
+            _resultTitle.style.unityTextAlign = TextAnchor.MiddleCenter;
+            _resultTitle.style.fontSize = 46;
+            _resultTitle.style.unityFontStyleAndWeight = FontStyle.Bold;
+            _resultTitle.style.color = new Color(1f, 0.85f, 0.3f);
+            _resultCard.Add(_resultTitle);
+
+            _resultScore = new Label();
+            _resultScore.style.unityTextAlign = TextAnchor.MiddleCenter;
+            _resultScore.style.fontSize = 28;
+            _resultScore.style.color = new Color(0.8f, 0.77f, 0.72f);
+            _resultScore.style.marginTop = 4;
+            _resultCard.Add(_resultScore);
+
             // Big touch-friendly rematch button (mobile) — Space still works too.
             _rematchBtn = new Button(ResetMatch) { text = "REMATCH" };
-            _rematchBtn.style.position = Position.Absolute;
-            _rematchBtn.style.top = Length.Percent(48);
-            _rematchBtn.style.left = Length.Percent(20);
-            _rematchBtn.style.right = Length.Percent(20);
             _rematchBtn.style.height = 72;
+            _rematchBtn.style.marginTop = 18;
             _rematchBtn.style.fontSize = 32;
             _rematchBtn.style.unityFontStyleAndWeight = FontStyle.Bold;
             _rematchBtn.style.color = new Color(0.08f, 0.06f, 0.05f);
@@ -204,8 +250,7 @@ namespace PoSumo
             _rematchBtn.style.borderTopRightRadius = 12;
             _rematchBtn.style.borderBottomLeftRadius = 12;
             _rematchBtn.style.borderBottomRightRadius = 12;
-            _rematchBtn.style.display = DisplayStyle.None;
-            root.Add(_rematchBtn);
+            _resultCard.Add(_rematchBtn);
         }
 
         void UpdateScoreboard(bool flash)
@@ -225,11 +270,14 @@ namespace PoSumo
             int remaining = Mathf.Max(0, Mathf.CeilToInt(roundTimeoutSeconds - _elapsed));
             if (remaining != _lastShownSeconds)
             {
+                bool shrinking = _elapsed > stallBreakStart;
                 _lastShownSeconds = remaining;
-                _clock.text = remaining.ToString();
+                _clock.text = shrinking ? $"{remaining} · RING CLOSING" : remaining.ToString();
                 _clock.style.color = remaining <= 5
                     ? new Color(1f, 0.4f, 0.3f)
-                    : new Color(0.8f, 0.76f, 0.68f);
+                    : shrinking
+                        ? new Color(1f, 0.62f, 0.25f)
+                        : new Color(0.8f, 0.76f, 0.68f);
             }
         }
 
@@ -281,7 +329,7 @@ namespace PoSumo
                         _elapsed = 0f;
                         _downA = _downB = 0f;
                         EffectiveRingHalfWidth = ringHalfWidth;
-                        if (_arena != null) _arena.SetVisualRing(_arena.ringHalfWidth);
+                        if (_arena != null) _arena.SetPlatformHalfWidth(ringHalfWidth);
                         RoundStarted?.Invoke();
                     }
                     return;
@@ -294,19 +342,16 @@ namespace PoSumo
             _downA = wrestlerA.IsDown ? _downA + Time.fixedDeltaTime : 0f;
             _downB = wrestlerB.IsDown ? _downB + Time.fixedDeltaTime : 0f;
 
-            // Stall breaker: past stallBreakStart, the ring closes in so cagey
-            // rounds resolve by pressure instead of a timeout.
+            // Stall breaker: past stallBreakStart, the dohyo physically closes
+            // in — the ground vanishes under cagey wrestlers until someone
+            // drops off the edge.
             float effectiveRing = Mathf.Max(minRingHalfWidth,
                 ringHalfWidth - Mathf.Max(0f, _elapsed - stallBreakStart) * stallShrinkRate);
             EffectiveRingHalfWidth = effectiveRing;
+            if (_arena != null) _arena.SetPlatformHalfWidth(effectiveRing);
 
-            // The tawara track the shrink at the same ratio so it reads on screen.
-            if (_arena != null && effectiveRing < ringHalfWidth)
-                _arena.SetVisualRing(_arena.ringHalfWidth * (effectiveRing / ringHalfWidth));
-
-            float cx = transform.position.x;
-            bool aOut = OutOfRing(wrestlerA, cx, effectiveRing) || (knockdownLoses && _downA >= downGraceSeconds);
-            bool bOut = OutOfRing(wrestlerB, cx, effectiveRing) || (knockdownLoses && _downB >= downGraceSeconds);
+            bool aOut = OutOfRing(wrestlerA) || (knockdownLoses && _downA >= downGraceSeconds);
+            bool bOut = OutOfRing(wrestlerB) || (knockdownLoses && _downB >= downGraceSeconds);
 
             if (aOut && bOut) EndRound(null, "DOUBLE OUT — DRAW");
             else if (aOut) EndRound(wrestlerB, null);
@@ -314,11 +359,12 @@ namespace PoSumo
             else if (_elapsed >= roundTimeoutSeconds) EndRound(null, "TIME — DRAW");
         }
 
-        bool OutOfRing(Agent_Biped w, float centerX, float effectiveRing)
+        /// Ring-out is physical: you lose only after actually falling off the
+        /// dohyo (the shrinking platform removes the ground; gravity does the
+        /// rest). No invisible scoring line.
+        bool OutOfRing(Agent_Biped w)
         {
-            if (Mathf.Abs(w.TorsoX - centerX) > effectiveRing) return true;
-            if (w.Torso.position.y < fallY) return true;
-            return false;
+            return w.Torso.position.y < fallY;
         }
 
         void EndRound(Agent_Biped roundWinner, string drawText)
@@ -345,13 +391,15 @@ namespace PoSumo
             if (_scoreA >= pointsToWin || _scoreB >= pointsToWin)
             {
                 _phase = Phase.MatchOver;
-                if (_scoreA > _scoreB) MatchWinsA++; else MatchWinsB++;
-                string winner = _scoreA > _scoreB ? WrapName(nameA, colorA) : WrapName(nameB, colorB);
-                _banner.text = $"{winner} WINS {Mathf.Max(_scoreA, _scoreB)}-{Mathf.Min(_scoreA, _scoreB)}";
-                _banner.style.display = DisplayStyle.Flex;
+                bool aWon = _scoreA > _scoreB;
+                if (aWon) MatchWinsA++; else MatchWinsB++;
+                _banner.style.display = DisplayStyle.None;
+                _resultTitle.text = $"{WrapName(aWon ? nameA : nameB, aWon ? colorA : colorB)} WINS";
+                _resultScore.text = $"{Mathf.Max(_scoreA, _scoreB)} — {Mathf.Min(_scoreA, _scoreB)}";
+                _resultCard.style.borderTopColor = aWon ? colorA : colorB;
+                _resultCard.style.display = DisplayStyle.Flex;
                 _overlay.style.display = DisplayStyle.Flex;
-                _rematchBtn.style.display = DisplayStyle.Flex;
-                MatchEnded?.Invoke(_scoreA > _scoreB ? wrestlerA : wrestlerB);
+                MatchEnded?.Invoke(aWon ? wrestlerA : wrestlerB);
                 return;
             }
 
@@ -373,7 +421,7 @@ namespace PoSumo
             UpdateScoreboard(false);
             _overlay.style.display = DisplayStyle.None;
             _banner.style.display = DisplayStyle.None;
-            _rematchBtn.style.display = DisplayStyle.None;
+            _resultCard.style.display = DisplayStyle.None;
             wrestlerA.EndEpisode();
             wrestlerB.EndEpisode();
             wrestlerA.actionsEnabled = true;

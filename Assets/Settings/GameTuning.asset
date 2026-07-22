@@ -12,10 +12,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4d9004317199f8a4da7181d02831a31a, type: 3}
   m_Name: GameTuning
   m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Systems_GameTuning
-  minOrtho: 1.56
+  minOrtho: 1.9
   maxOrtho: 3.5
-  verticalOffset: -0.05
-  horizontalMargin: 0.35
+  feetDrop: 0.95
+  horizontalMargin: 0.5
   smoothing: 4
   pointsToWin: 3
   roundTimeoutSeconds: 30

@@ -35,11 +35,8 @@ namespace PoSumo
         public const int ObservationCount = 41; // 5 body + 26 joints + 4 feet + 4 opponent + 2 edges
         public const int ActionCount = 13;      // hips, knees, ankles, 3 spine, shoulders, elbows
 
-        /// Last motor commands as sent to the joints (for HUD/brain-view display).
+        /// Last motor commands as sent to the joints (for HUD display).
         [System.NonSerialized] public float[] LastActions = new float[ActionCount];
-
-        /// Cumulative reward this episode (for HUD/brain-view display).
-        public float EpisodeReward => GetCumulativeReward();
 
         Agent_BipedBody _b;
 
@@ -176,9 +173,25 @@ namespace PoSumo
                 if (opponent != null)
                 {
                     float toward = Mathf.Sign(opponent.TorsoX - Torso.position.x);
-                    AddReward(San(tv.x) * toward * 0.0005f);
+                    float closing = San(tv.x) * toward;
+                    AddReward(closing * 0.0005f);
+                    // Lunge: explosive bursts toward the opponent pay extra.
+                    if (closing > 1.5f) AddReward((closing - 1.5f) * 0.001f);
                 }
-                AddReward(-energy * 0.0002f);
+
+                // Sumo stance, gated on actually standing: bent knees and low
+                // hips pay every step, so the crouch survives the win objective.
+                if (!IsDown && upright > 0.6f)
+                {
+                    float bendNear = Mathf.Clamp01(-_b.JointAngleNorm(1) * 180f / 60f);
+                    float bendFar = Mathf.Clamp01(-_b.JointAngleNorm(4) * 180f / 60f);
+                    AddReward((bendNear + bendFar) * 0.00015f);
+
+                    float hipsLow = Mathf.Clamp01((0.95f - San(Torso.position.y)) / 0.3f);
+                    AddReward(hipsLow * 0.0003f);
+                }
+
+                AddReward(-energy * 0.0001f);
             }
         }
 

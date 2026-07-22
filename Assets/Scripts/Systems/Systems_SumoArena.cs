@@ -1,5 +1,8 @@
 using System.Collections.Generic;
 using UnityEngine;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace PoSumo
 {
@@ -7,6 +10,12 @@ namespace PoSumo
     /// platform (top surface at local y=0) with tawara bales and shikiri-sen,
     /// a lower arena floor with a seated crowd on both sides (where pushed-off
     /// wrestlers land), a warm gridded backdrop, and the hanging tsuriyane roof.
+    ///
+    /// Scenes are BAKED: an editor pass calls Build() once and saves the
+    /// children into the scene (sprites/materials become assets under
+    /// Assets/Art/Generated), so every piece can be inspected and moved in the
+    /// editor. At runtime Awake() only rebinds references when children
+    /// already exist; an empty arena object still builds itself as before.
     public class Systems_SumoArena : MonoBehaviour
     {
         /// Visual + physics preset for the dohyo top surface.
@@ -23,23 +32,127 @@ namespace PoSumo
         [Tooltip("Dohyo top-surface friction. Clay 0.9, ice ~0.08, sticky ~1.3.")]
         public float surfaceFriction = 0.9f;
 
-        // Tawara bales, kept for SetVisualRing: (transform, side sign, bale index).
+        // Tawara bales, kept for the platform shrink: (transform, side, index).
         struct TawaraRef { public Transform t; public int side; public int index; }
         readonly List<TawaraRef> _tawara = new List<TawaraRef>();
+        Transform _platform, _surface, _baseLip;
+        float _currentHalf = -1f;
 
-        /// Moves the tawara bales to match the effective (stall-shrunk) ring so
-        /// the audience can see the ring closing in. Called by the match manager.
-        public void SetVisualRing(float halfWidth)
+        static readonly Dictionary<string, Sprite> RuntimeSprites = new Dictionary<string, Sprite>();
+
+        /// Physically shrinks the dohyo to the given half-width: platform
+        /// visuals AND collider narrow together, so ground genuinely vanishes
+        /// under a stalling wrestler and they fall off before losing. The
+        /// tawara ride the shrinking edge. Called by the match manager.
+        public void SetPlatformHalfWidth(float half)
         {
+            half = Mathf.Clamp(half, 0.1f, groundWidth * 0.5f);
+            if (Mathf.Abs(half - _currentHalf) < 0.0005f) return;
+            _currentHalf = half;
+
+            float width = half * 2f;
+            if (_platform != null)
+                _platform.localScale = new Vector3(width, platformDrop, 1f);
+            if (_surface != null)
+                _surface.localScale = new Vector3(width, 0.08f, 1f);
+            if (_baseLip != null)
+                _baseLip.localScale = new Vector3(width + 0.7f, 0.16f, 1f);
+
+            float tawaraHalf = half - 0.3f; // bales stay on the clay, at the edge
             for (int i = 0; i < _tawara.Count; i++)
             {
                 var r = _tawara[i];
                 var p = r.t.localPosition;
-                r.t.localPosition = new Vector3(r.side * (halfWidth - r.index * 0.24f), p.y, p.z);
+                r.t.localPosition = new Vector3(r.side * (tawaraHalf - r.index * 0.24f), p.y, p.z);
             }
         }
 
-        static Sprite NoiseSprite(Color baseColor, float amount)
+        // --- Sprite / material sources ------------------------------------
+        // Edit mode: every generated texture is written to Assets/Art/Generated
+        // and referenced as a real asset, so baked scenes survive reload.
+        // Play mode (unbaked fallback): generated in memory and cached.
+
+        static Sprite SourceSprite(string name, float ppu, bool repeat, Vector2 pivot, System.Func<Texture2D> gen)
+        {
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
+                const string dir = "Assets/Art/Generated";
+                string path = $"{dir}/{name}.png";
+                var existing = AssetDatabase.LoadAssetAtPath<Sprite>(path);
+                if (existing != null) return existing;
+                System.IO.Directory.CreateDirectory(dir);
+                System.IO.File.WriteAllBytes(path, gen().EncodeToPNG());
+                AssetDatabase.ImportAsset(path);
+                var importer = (TextureImporter)AssetImporter.GetAtPath(path);
+                importer.textureType = TextureImporterType.Sprite;
+                importer.spritePixelsPerUnit = ppu;
+                importer.wrapMode = repeat ? TextureWrapMode.Repeat : TextureWrapMode.Clamp;
+                importer.mipmapEnabled = false;
+                var settings = new TextureImporterSettings();
+                importer.ReadTextureSettings(settings);
+                settings.spriteMeshType = SpriteMeshType.FullRect;
+                settings.spriteAlignment = (int)SpriteAlignment.Custom;
+                settings.spritePivot = pivot;
+                importer.SetTextureSettings(settings);
+                importer.SaveAndReimport();
+                return AssetDatabase.LoadAssetAtPath<Sprite>(path);
+            }
+#endif
+            if (RuntimeSprites.TryGetValue(name, out var cached) && cached != null) return cached;
+            var tex = gen();
+            if (repeat) tex.wrapMode = TextureWrapMode.Repeat;
+            var sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), pivot, ppu,
+                                       0, SpriteMeshType.FullRect);
+            RuntimeSprites[name] = sprite;
+            return sprite;
+        }
+
+        static PhysicsMaterial2D SourcePhysMat(string name, float friction, float bounciness)
+        {
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
+                const string dir = "Assets/Art/Generated";
+                string path = $"{dir}/{name}.physicsMaterial2D";
+                var existing = AssetDatabase.LoadAssetAtPath<PhysicsMaterial2D>(path);
+                if (existing != null) return existing;
+                System.IO.Directory.CreateDirectory(dir);
+                var created = new PhysicsMaterial2D(name) { friction = friction, bounciness = bounciness };
+                AssetDatabase.CreateAsset(created, path);
+                return created;
+            }
+#endif
+            return new PhysicsMaterial2D(name) { friction = friction, bounciness = bounciness };
+        }
+
+        static Sprite Box() => SourceSprite("Box", 4f, false, new Vector2(0.5f, 0.5f), () =>
+        {
+            var tex = new Texture2D(4, 4, TextureFormat.RGBA32, false);
+            var px = new Color[16];
+            for (int i = 0; i < 16; i++) px[i] = Color.white;
+            tex.SetPixels(px);
+            tex.Apply();
+            return tex;
+        });
+
+        static Sprite Circle() => SourceSprite("Circle", 64f, false, new Vector2(0.5f, 0.5f), () =>
+        {
+            const int S = 64;
+            var tex = new Texture2D(S, S, TextureFormat.RGBA32, false);
+            float r = S / 2f - 1f;
+            for (int y = 0; y < S; y++)
+                for (int x = 0; x < S; x++)
+                {
+                    float d = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), new Vector2(S / 2f, S / 2f));
+                    tex.SetPixel(x, y, d <= r ? Color.white : Color.clear);
+                }
+            tex.Apply();
+            return tex;
+        });
+
+        Sprite NoiseSprite(Color baseColor, float amount) =>
+            SourceSprite($"Noise_{style}", 256f, true, new Vector2(0.5f, 0.5f), () =>
         {
             const int S = 256;
             var tex = new Texture2D(S, S, TextureFormat.RGBA32, false);
@@ -52,12 +165,11 @@ namespace PoSumo
                     tex.SetPixel(x, y, new Color(baseColor.r * v, baseColor.g * v, baseColor.b * v, 1f));
                 }
             tex.Apply();
-            tex.wrapMode = TextureWrapMode.Repeat;
-            return Sprite.Create(tex, new Rect(0, 0, S, S), new Vector2(0.5f, 0.5f), S,
-                                 0, SpriteMeshType.FullRect);
-        }
+            return tex;
+        });
 
-        static Sprite GradientSprite(Color top, Color bottom)
+        static Sprite GradientSprite(Color top, Color bottom) =>
+            SourceSprite("WallGradient", 128f, false, new Vector2(0.5f, 0.5f), () =>
         {
             const int S = 128;
             var tex = new Texture2D(4, S, TextureFormat.RGBA32, false);
@@ -67,11 +179,11 @@ namespace PoSumo
                 for (int x = 0; x < 4; x++) tex.SetPixel(x, y, c);
             }
             tex.Apply();
-            return Sprite.Create(tex, new Rect(0, 0, 4, S), new Vector2(0.5f, 0.5f), S,
-                                 0, SpriteMeshType.FullRect);
-        }
+            return tex;
+        });
 
-        static Sprite ConeSprite()
+        static Sprite ConeSprite() =>
+            SourceSprite("SpotCone", 128f, false, new Vector2(0.5f, 0f), () =>
         {
             const int S = 128;
             var tex = new Texture2D(S, S, TextureFormat.RGBA32, false);
@@ -86,11 +198,65 @@ namespace PoSumo
                     tex.SetPixel(x, y, new Color(1f, 0.95f, 0.8f, a * 0.16f));
                 }
             tex.Apply();
-            return Sprite.Create(tex, new Rect(0, 0, S, S), new Vector2(0.5f, 0f), S,
-                                 0, SpriteMeshType.FullRect);
-        }
+            return tex;
+        });
+
+        Sprite GridSprite() =>
+            SourceSprite(deluxe ? "Grid_Deluxe" : "Grid_Plain", 100f, true, new Vector2(0.5f, 0.5f), () =>
+        {
+            const int PX = 500;
+            var tex = new Texture2D(PX, PX, TextureFormat.RGBA32, false);
+            var bg = deluxe ? new Color(0f, 0f, 0f, 0f) : new Color(0.17f, 0.13f, 0.12f, 1f);
+            var thin = deluxe ? new Color(0.62f, 0.54f, 0.45f, 0.38f) : new Color(0.24f, 0.19f, 0.17f, 1f);
+            var heavy = deluxe ? new Color(0.75f, 0.65f, 0.52f, 0.55f) : new Color(0.36f, 0.29f, 0.25f, 1f);
+            for (int y = 0; y < PX; y++)
+                for (int x = 0; x < PX; x++)
+                {
+                    bool heavyLine = x < 3 || y < 3 || x >= PX - 3 || y >= PX - 3;
+                    bool thinLine = (x % 100) < 2 || (y % 100) < 2;
+                    tex.SetPixel(x, y, heavyLine ? heavy : (thinLine ? thin : bg));
+                }
+            tex.Apply();
+            return tex;
+        });
 
         void Awake()
+        {
+            // Baked scene: the children already exist in the editor — only
+            // rebind the references SetVisualRing needs.
+            if (transform.childCount > 0)
+            {
+                RebindBaked();
+                return;
+            }
+            Build();
+        }
+
+        void RebindBaked()
+        {
+            _tawara.Clear();
+            _currentHalf = groundWidth * 0.5f;
+            foreach (Transform child in transform)
+            {
+                string n = child.name;
+                if (n.StartsWith("TawaraLeft"))
+                {
+                    _tawara.Add(new TawaraRef { t = child, side = -1, index = n[n.Length - 1] - '0' });
+                }
+                else if (n.StartsWith("TawaraRight"))
+                {
+                    _tawara.Add(new TawaraRef { t = child, side = 1, index = n[n.Length - 1] - '0' });
+                }
+                else if (n == "DohyoPlatform") _platform = child;
+                else if (n == "ClaySurface") _surface = child;
+                else if (n == "DohyoBase") _baseLip = child;
+            }
+        }
+
+        /// Creates the full arena as child objects. Called by Awake() when the
+        /// scene isn't baked, and by the editor bake pass (which then saves
+        /// the children into the scene).
+        public void Build()
         {
             var clay = new Color(0.72f, 0.57f, 0.4f);
             var clayLight = new Color(0.8f, 0.66f, 0.47f);
@@ -110,34 +276,38 @@ namespace PoSumo
 
             // --- Dohyo platform: top surface at y=0, sides slightly stepped.
             float half = groundWidth * 0.5f;
+            _currentHalf = half;
             var platform = new GameObject("DohyoPlatform");
+            _platform = platform.transform;
             platform.transform.SetParent(transform, false);
             platform.transform.localPosition = new Vector3(0f, -platformDrop * 0.5f, 0f);
             platform.transform.localScale = new Vector3(groundWidth, platformDrop, 1f);
             var psr = platform.AddComponent<SpriteRenderer>();
-            psr.sprite = deluxe ? NoiseSprite(clay, 0.06f) : Agent_BipedBody.BoxSprite();
+            psr.sprite = deluxe ? NoiseSprite(clay, 0.06f) : Box();
             psr.color = deluxe ? Color.white : clay;
             psr.sortingOrder = -5;
             var pcol = platform.AddComponent<BoxCollider2D>();
-            pcol.sharedMaterial = new PhysicsMaterial2D("Ground") { friction = surfaceFriction, bounciness = 0f };
+            pcol.sharedMaterial = SourcePhysMat($"Ground_{style}", surfaceFriction, 0f);
 
             // Slightly wider base lip to suggest the mound shape.
             var lip = new GameObject("DohyoBase");
+            _baseLip = lip.transform;
             lip.transform.SetParent(transform, false);
             lip.transform.localPosition = new Vector3(0f, -platformDrop + 0.08f, 0f);
             lip.transform.localScale = new Vector3(groundWidth + 0.7f, 0.16f, 1f);
             var lsr0 = lip.AddComponent<SpriteRenderer>();
-            lsr0.sprite = Agent_BipedBody.BoxSprite();
+            lsr0.sprite = Box();
             lsr0.color = clayDark;
             lsr0.sortingOrder = -4;
 
             // Packed-clay surface highlight.
             var surface = new GameObject("ClaySurface");
+            _surface = surface.transform;
             surface.transform.SetParent(transform, false);
             surface.transform.localPosition = new Vector3(0f, -0.04f, 0f);
             surface.transform.localScale = new Vector3(groundWidth, 0.08f, 1f);
             var ssr = surface.AddComponent<SpriteRenderer>();
-            ssr.sprite = Agent_BipedBody.BoxSprite();
+            ssr.sprite = Box();
             ssr.color = clayLight;
             ssr.sortingOrder = -4;
 
@@ -147,11 +317,11 @@ namespace PoSumo
             floor.transform.localPosition = new Vector3(0f, -platformDrop - 0.5f, 0f);
             floor.transform.localScale = new Vector3(floorWidth, 1f, 1f);
             var fsr = floor.AddComponent<SpriteRenderer>();
-            fsr.sprite = Agent_BipedBody.BoxSprite();
+            fsr.sprite = Box();
             fsr.color = new Color(0.24f, 0.18f, 0.15f);
             fsr.sortingOrder = -6;
             var fcol = floor.AddComponent<BoxCollider2D>();
-            fcol.sharedMaterial = new PhysicsMaterial2D("Floor") { friction = 0.8f, bounciness = 0f };
+            fcol.sharedMaterial = SourcePhysMat("Floor", 0.8f, 0f);
 
             // --- Shikiri-sen: the two white starting lines at ring center.
             for (int s = -1; s <= 1; s += 2)
@@ -161,7 +331,7 @@ namespace PoSumo
                 line.transform.localPosition = new Vector3(s * 0.35f, 0.015f, 0f);
                 line.transform.localScale = new Vector3(0.25f, 0.035f, 1f);
                 var lsr = line.AddComponent<SpriteRenderer>();
-                lsr.sprite = Agent_BipedBody.BoxSprite();
+                lsr.sprite = Box();
                 lsr.color = new Color(0.95f, 0.93f, 0.88f);
                 lsr.sortingOrder = -3;
             }
@@ -179,32 +349,50 @@ namespace PoSumo
             }
 
             // --- Warm gridded backdrop (1 m cells, heavy line each 5 m).
-            const int PX = 500;
-            var tex = new Texture2D(PX, PX, TextureFormat.RGBA32, false);
-            var bg = deluxe ? new Color(0f, 0f, 0f, 0f) : new Color(0.17f, 0.13f, 0.12f, 1f);
-            var thin = deluxe ? new Color(0.62f, 0.54f, 0.45f, 0.38f) : new Color(0.24f, 0.19f, 0.17f, 1f);
-            var heavy = deluxe ? new Color(0.75f, 0.65f, 0.52f, 0.55f) : new Color(0.36f, 0.29f, 0.25f, 1f);
-            for (int y = 0; y < PX; y++)
-                for (int x = 0; x < PX; x++)
-                {
-                    bool heavyLine = x < 3 || y < 3 || x >= PX - 3 || y >= PX - 3;
-                    bool thinLine = (x % 100) < 2 || (y % 100) < 2;
-                    tex.SetPixel(x, y, heavyLine ? heavy : (thinLine ? thin : bg));
-                }
-            tex.Apply();
-            tex.wrapMode = TextureWrapMode.Repeat;
-            var gridSprite = Sprite.Create(tex, new Rect(0, 0, PX, PX), new Vector2(0.5f, 0.5f),
-                                           100f, 0, SpriteMeshType.FullRect);
             var grid = new GameObject("Grid");
             grid.transform.SetParent(transform, false);
             grid.transform.localPosition = new Vector3(0f, 4.4f, 0f);
             var gsr2 = grid.AddComponent<SpriteRenderer>();
-            gsr2.sprite = gridSprite;
+            gsr2.sprite = GridSprite();
             gsr2.drawMode = SpriteDrawMode.Tiled;
             gsr2.size = new Vector2(floorWidth, 12f);
             gsr2.sortingOrder = -10;
 
             if (!showPosts) return;
+
+            // --- Back gallery: a full-width row of darkened spectators behind
+            // the fight so the portrait crop doesn't read as an empty wall.
+            var galleryKimono = new[]
+            {
+                new Color(0.25f, 0.18f, 0.28f), new Color(0.17f, 0.24f, 0.3f),
+                new Color(0.3f, 0.2f, 0.17f), new Color(0.2f, 0.27f, 0.21f),
+                new Color(0.28f, 0.25f, 0.18f)
+            };
+            int gallerySeats = Mathf.FloorToInt(floorWidth / 0.6f);
+            for (int i = 0; i < gallerySeats; i++)
+            {
+                float gx = -floorWidth * 0.5f + 0.4f + i * 0.6f;
+                float jitter = ((i * 13) % 5) * 0.025f;
+                var c = galleryKimono[(i * 7) % galleryKimono.Length];
+
+                var gbody = new GameObject("GallerySpectator");
+                gbody.transform.SetParent(transform, false);
+                gbody.transform.localPosition = new Vector3(gx, 0.3f + jitter, 0f);
+                gbody.transform.localScale = new Vector3(0.34f, 0.46f, 1f);
+                var gsr = gbody.AddComponent<SpriteRenderer>();
+                gsr.sprite = Box();
+                gsr.color = new Color(c.r, c.g, c.b, 0.85f);
+                gsr.sortingOrder = -9;
+
+                var ghead = new GameObject("Head");
+                ghead.transform.SetParent(gbody.transform, false);
+                ghead.transform.localScale = new Vector3(0.2f / 0.34f, 0.2f / 0.46f, 1f);
+                ghead.transform.localPosition = new Vector3(0f, 0.72f, 0f);
+                var ghsr = ghead.AddComponent<SpriteRenderer>();
+                ghsr.sprite = Circle();
+                ghsr.color = new Color(0.5f, 0.42f, 0.36f, 0.85f);
+                ghsr.sortingOrder = -9;
+            }
 
             // --- Tawara: straw bales at the ring edges.
             var straw = new Color(0.78f, 0.68f, 0.42f);
@@ -219,7 +407,7 @@ namespace PoSumo
                         new Vector3(s * (ringHalfWidth - b * 0.24f), 0.08f, 0f);
                     bale.transform.localScale = new Vector3(0.3f, 0.17f, 1f);
                     var bsr = bale.AddComponent<SpriteRenderer>();
-                    bsr.sprite = Agent_BipedBody.BoxSprite();
+                    bsr.sprite = Box();
                     bsr.color = b == 0 ? strawDark : straw;
                     bsr.sortingOrder = -3 + b;
                     _tawara.Add(new TawaraRef { t = bale.transform, side = s, index = b });
@@ -252,7 +440,7 @@ namespace PoSumo
                             new Vector3(s * (startX + seats * 0.55f * 0.5f), rowY - 0.15f, 0f);
                         step.transform.localScale = new Vector3(seats * 0.55f + 0.6f, 0.3f, 1f);
                         var stsr = step.AddComponent<SpriteRenderer>();
-                        stsr.sprite = Agent_BipedBody.BoxSprite();
+                        stsr.sprite = Box();
                         stsr.color = new Color(0.2f, 0.15f, 0.13f);
                         stsr.sortingOrder = -8;
                     }
@@ -268,7 +456,7 @@ namespace PoSumo
                         body.transform.localPosition = new Vector3(px, rowY + 0.19f, 0f);
                         body.transform.localScale = new Vector3(0.34f, 0.38f, 1f);
                         var bsr2 = body.AddComponent<SpriteRenderer>();
-                        bsr2.sprite = Agent_BipedBody.BoxSprite();
+                        bsr2.sprite = Box();
                         bsr2.color = new Color(c.r, c.g, c.b, 1f);
                         bsr2.sortingOrder = row == 0 ? -6 : -7;
 
@@ -277,7 +465,7 @@ namespace PoSumo
                         head.transform.localScale = new Vector3(0.2f / 0.34f, 0.2f / 0.38f, 1f);
                         head.transform.localPosition = new Vector3(0f, 0.75f, 0f);
                         var hsr = head.AddComponent<SpriteRenderer>();
-                        hsr.sprite = Agent_BipedBody.CircleSprite();
+                        hsr.sprite = Circle();
                         hsr.color = row == 1 ? skin * 0.8f : skin;
                         hsr.sortingOrder = bsr2.sortingOrder;
                     }
@@ -309,7 +497,7 @@ namespace PoSumo
                     halo.transform.localPosition = new Vector3(lx, 5.55f, 0f);
                     halo.transform.localScale = new Vector3(0.55f, 0.55f, 1f);
                     var hsr2 = halo.AddComponent<SpriteRenderer>();
-                    hsr2.sprite = Agent_BipedBody.CircleSprite();
+                    hsr2.sprite = Circle();
                     hsr2.color = new Color(1f, 0.8f, 0.45f, 0.18f);
                     hsr2.sortingOrder = -6;
                     var lamp = new GameObject("Lantern");
@@ -317,7 +505,7 @@ namespace PoSumo
                     lamp.transform.localPosition = new Vector3(lx, 5.55f, 0f);
                     lamp.transform.localScale = new Vector3(0.2f, 0.26f, 1f);
                     var lsr2 = lamp.AddComponent<SpriteRenderer>();
-                    lsr2.sprite = Agent_BipedBody.CircleSprite();
+                    lsr2.sprite = Circle();
                     lsr2.color = new Color(1f, 0.85f, 0.55f, 0.95f);
                     lsr2.sortingOrder = -5;
                 }
@@ -336,7 +524,7 @@ namespace PoSumo
                     banner.transform.localPosition = new Vector3(bx, 3.6f, 0f);
                     banner.transform.localScale = new Vector3(0.55f, 1.5f, 1f);
                     var bsr3 = banner.AddComponent<SpriteRenderer>();
-                    bsr3.sprite = Agent_BipedBody.BoxSprite();
+                    bsr3.sprite = Box();
                     bsr3.color = bannerCols[i % bannerCols.Length];
                     bsr3.sortingOrder = -9;
                     var motif = new GameObject("Motif");
@@ -344,7 +532,7 @@ namespace PoSumo
                     motif.transform.localScale = new Vector3(0.6f, 0.18f, 1f);
                     motif.transform.localPosition = new Vector3(0f, 0.22f, 0f);
                     var msr = motif.AddComponent<SpriteRenderer>();
-                    msr.sprite = Agent_BipedBody.BoxSprite();
+                    msr.sprite = Box();
                     msr.color = new Color(0.94f, 0.9f, 0.82f, 0.9f);
                     msr.sortingOrder = -8;
                 }
@@ -360,7 +548,7 @@ namespace PoSumo
                         sil.transform.localPosition = new Vector3(px, -platformDrop + 0.62f, 0f);
                         sil.transform.localScale = new Vector3(0.3f, 0.34f, 1f);
                         var ssr3 = sil.AddComponent<SpriteRenderer>();
-                        ssr3.sprite = Agent_BipedBody.CircleSprite();
+                        ssr3.sprite = Circle();
                         ssr3.color = new Color(0.1f, 0.08f, 0.08f, 0.9f);
                         ssr3.sortingOrder = -9;
                     }
@@ -373,7 +561,7 @@ namespace PoSumo
             roof.transform.localPosition = new Vector3(0f, 6.4f, 0f);
             roof.transform.localScale = new Vector3(groundWidth + 3.5f, 0.5f, 1f);
             var rsr = roof.AddComponent<SpriteRenderer>();
-            rsr.sprite = Agent_BipedBody.BoxSprite();
+            rsr.sprite = Box();
             rsr.color = new Color(0.3f, 0.17f, 0.13f);
             rsr.sortingOrder = -6;
             var ridge = new GameObject("TsuriyaneRidge");
@@ -381,7 +569,7 @@ namespace PoSumo
             ridge.transform.localPosition = new Vector3(0f, 6.77f, 0f);
             ridge.transform.localScale = new Vector3(groundWidth + 4.3f, 0.16f, 1f);
             var rid = ridge.AddComponent<SpriteRenderer>();
-            rid.sprite = Agent_BipedBody.BoxSprite();
+            rid.sprite = Box();
             rid.color = new Color(0.2f, 0.11f, 0.09f);
             rid.sortingOrder = -6;
             var fusa = new[]
@@ -397,7 +585,7 @@ namespace PoSumo
                 tassel.transform.localPosition = new Vector3(fx, 5.9f, 0f);
                 tassel.transform.localScale = new Vector3(0.12f, 0.5f, 1f);
                 var tsr = tassel.AddComponent<SpriteRenderer>();
-                tsr.sprite = Agent_BipedBody.BoxSprite();
+                tsr.sprite = Box();
                 tsr.color = fusa[i];
                 tsr.sortingOrder = -5;
             }
