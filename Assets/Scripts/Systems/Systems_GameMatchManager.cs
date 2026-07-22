@@ -36,11 +36,20 @@ namespace PoSumo
         public float minRingHalfWidth = 0.6f;
         public PanelSettings panelSettings;
         public Systems_GameTuning tuning;
+        [Tooltip("Spawn Systems_MatchPresentation (slow-mo, punch-in, replay) at startup.")]
+        public bool enablePresentation = true;
+        [Tooltip("Spawn Systems_MatchAudio (impacts, crowd, gong) at startup.")]
+        public bool enableAudio = true;
+        [Tooltip("Spawn Systems_BrainView (policy overlay, toggle with B) at startup.")]
+        public bool enableBrainView = true;
+        [Tooltip("Spawn Systems_FaceMood (Matt's expression follows dominance) at startup.")]
+        public bool enableFaceMood = true;
 
         int _scoreA, _scoreB;
         float _elapsed, _phaseLeft, _downA, _downB;
         int _lastShownSeconds = -1;
         Phase _phase = Phase.Fighting;
+        Systems_SumoArena _arena;
 
         // Read-only stats for HUDs.
         public int ScoreA => _scoreA;
@@ -50,7 +59,18 @@ namespace PoSumo
         public float RoundElapsed => _elapsed;
         public float LongestRound { get; private set; }
         public bool RoundActive => _phase == Phase.Fighting;
-        Label _scoreLabel, _banner, _clock, _hint;
+        /// Current stall-shrunk scoring boundary (equals ringHalfWidth early in a round).
+        public float EffectiveRingHalfWidth { get; private set; }
+
+        /// Fired when a round is decided: (roundWinner, roundLoser) — both null on a draw.
+        public event System.Action<Agent_Biped, Agent_Biped> RoundEnded;
+        /// Fired when scoring resumes for a fresh round.
+        public event System.Action RoundStarted;
+        /// Fired once when the match is decided, with the match winner.
+        public event System.Action<Agent_Biped> MatchEnded;
+        /// Fired when a rematch resets the scores (HUD aggregates restart here).
+        public event System.Action MatchReset;
+        Label _scoreLabel, _banner, _clock;
         Button _rematchBtn;
         VisualElement _overlay;
         Color _scoreBaseColor = new Color(0.95f, 0.93f, 0.85f);
@@ -82,8 +102,41 @@ namespace PoSumo
             wrestlerB.ringHalfWidth = ringHalfWidth;
             wrestlerA.arenaCenterX = transform.position.x;
             wrestlerB.arenaCenterX = transform.position.x;
+            _arena = FindAnyObjectByType<Systems_SumoArena>();
+            EffectiveRingHalfWidth = ringHalfWidth;
             BuildUi();
             UpdateScoreboard(false);
+            SpawnCompanionSystems();
+        }
+
+        /// Presentation, audio and brain-view are runtime-spawned children so
+        /// scenes stay manager-only and older scenes pick them up automatically.
+        void SpawnCompanionSystems()
+        {
+            if (enablePresentation && FindAnyObjectByType<Systems_MatchPresentation>() == null)
+            {
+                var go = new GameObject("Presentation");
+                go.transform.SetParent(transform, false);
+                go.AddComponent<Systems_MatchPresentation>();
+            }
+            if (enableAudio && FindAnyObjectByType<Systems_MatchAudio>() == null)
+            {
+                var go = new GameObject("MatchAudio");
+                go.transform.SetParent(transform, false);
+                go.AddComponent<Systems_MatchAudio>();
+            }
+            if (enableBrainView && FindAnyObjectByType<Systems_BrainView>() == null)
+            {
+                var go = new GameObject("BrainView");
+                go.transform.SetParent(transform, false);
+                go.AddComponent<Systems_BrainView>();
+            }
+            if (enableFaceMood && FindAnyObjectByType<Systems_FaceMood>() == null)
+            {
+                var go = new GameObject("FaceMood");
+                go.transform.SetParent(transform, false);
+                go.AddComponent<Systems_FaceMood>();
+            }
         }
 
         static string Hex(Color c) => ColorUtility.ToHtmlStringRGB(c);
@@ -153,17 +206,6 @@ namespace PoSumo
             _rematchBtn.style.borderBottomRightRadius = 12;
             _rematchBtn.style.display = DisplayStyle.None;
             root.Add(_rematchBtn);
-
-            _hint = new Label("or press SPACE");
-            _hint.style.position = Position.Absolute;
-            _hint.style.top = Length.Percent(56);
-            _hint.style.left = 0;
-            _hint.style.right = 0;
-            _hint.style.unityTextAlign = TextAnchor.MiddleCenter;
-            _hint.style.fontSize = 20;
-            _hint.style.color = new Color(0.9f, 0.88f, 0.8f, 0.8f);
-            _hint.style.display = DisplayStyle.None;
-            root.Add(_hint);
         }
 
         void UpdateScoreboard(bool flash)
@@ -238,6 +280,9 @@ namespace PoSumo
                         _phase = Phase.Fighting;
                         _elapsed = 0f;
                         _downA = _downB = 0f;
+                        EffectiveRingHalfWidth = ringHalfWidth;
+                        if (_arena != null) _arena.SetVisualRing(_arena.ringHalfWidth);
+                        RoundStarted?.Invoke();
                     }
                     return;
             }
@@ -253,6 +298,11 @@ namespace PoSumo
             // rounds resolve by pressure instead of a timeout.
             float effectiveRing = Mathf.Max(minRingHalfWidth,
                 ringHalfWidth - Mathf.Max(0f, _elapsed - stallBreakStart) * stallShrinkRate);
+            EffectiveRingHalfWidth = effectiveRing;
+
+            // The tawara track the shrink at the same ratio so it reads on screen.
+            if (_arena != null && effectiveRing < ringHalfWidth)
+                _arena.SetVisualRing(_arena.ringHalfWidth * (effectiveRing / ringHalfWidth));
 
             float cx = transform.position.x;
             bool aOut = OutOfRing(wrestlerA, cx, effectiveRing) || (knockdownLoses && _downA >= downGraceSeconds);
@@ -290,6 +340,8 @@ namespace PoSumo
             _clock.text = "";
             _lastShownSeconds = -1;
 
+            RoundEnded?.Invoke(roundWinner, loser);
+
             if (_scoreA >= pointsToWin || _scoreB >= pointsToWin)
             {
                 _phase = Phase.MatchOver;
@@ -299,7 +351,7 @@ namespace PoSumo
                 _banner.style.display = DisplayStyle.Flex;
                 _overlay.style.display = DisplayStyle.Flex;
                 _rematchBtn.style.display = DisplayStyle.Flex;
-                _hint.style.display = DisplayStyle.Flex;
+                MatchEnded?.Invoke(_scoreA > _scoreB ? wrestlerA : wrestlerB);
                 return;
             }
 
@@ -317,11 +369,11 @@ namespace PoSumo
         void ResetMatch()
         {
             _scoreA = _scoreB = 0;
+            MatchReset?.Invoke();
             UpdateScoreboard(false);
             _overlay.style.display = DisplayStyle.None;
             _banner.style.display = DisplayStyle.None;
             _rematchBtn.style.display = DisplayStyle.None;
-            _hint.style.display = DisplayStyle.None;
             wrestlerA.EndEpisode();
             wrestlerB.EndEpisode();
             wrestlerA.actionsEnabled = true;

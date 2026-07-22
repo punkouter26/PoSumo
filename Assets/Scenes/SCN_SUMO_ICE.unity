@@ -461,8 +461,8 @@ MonoBehaviour:
   floorWidth: 22
   showPosts: 1
   deluxe: 1
-  style: 0
-  surfaceFriction: 0.9
+  style: 1
+  surfaceFriction: 0.08
 --- !u!1 &1381476873
 GameObject:
   m_ObjectHideFlags: 0

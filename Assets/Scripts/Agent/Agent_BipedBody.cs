@@ -28,6 +28,7 @@ namespace PoSumo
 
         [HideInInspector] public Rigidbody2D Torso;   // pelvis (root mass, ring-out tracking)
         [HideInInspector] public Rigidbody2D Chest;   // top segment (posture/lean sensing)
+        [HideInInspector] public SpriteRenderer HeadRenderer; // face sprite (mood swaps)
         [HideInInspector] public HingeJoint2D[] Joints;   // 10 motors
         [HideInInspector] public Rigidbody2D[] Parts;
         [HideInInspector] public List<Collider2D> AllColliders = new List<Collider2D>();
@@ -41,6 +42,7 @@ namespace PoSumo
         Vector3[] _initialLocalPos;
         Quaternion[] _initialLocalRot;
         Rigidbody2D[] _thighs;
+        float _headCellW, _headCellH; // chest local scale the head must compensate for
 
         static Sprite _boxSprite, _circleSprite;
         static PhysicsMaterial2D _footMat, _bodyMat;
@@ -191,16 +193,12 @@ namespace PoSumo
                     var hsr = head.AddComponent<SpriteRenderer>();
                     hsr.sortingOrder = 1;
                     float parentW = d.w * widthScale;
+                    HeadRenderer = hsr;
+                    _headCellW = parentW;
+                    _headCellH = d.h;
                     if (headSprite != null)
                     {
-                        hsr.sprite = headSprite;
-                        hsr.color = Color.white;
-                        hsr.flipX = facingSign < 0;
-                        // Aspect-fit the face to ~0.3 m tall regardless of source size.
-                        float sy = Mathf.Max(0.0001f, headSprite.bounds.size.y);
-                        const float targetH = 0.3f;
-                        head.transform.localScale =
-                            new Vector3(targetH / (sy * parentW), targetH / (sy * d.h), 1f);
+                        SetHeadSprite(headSprite);
                     }
                     else
                     {
@@ -216,6 +214,11 @@ namespace PoSumo
 
                 // Ground-contact reporter on every non-foot part.
                 if (!d.isFoot) go.AddComponent<Sensor_BodyPartContact>();
+
+                // Impact reporter (audio/FX) on every part, feet included.
+                var impact = go.AddComponent<Sensor_Impact>();
+                impact.owner = this;
+                impact.isFoot = d.isFoot;
             }
             _thighs = thighs.ToArray();
 
@@ -300,6 +303,20 @@ namespace PoSumo
         public float JointAngleNorm(int j) => Joints[j].jointAngle * facingSign / 180f;
 
         public float JointSpeedNorm(int j) => Joints[j].jointSpeed * facingSign / 600f;
+
+        /// Swap the face sprite, aspect-fitting to ~0.3 m tall regardless of
+        /// the source image size (mood images vary a few pixels each).
+        public void SetHeadSprite(Sprite s)
+        {
+            if (HeadRenderer == null || s == null) return;
+            HeadRenderer.sprite = s;
+            HeadRenderer.color = Color.white;
+            HeadRenderer.flipX = facingSign < 0;
+            float sy = Mathf.Max(0.0001f, s.bounds.size.y);
+            const float TARGET_H = 0.3f;
+            HeadRenderer.transform.localScale =
+                new Vector3(TARGET_H / (sy * _headCellW), TARGET_H / (sy * _headCellH), 1f);
+        }
 
         public Rigidbody2D FootNear => Parts[3];
         public Rigidbody2D FootFar => Parts[6];

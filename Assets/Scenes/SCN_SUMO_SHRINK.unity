@@ -849,11 +849,11 @@ MonoBehaviour:
   betweenRoundsPause: 2.5
   graceSeconds: 0.4
   downGraceSeconds: 0.2
-  stallBreakStart: 12
-  stallShrinkRate: 0.15
-  minRingHalfWidth: 0.6
+  stallBreakStart: 2
+  stallShrinkRate: 0.3
+  minRingHalfWidth: 0.5
   panelSettings: {fileID: 11400000, guid: 5f29889ae85d92343b4edf70b0058e9d, type: 2}
-  tuning: {fileID: 11400000, guid: b40c783b035d5814a918a508fb517706, type: 2}
+  tuning: {fileID: 0}
   enablePresentation: 1
   enableAudio: 1
   enableBrainView: 1

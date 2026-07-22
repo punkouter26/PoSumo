@@ -35,6 +35,12 @@ namespace PoSumo
         public const int ObservationCount = 41; // 5 body + 26 joints + 4 feet + 4 opponent + 2 edges
         public const int ActionCount = 13;      // hips, knees, ankles, 3 spine, shoulders, elbows
 
+        /// Last motor commands as sent to the joints (for HUD/brain-view display).
+        [System.NonSerialized] public float[] LastActions = new float[ActionCount];
+
+        /// Cumulative reward this episode (for HUD/brain-view display).
+        public float EpisodeReward => GetCumulativeReward();
+
         Agent_BipedBody _b;
 
         protected override void Awake()
@@ -131,7 +137,11 @@ namespace PoSumo
         {
             if (!actionsEnabled)
             {
-                for (int j = 0; j < ActionCount; j++) _b.ApplyMotor(j, 0f);
+                for (int j = 0; j < ActionCount; j++)
+                {
+                    _b.ApplyMotor(j, 0f);
+                    LastActions[j] = 0f;
+                }
                 return;
             }
             var a = actions.ContinuousActions;
@@ -139,6 +149,7 @@ namespace PoSumo
             for (int j = 0; j < ActionCount; j++)
             {
                 _b.ApplyMotor(j, a[j]);
+                LastActions[j] = Mathf.Clamp(a[j], -1f, 1f);
                 energy += Mathf.Abs(a[j]);
             }
             energy /= ActionCount;

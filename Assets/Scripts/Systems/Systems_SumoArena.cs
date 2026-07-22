@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace PoSumo
@@ -8,12 +9,35 @@ namespace PoSumo
     /// wrestlers land), a warm gridded backdrop, and the hanging tsuriyane roof.
     public class Systems_SumoArena : MonoBehaviour
     {
+        /// Visual + physics preset for the dohyo top surface.
+        public enum SurfaceStyle { Clay = 0, Ice = 1, Sticky = 2 }
+
         public float ringHalfWidth = 2.45f;  // tawara position
         public float groundWidth = 5.5f;     // platform width (edge = +/- groundWidth/2)
         public float platformDrop = 0.6f;    // how far down the crowd floor sits
         public float floorWidth = 22f;       // lower arena floor span
         public bool showPosts = true;        // tawara + dressing on/off
         public bool deluxe = false;          // full-stadium dressing (SCN_SUMO)
+        [Tooltip("Surface preset: recolors the dohyo. Clay=warm, Ice=blue-white, Sticky=dark resin.")]
+        public SurfaceStyle style = SurfaceStyle.Clay;
+        [Tooltip("Dohyo top-surface friction. Clay 0.9, ice ~0.08, sticky ~1.3.")]
+        public float surfaceFriction = 0.9f;
+
+        // Tawara bales, kept for SetVisualRing: (transform, side sign, bale index).
+        struct TawaraRef { public Transform t; public int side; public int index; }
+        readonly List<TawaraRef> _tawara = new List<TawaraRef>();
+
+        /// Moves the tawara bales to match the effective (stall-shrunk) ring so
+        /// the audience can see the ring closing in. Called by the match manager.
+        public void SetVisualRing(float halfWidth)
+        {
+            for (int i = 0; i < _tawara.Count; i++)
+            {
+                var r = _tawara[i];
+                var p = r.t.localPosition;
+                r.t.localPosition = new Vector3(r.side * (halfWidth - r.index * 0.24f), p.y, p.z);
+            }
+        }
 
         static Sprite NoiseSprite(Color baseColor, float amount)
         {
@@ -71,6 +95,18 @@ namespace PoSumo
             var clay = new Color(0.72f, 0.57f, 0.4f);
             var clayLight = new Color(0.8f, 0.66f, 0.47f);
             var clayDark = new Color(0.55f, 0.42f, 0.3f);
+            if (style == SurfaceStyle.Ice)
+            {
+                clay = new Color(0.6f, 0.72f, 0.82f);
+                clayLight = new Color(0.8f, 0.9f, 0.97f);
+                clayDark = new Color(0.42f, 0.54f, 0.68f);
+            }
+            else if (style == SurfaceStyle.Sticky)
+            {
+                clay = new Color(0.45f, 0.32f, 0.2f);
+                clayLight = new Color(0.58f, 0.42f, 0.24f);
+                clayDark = new Color(0.32f, 0.22f, 0.13f);
+            }
 
             // --- Dohyo platform: top surface at y=0, sides slightly stepped.
             float half = groundWidth * 0.5f;
@@ -83,7 +119,7 @@ namespace PoSumo
             psr.color = deluxe ? Color.white : clay;
             psr.sortingOrder = -5;
             var pcol = platform.AddComponent<BoxCollider2D>();
-            pcol.sharedMaterial = new PhysicsMaterial2D("Ground") { friction = 0.9f, bounciness = 0f };
+            pcol.sharedMaterial = new PhysicsMaterial2D("Ground") { friction = surfaceFriction, bounciness = 0f };
 
             // Slightly wider base lip to suggest the mound shape.
             var lip = new GameObject("DohyoBase");
@@ -186,6 +222,7 @@ namespace PoSumo
                     bsr.sprite = Agent_BipedBody.BoxSprite();
                     bsr.color = b == 0 ? strawDark : straw;
                     bsr.sortingOrder = -3 + b;
+                    _tawara.Add(new TawaraRef { t = bale.transform, side = s, index = b });
                 }
             }
 

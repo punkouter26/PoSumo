@@ -1,0 +1,237 @@
+using UnityEngine;
+
+namespace PoSumo
+{
+    /// Drives Matt's facial expression from the live DOMINANCE stat: winning
+    /// looks increasingly happy (happy1-3), losing increasingly sad (sad1-3),
+    /// neutral in between. The displayed face always walks the expression
+    /// ladder one step at a time (sad3..sad1, neutral, happy1..happy3) so
+    /// changes animate smoothly instead of jumping. Big moments steer the
+    /// target: scoring a round targets happy3, losing one sad3, a knockdown
+    /// sad2; a decided match holds the extreme until rematch. Dominance is
+    /// smoothed (~2 s) so the face doesn't flicker. Sprites load from
+    /// Resources (matt_*-removebg-preview). Spawned by Systems_GameMatchManager.
+    public class Systems_FaceMood : MonoBehaviour
+    {
+        [Tooltip("Behavior name of the fighter whose face reacts.")]
+        public string fighterBehaviorName = "Matt";
+        public float flashSeconds = 1.5f;
+        public float knockdownFlashSeconds = 1.2f;
+        [Tooltip("Per-second rate the mood chases live dominance.")]
+        public float smoothingRate = 1.2f;
+        [Tooltip("Seconds between single steps along the expression ladder.")]
+        public float stepSeconds = 0.18f;
+        [Tooltip("Idle flourish: after this long with nothing interesting, Matt rides the ladder to 3 and back.")]
+        public float idleMinSeconds = 15f;
+        public float idleMaxSeconds = 30f;
+        [Tooltip("Maximum idle flourishes per match.")]
+        public int idleFlourishesPerMatch = 2;
+
+        const string NEUTRAL = "matt_neutral1-removebg-preview";
+        static readonly string[] HappyNames =
+        {
+            "matt_happy1-removebg-preview",
+            "matt_happy2-removebg-preview",
+            "matt_happy3-removebg-preview",
+        };
+        static readonly string[] SadNames =
+        {
+            "matt_sad1-removebg-preview",
+            "matt_sad2-removebg-preview",
+            "matt_sad3-removebg-preview",
+        };
+
+        Systems_GameMatchManager _manager;
+        Systems_FightHud _hud;
+        Agent_Biped _fighter;
+        Agent_BipedBody _body;
+        bool _fighterIsA;
+
+        Sprite _neutral;
+        Sprite[] _happy, _sad;
+
+        float _smoothedDom = 50f;
+        int _displayLevel;         // -3 (sad3) .. 0 (neutral) .. +3 (happy3), moves ±1 per step
+        float _nextStepTime;
+        Sprite _current;
+
+        int _flashLevel;
+        float _flashUntil;
+        bool _flashActive;
+        bool _holdActive;          // match-over face, kept until rematch
+        int _holdLevel;
+        bool _wasDown;
+        float _kdRearmTime;
+
+        float _lastInterestTime;   // last flash/round event/mood shift
+        float _idleDelay;          // rolled 15-30 s after each interesting moment
+        int _idleFlourishes;
+        int _lastMoodTarget;
+        const float FLOURISH_SECONDS = 0.9f; // ladder rides up, holds a beat, walks back
+
+        void Start()
+        {
+            _manager = FindAnyObjectByType<Systems_GameMatchManager>();
+            _hud = FindAnyObjectByType<Systems_FightHud>();
+            if (_manager == null) return;
+
+            if (_manager.wrestlerA != null && _manager.wrestlerA.behaviorName == fighterBehaviorName)
+            {
+                _fighter = _manager.wrestlerA;
+                _fighterIsA = true;
+            }
+            else if (_manager.wrestlerB != null && _manager.wrestlerB.behaviorName == fighterBehaviorName)
+            {
+                _fighter = _manager.wrestlerB;
+                _fighterIsA = false;
+            }
+            if (_fighter == null) return;
+            _body = _fighter.GetComponent<Agent_BipedBody>();
+
+            _neutral = Resources.Load<Sprite>(NEUTRAL);
+            _happy = new Sprite[HappyNames.Length];
+            _sad = new Sprite[SadNames.Length];
+            int loaded = _neutral != null ? 1 : 0;
+            for (int i = 0; i < HappyNames.Length; i++)
+            {
+                _happy[i] = Resources.Load<Sprite>(HappyNames[i]);
+                _sad[i] = Resources.Load<Sprite>(SadNames[i]);
+                if (_happy[i] != null) loaded++;
+                if (_sad[i] != null) loaded++;
+            }
+            if (loaded < 7)
+            {
+                Debug.LogWarning($"Systems_FaceMood: only {loaded}/7 face sprites loaded from Resources");
+            }
+
+            _manager.RoundEnded += OnRoundEnded;
+            _manager.MatchEnded += OnMatchEnded;
+            _manager.MatchReset += OnMatchReset;
+            _manager.RoundStarted += MarkInterest;
+
+            MarkInterest();
+            Apply(LevelSprite(0));
+        }
+
+        void OnDisable()
+        {
+            if (_manager != null)
+            {
+                _manager.RoundEnded -= OnRoundEnded;
+                _manager.MatchEnded -= OnMatchEnded;
+                _manager.MatchReset -= OnMatchReset;
+                _manager.RoundStarted -= MarkInterest;
+            }
+        }
+
+        void MarkInterest()
+        {
+            _lastInterestTime = Time.unscaledTime;
+            _idleDelay = Random.Range(idleMinSeconds, idleMaxSeconds);
+        }
+
+        void OnRoundEnded(Agent_Biped winner, Agent_Biped loser)
+        {
+            if (winner == _fighter) Flash(3, flashSeconds);
+            else if (loser == _fighter) Flash(-3, flashSeconds);
+        }
+
+        void OnMatchEnded(Agent_Biped winner)
+        {
+            _holdActive = true;
+            _holdLevel = winner == _fighter ? 3 : -3;
+        }
+
+        void OnMatchReset()
+        {
+            _holdActive = false;
+            _flashActive = false;
+            _smoothedDom = 50f;
+            _idleFlourishes = 0;
+            MarkInterest();
+        }
+
+        void Flash(int level, float seconds)
+        {
+            _flashLevel = level;
+            _flashActive = true;
+            _flashUntil = Time.unscaledTime + seconds;
+            MarkInterest();
+        }
+
+        void Update()
+        {
+            if (_fighter == null || _body == null) return;
+
+            // Knockdown reaction (mid-round, debounced).
+            bool down = _fighter.IsDown;
+            if (down && !_wasDown && Time.unscaledTime >= _kdRearmTime && _manager.RoundActive)
+            {
+                Flash(-2, knockdownFlashSeconds);
+                _kdRearmTime = Time.unscaledTime + 2f;
+            }
+            _wasDown = down;
+
+            float dom = _hud != null ? (_fighterIsA ? _hud.DominanceA : _hud.DominanceB) : 50f;
+            float t = 1f - Mathf.Exp(-smoothingRate * Time.deltaTime);
+            _smoothedDom = Mathf.Lerp(_smoothedDom, dom, t);
+
+            if (_flashActive && Time.unscaledTime >= _flashUntil) _flashActive = false;
+
+            int mood = MoodLevel(_smoothedDom);
+            if (mood != _lastMoodTarget)
+            {
+                _lastMoodTarget = mood;
+                MarkInterest(); // a naturally shifting face is interesting enough
+            }
+
+            // Idle flourish: a dull stretch earns a quick ladder ride to 3 and
+            // back — happy if currently ahead, sad if behind.
+            if (!_holdActive && !_flashActive && _manager.RoundActive
+                && _idleFlourishes < idleFlourishesPerMatch
+                && Time.unscaledTime - _lastInterestTime >= _idleDelay)
+            {
+                _idleFlourishes++;
+                Flash(_smoothedDom >= 50f ? 3 : -3, FLOURISH_SECONDS);
+            }
+
+            int target;
+            if (_holdActive) target = _holdLevel;
+            else if (_flashActive) target = _flashLevel;
+            else target = mood;
+
+            // Walk the ladder one expression per step — never jump.
+            if (_displayLevel != target && Time.unscaledTime >= _nextStepTime)
+            {
+                _displayLevel += _displayLevel < target ? 1 : -1;
+                _nextStepTime = Time.unscaledTime + stepSeconds;
+                Apply(LevelSprite(_displayLevel));
+            }
+        }
+
+        static int MoodLevel(float dom)
+        {
+            if (dom >= 76f) return 3;
+            if (dom >= 66f) return 2;
+            if (dom >= 57f) return 1;
+            if (dom <= 24f) return -3;
+            if (dom <= 34f) return -2;
+            if (dom <= 43f) return -1;
+            return 0;
+        }
+
+        Sprite LevelSprite(int level)
+        {
+            if (level > 0) return _happy[level - 1];
+            if (level < 0) return _sad[-level - 1];
+            return _neutral;
+        }
+
+        void Apply(Sprite s)
+        {
+            if (s == null || s == _current) return;
+            _current = s;
+            _body.SetHeadSprite(s);
+        }
+    }
+}

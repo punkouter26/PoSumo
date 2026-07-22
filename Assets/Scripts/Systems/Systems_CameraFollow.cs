@@ -22,6 +22,21 @@ namespace PoSumo
         Camera _cam;
         Agent_Biped _a, _b;
 
+        // Temporary punch-in override (slow-mo finishes): blend toward a focus
+        // transform at a tighter ortho until the realtime deadline passes.
+        Transform _focus;
+        float _focusOrtho;
+        float _focusUntil;
+
+        /// Blend the camera toward `focus` at `ortho` for `realSeconds` of
+        /// unscaled time. Used by the match presentation on round-deciding falls.
+        public void PunchIn(Transform focus, float ortho, float realSeconds)
+        {
+            _focus = focus;
+            _focusOrtho = ortho;
+            _focusUntil = Time.realtimeSinceStartup + realSeconds;
+        }
+
         void Awake()
         {
             _cam = GetComponent<Camera>();
@@ -53,6 +68,13 @@ namespace PoSumo
             float targetOrtho = Mathf.Clamp(orthoNeeded, minOrtho, maxOrtho);
 
             float midY = (_a.Torso.position.y + _b.Torso.position.y) * 0.5f + verticalOffset;
+
+            if (_focus != null && Time.realtimeSinceStartup < _focusUntil)
+            {
+                mid = Mathf.Lerp(mid, _focus.position.x, 0.75f);
+                midY = Mathf.Lerp(midY, _focus.position.y + verticalOffset, 0.75f);
+                targetOrtho = Mathf.Min(targetOrtho, _focusOrtho);
+            }
 
             float t = 1f - Mathf.Exp(-smoothing * Time.deltaTime);
             _cam.orthographicSize = Mathf.Lerp(_cam.orthographicSize, targetOrtho, t);

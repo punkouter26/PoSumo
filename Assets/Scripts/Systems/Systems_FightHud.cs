@@ -1,4 +1,3 @@
-using Unity.MLAgents;
 using UnityEngine;
 using UnityEngine.UIElements;
 #if ENABLE_INPUT_SYSTEM
@@ -7,100 +6,219 @@ using UnityEngine.InputSystem;
 
 namespace PoSumo
 {
-    /// F1-broadcast-style telemetry HUD: one panel per wrestler on the screen
-    /// edges, toggled with Tab. Shows fighter card, live telemetry (speed,
-    /// lean, edge distance, balance), an estimated push-power meter, and match
-    /// stats from the Systems_GameMatchManager. UI Toolkit only.
+    /// Broadcast-style match HUD: one compact panel per wrestler in the top
+    /// screen corners (empty backdrop space — never covers the ring), toggled
+    /// with Tab or the STATS chip. Stats aggregate over the WHOLE match (reset
+    /// on rematch), sampled only while a round is live:
+    ///   DOMINANCE — pairwise-normalized composite (territory/KD/shoves/balance)
+    ///   TERRITORY — % of time the fight's midpoint is on the opponent's half
+    ///   KD        — knockdowns dealt–suffered
+    ///   SHOVES    — big momentum transfers landed, plus the hardest one
+    ///   WORK      — average motor effort
+    ///   BALANCE / PUSH — time-averaged bars (push averaged only in contact)
+    /// UI Toolkit only.
     public class Systems_FightHud : MonoBehaviour
     {
         public Systems_GameMatchManager manager;
         public PanelSettings panelSettings;
         public bool startVisible = true;
-        [Tooltip("Static pedigree line per wrestler, e.g. '8.0M steps · ELO 1351'.")]
-        public string pedigreeA = "8.0M steps";
-        public string pedigreeB = "7.3M steps";
 
-        VisualElement _panelA, _panelB;
-        Label _spdA, _spdB, _leanA, _leanB, _edgeA, _edgeB, _timeA, _timeB, _statsA, _statsB;
-        VisualElement _balFillA, _balFillB, _pushFillA, _pushFillB;
-        Label _pushValA, _pushValB;
+        const float AVG_PUSH_MAX = 900f;    // bar scale for contact-averaged push
+        const float SHOVE_FORCE_N = 400f;   // momentum transfer that counts as a shove
+        const float SHOVE_COOLDOWN = 0.5f;  // seconds between countable shoves
+        const float TOUCH_DIST = 1.2f;      // torso distance treated as "in contact"
+        const float KD_REARM_SECONDS = 0.5f; // must stay up this long before next KD counts
+
+        static readonly Color PanelBg = new Color(0.04f, 0.04f, 0.06f, 0.8f);
+        static readonly Color LabelDim = new Color(0.62f, 0.6f, 0.56f);
+        static readonly Color ValueBright = new Color(0.96f, 0.95f, 0.92f);
+        static readonly Color BarBg = new Color(0.2f, 0.2f, 0.24f);
+
+        class PanelRefs
+        {
+            public Label dom, territory, kd, shoves, work, pushVal, footer;
+            public VisualElement root, balFill, pushFill;
+        }
+
+        /// Whole-match accumulators for one wrestler.
+        class Agg
+        {
+            public float sumSpd, sumLean, sumEdge, sumBal, sumWork, sumPush, bestPush;
+            public int territorySamples, touchSamples, shoves, kdDealt, kdSuffered;
+            public float nextShoveTime, upSince;
+            public bool downLatched;
+
+            public void Reset()
+            {
+                sumSpd = sumLean = sumEdge = sumBal = sumWork = sumPush = bestPush = 0f;
+                territorySamples = touchSamples = shoves = kdDealt = kdSuffered = 0;
+                nextShoveTime = 0f;
+                upSince = 0f;
+                downLatched = false;
+            }
+        }
+
+        PanelRefs _panelA, _panelB;
+        readonly Agg _aggA = new Agg();
+        readonly Agg _aggB = new Agg();
+        int _samples;
+        float _sumClash;
+        int _clashRounds;
+        bool _clashThisRound;
+
         bool _visible;
         Vector2 _prevVelA, _prevVelB;
-        float _pushDispA, _pushDispB;
-        const float PUSH_MAX = 2200f;
+        Agent_BipedBody _bodyA, _bodyB;
+
+        /// Live pairwise-normalized dominance (0-100, the pair sums to 100).
+        /// Consumed by Systems_FaceMood; updated even while the HUD is hidden.
+        public float DominanceA { get; private set; } = 50f;
+        public float DominanceB { get; private set; } = 50f;
 
         void Start()
         {
             if (manager == null) manager = FindAnyObjectByType<Systems_GameMatchManager>();
+            manager.MatchReset += ResetAggregates;
+            manager.RoundStarted += OnRoundStarted;
             _visible = startVisible;
             BuildUi();
         }
 
-        VisualElement MakePanel(bool left, Color accent, string name, string phys, string pedigree,
-            out Label spd, out Label lean, out Label edge, out VisualElement balFill,
-            out VisualElement pushFill, out Label pushVal, out Label time, out Label stats)
+        void OnDisable()
         {
+            if (manager != null)
+            {
+                manager.MatchReset -= ResetAggregates;
+                manager.RoundStarted -= OnRoundStarted;
+            }
+        }
+
+        void ResetAggregates()
+        {
+            _aggA.Reset();
+            _aggB.Reset();
+            _samples = 0;
+            _sumClash = 0f;
+            _clashRounds = 0;
+            _clashThisRound = false;
+        }
+
+        void OnRoundStarted() { _clashThisRound = false; }
+
+        static VisualElement Divider()
+        {
+            var d = new VisualElement();
+            d.style.height = 1;
+            d.style.backgroundColor = new Color(1f, 1f, 1f, 0.12f);
+            d.style.marginTop = 5;
+            d.style.marginBottom = 5;
+            return d;
+        }
+
+        static Label StatRow(VisualElement parent, string label, int valueSize)
+        {
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.justifyContent = Justify.SpaceBetween;
+            row.style.alignItems = Align.Center;
+            row.style.height = valueSize + 7;
+
+            var lbl = new Label(label);
+            lbl.style.fontSize = 11;
+            lbl.style.color = LabelDim;
+            row.Add(lbl);
+
+            var val = new Label("—");
+            val.style.fontSize = valueSize;
+            val.style.color = ValueBright;
+            val.style.unityFontStyleAndWeight = FontStyle.Bold;
+            val.style.unityTextAlign = TextAnchor.MiddleRight;
+            row.Add(val);
+
+            parent.Add(row);
+            return val;
+        }
+
+        static VisualElement BarRow(VisualElement parent, string label, Color fillColor, out Label valueLabel)
+        {
+            var caption = new VisualElement();
+            caption.style.flexDirection = FlexDirection.Row;
+            caption.style.justifyContent = Justify.SpaceBetween;
+            caption.style.marginTop = 3;
+
+            var lbl = new Label(label);
+            lbl.style.fontSize = 10;
+            lbl.style.color = LabelDim;
+            caption.Add(lbl);
+
+            valueLabel = new Label("");
+            valueLabel.style.fontSize = 10;
+            valueLabel.style.color = LabelDim;
+            caption.Add(valueLabel);
+            parent.Add(caption);
+
+            var bar = new VisualElement();
+            bar.style.height = 7;
+            bar.style.marginTop = 2;
+            bar.style.marginBottom = 2;
+            bar.style.backgroundColor = BarBg;
+            bar.style.borderTopLeftRadius = 2;
+            bar.style.borderTopRightRadius = 2;
+            bar.style.borderBottomLeftRadius = 2;
+            bar.style.borderBottomRightRadius = 2;
+
+            var fill = new VisualElement();
+            fill.style.height = Length.Percent(100);
+            fill.style.width = 0;
+            fill.style.backgroundColor = fillColor;
+            fill.style.borderTopLeftRadius = 2;
+            fill.style.borderBottomLeftRadius = 2;
+            bar.Add(fill);
+            parent.Add(bar);
+            return fill;
+        }
+
+        PanelRefs MakePanel(bool left, Color accent, string fighterName)
+        {
+            var refs = new PanelRefs();
             var p = new VisualElement();
+            refs.root = p;
             p.style.position = Position.Absolute;
-            p.style.bottom = Length.Percent(2.5f); // below the ring, clear of the wrestlers
-            if (left) p.style.left = 8; else p.style.right = 8;
+            p.style.top = 12;
+            if (left) p.style.left = 10; else p.style.right = 10;
             p.style.width = 172;
-            p.style.backgroundColor = new Color(0.05f, 0.05f, 0.07f, 0.72f);
+            p.style.backgroundColor = PanelBg;
             p.style.borderTopWidth = 3;
             p.style.borderTopColor = accent;
-            p.style.paddingLeft = 10; p.style.paddingRight = 10;
-            p.style.paddingTop = 6; p.style.paddingBottom = 8;
+            p.style.borderBottomLeftRadius = 8;
+            p.style.borderBottomRightRadius = 8;
+            p.style.paddingLeft = 12; p.style.paddingRight = 12;
+            p.style.paddingTop = 8; p.style.paddingBottom = 9;
 
-            Label L(string txt, int size, Color c, bool bold = false)
-            {
-                var l = new Label(txt);
-                l.style.fontSize = size;
-                l.style.color = c;
-                if (bold) l.style.unityFontStyleAndWeight = FontStyle.Bold;
-                l.style.marginTop = 1; l.style.marginBottom = 1;
-                p.Add(l);
-                return l;
-            }
+            var name = new Label(fighterName);
+            name.style.fontSize = 19;
+            name.style.color = accent;
+            name.style.unityFontStyleAndWeight = FontStyle.Bold;
+            name.style.marginBottom = 2;
+            p.Add(name);
 
-            var dim = new Color(0.75f, 0.73f, 0.68f);
-            var bright = new Color(0.95f, 0.94f, 0.9f);
+            refs.dom = StatRow(p, "DOMINANCE", 16);
+            p.Add(Divider());
+            refs.territory = StatRow(p, "TERRITORY", 12);
+            refs.kd = StatRow(p, "KNOCKDOWNS", 12);
+            refs.shoves = StatRow(p, "SHOVES · BEST", 12);
+            refs.work = StatRow(p, "WORK RATE", 12);
+            p.Add(Divider());
+            refs.balFill = BarRow(p, "BALANCE", new Color(0.35f, 0.75f, 0.4f), out _);
+            refs.pushFill = BarRow(p, "PUSH (in contact)", new Color(0.95f, 0.55f, 0.2f), out refs.pushVal);
 
-            L(name, 24, accent, true);
-            L(phys, 13, dim);
-            L(pedigree, 12, dim);
-            L("— TELEMETRY —", 11, accent);
-            spd = L("SPD  0.0 m/s", 14, bright);
-            lean = L("LEAN 0°", 14, bright);
-            edge = L("EDGE 0.0 m", 14, bright);
+            refs.footer = new Label("");
+            refs.footer.style.fontSize = 10;
+            refs.footer.style.color = LabelDim;
+            refs.footer.style.marginTop = 4;
+            p.Add(refs.footer);
 
-            L("BALANCE", 11, dim);
-            var balBar = new VisualElement();
-            balBar.style.height = 9;
-            balBar.style.backgroundColor = new Color(0.22f, 0.22f, 0.25f);
-            balFill = new VisualElement();
-            balFill.style.height = Length.Percent(100);
-            balFill.style.width = Length.Percent(100);
-            balFill.style.backgroundColor = new Color(0.35f, 0.75f, 0.4f);
-            balBar.Add(balFill);
-            p.Add(balBar);
-
-            L("PUSH", 11, dim);
-            var pushBar = new VisualElement();
-            pushBar.style.height = 9;
-            pushBar.style.backgroundColor = new Color(0.22f, 0.22f, 0.25f);
-            pushFill = new VisualElement();
-            pushFill.style.height = Length.Percent(100);
-            pushFill.style.width = 0;
-            pushFill.style.backgroundColor = new Color(0.95f, 0.55f, 0.2f);
-            pushBar.Add(pushFill);
-            p.Add(pushBar);
-            pushVal = L("0 N", 12, dim);
-
-            L("— MATCH —", 11, accent);
-            time = L("TIME 0.0s", 13, bright);
-            stats = L("", 12, dim);
-
-            return p;
+            return refs;
         }
 
         void BuildUi()
@@ -110,27 +228,21 @@ namespace PoSumo
             var root = doc.rootVisualElement;
             root.style.flexGrow = 1;
 
-            var a = manager.wrestlerA; var b = manager.wrestlerB;
-            string physA = a != null ? $"{a.GetComponent<Agent_BipedBody>().TotalMass:F0} kg · 1.76 m" : "";
-            string physB = b != null ? $"{b.GetComponent<Agent_BipedBody>().TotalMass:F0} kg · 1.76 m" : "";
+            _panelA = MakePanel(true, manager.colorA, manager.nameA);
+            _panelB = MakePanel(false, manager.colorB, manager.nameB);
+            root.Add(_panelA.root);
+            root.Add(_panelB.root);
 
-            _panelA = MakePanel(true, manager.colorA, manager.nameA, physA, pedigreeA,
-                out _spdA, out _leanA, out _edgeA, out _balFillA, out _pushFillA, out _pushValA, out _timeA, out _statsA);
-            _panelB = MakePanel(false, manager.colorB, manager.nameB, physB, pedigreeB,
-                out _spdB, out _leanB, out _edgeB, out _balFillB, out _pushFillB, out _pushValB, out _timeB, out _statsB);
-            root.Add(_panelA);
-            root.Add(_panelB);
-
-            // Touch-friendly toggle chip (mobile) — Tab still works too.
+            // Touch-friendly toggle chip, bottom-right corner — Tab works too.
             var toggle = new Button(() => { _visible = !_visible; ApplyVisibility(); }) { text = "STATS" };
             toggle.style.position = Position.Absolute;
-            toggle.style.top = 12;
+            toggle.style.bottom = 10;
             toggle.style.right = 10;
-            toggle.style.width = 84;
-            toggle.style.height = 40;
-            toggle.style.fontSize = 16;
+            toggle.style.width = 76;
+            toggle.style.height = 34;
+            toggle.style.fontSize = 14;
             toggle.style.unityFontStyleAndWeight = FontStyle.Bold;
-            toggle.style.color = new Color(0.92f, 0.9f, 0.84f);
+            toggle.style.color = ValueBright;
             toggle.style.backgroundColor = new Color(0.12f, 0.11f, 0.13f, 0.75f);
             toggle.style.borderTopLeftRadius = 8;
             toggle.style.borderTopRightRadius = 8;
@@ -144,8 +256,8 @@ namespace PoSumo
         void ApplyVisibility()
         {
             var d = _visible ? DisplayStyle.Flex : DisplayStyle.None;
-            if (_panelA != null) _panelA.style.display = d;
-            if (_panelB != null) _panelB.style.display = d;
+            if (_panelA != null) _panelA.root.style.display = d;
+            if (_panelB != null) _panelB.root.style.display = d;
         }
 
         bool TabPressed()
@@ -159,63 +271,146 @@ namespace PoSumo
 
         void FixedUpdate()
         {
-            // Push power estimate: opponent momentum change directed away from me.
             var a = manager != null ? manager.wrestlerA : null;
             var b = manager != null ? manager.wrestlerB : null;
             if (a == null || b == null) return;
-            float dt = Time.fixedDeltaTime;
+            if (_bodyA == null) _bodyA = a.GetComponent<Agent_BipedBody>();
+            if (_bodyB == null) _bodyB = b.GetComponent<Agent_BipedBody>();
 
             Vector2 velA = a.Torso.linearVelocity, velB = b.Torso.linearVelocity;
-            float mA = a.GetComponent<Agent_BipedBody>().TotalMass;
-            float mB = b.GetComponent<Agent_BipedBody>().TotalMass;
-            float dirAB = Mathf.Sign(b.TorsoX - a.TorsoX);
 
-            float pushA = Mathf.Max(0f, (velB.x - _prevVelB.x) * dirAB) * mB / dt;   // A shoving B away
-            float pushB = Mathf.Max(0f, (_prevVelA.x - velA.x) * dirAB) * mA / dt;   // B shoving A away
-            bool touching = Mathf.Abs(a.TorsoX - b.TorsoX) < 1.2f;
-            if (!touching) { pushA = 0f; pushB = 0f; }
-            _pushDispA = Mathf.Lerp(_pushDispA, pushA, 0.25f);
-            _pushDispB = Mathf.Lerp(_pushDispB, pushB, 0.25f);
+            if (manager.RoundActive)
+            {
+                float dt = Time.fixedDeltaTime;
+                float now = Time.time;
+                float cx = a.arenaCenterX;
+                bool touching = Mathf.Abs(a.TorsoX - b.TorsoX) < TOUCH_DIST;
+
+                // Momentum transfer directed away from the shover (N).
+                float dirAB = Mathf.Sign(b.TorsoX - a.TorsoX);
+                float pushA = Mathf.Max(0f, (velB.x - _prevVelB.x) * dirAB) * _bodyB.TotalMass / dt;
+                float pushB = Mathf.Max(0f, (_prevVelA.x - velA.x) * dirAB) * _bodyA.TotalMass / dt;
+
+                float midX = (a.TorsoX + b.TorsoX) * 0.5f;
+                SampleFighter(_aggA, a, _bodyA, velA, cx, midX, touching, pushA, now);
+                SampleFighter(_aggB, b, _bodyB, velB, cx, midX, touching, pushB, now);
+
+                // Knockdown attribution: your fall is their KD dealt.
+                TrackKnockdown(_aggA, _aggB, a.IsDown, now);
+                TrackKnockdown(_aggB, _aggA, b.IsDown, now);
+
+                if (!_clashThisRound && touching)
+                {
+                    _clashThisRound = true;
+                    _sumClash += manager.RoundElapsed;
+                    _clashRounds++;
+                }
+                _samples++;
+            }
+
             _prevVelA = velA; _prevVelB = velB;
+        }
+
+        void SampleFighter(Agg agg, Agent_Biped w, Agent_BipedBody body, Vector2 vel,
+                           float centerX, float midX, bool touching, float push, float now)
+        {
+            agg.sumSpd += vel.magnitude;
+            agg.sumLean += Mathf.Abs(Vector2.SignedAngle(Vector2.up, body.Chest.transform.up));
+            agg.sumEdge += Mathf.Max(0f, w.ringHalfWidth - Mathf.Abs(w.TorsoX - w.arenaCenterX));
+            agg.sumBal += Mathf.Clamp01(Vector2.Dot(body.Chest.transform.up, Vector2.up));
+
+            float work = 0f;
+            for (int j = 0; j < Agent_Biped.ActionCount; j++) work += Mathf.Abs(w.LastActions[j]);
+            agg.sumWork += work / Agent_Biped.ActionCount;
+
+            // Field position: the fight's midpoint sits on the opponent's half
+            // (which lies in this wrestler's facing direction).
+            if ((midX - centerX) * body.facingSign > 0f) agg.territorySamples++;
+
+            if (touching)
+            {
+                agg.sumPush += push;
+                agg.touchSamples++;
+                agg.bestPush = Mathf.Max(agg.bestPush, push);
+                if (push > SHOVE_FORCE_N && now >= agg.nextShoveTime)
+                {
+                    agg.shoves++;
+                    agg.nextShoveTime = now + SHOVE_COOLDOWN;
+                }
+            }
+        }
+
+        void TrackKnockdown(Agg faller, Agg opponent, bool isDown, float now)
+        {
+            if (isDown)
+            {
+                if (!faller.downLatched && now - faller.upSince >= 0f)
+                {
+                    faller.downLatched = true;
+                    faller.kdSuffered++;
+                    opponent.kdDealt++;
+                }
+                faller.upSince = now + KD_REARM_SECONDS; // must stay up this long to re-arm
+            }
+            else if (faller.downLatched && now >= faller.upSince)
+            {
+                faller.downLatched = false;
+            }
+        }
+
+        /// Unnormalized dominance blend; both fighters' values are scaled to
+        /// sum to 100 at display time.
+        static float RawDominance(Agg self, Agg other, int samples)
+        {
+            float n = Mathf.Max(1, samples);
+            float territory = self.territorySamples / n;
+            float balance = self.sumBal / n;
+            float kdShare = (self.kdDealt + 1f) / (self.kdDealt + self.kdSuffered + 2f);
+            float shoveShare = (self.shoves + 1f) / (self.shoves + other.shoves + 2f);
+            return 0.35f * territory + 0.30f * kdShare + 0.20f * shoveShare + 0.15f * balance;
         }
 
         void Update()
         {
             if (TabPressed()) { _visible = !_visible; ApplyVisibility(); }
-            if (!_visible || manager == null || manager.wrestlerA == null) return;
+            if (manager == null || manager.wrestlerA == null) return;
 
-            UpdatePanel(manager.wrestlerA, manager.ScoreA, manager.MatchWinsA, _pushDispA,
-                        _spdA, _leanA, _edgeA, _balFillA, _pushFillA, _pushValA, _timeA, _statsA);
-            UpdatePanel(manager.wrestlerB, manager.ScoreB, manager.MatchWinsB, _pushDispB,
-                        _spdB, _leanB, _edgeB, _balFillB, _pushFillB, _pushValB, _timeB, _statsB);
+            float domA = RawDominance(_aggA, _aggB, _samples);
+            float domB = RawDominance(_aggB, _aggA, _samples);
+            float domTotal = Mathf.Max(0.0001f, domA + domB);
+            DominanceA = domA / domTotal * 100f;
+            DominanceB = domB / domTotal * 100f;
+
+            if (!_visible || _panelA == null) return;
+            UpdatePanel(_panelA, _aggA, manager.MatchWinsA, DominanceA);
+            UpdatePanel(_panelB, _aggB, manager.MatchWinsB, DominanceB);
         }
 
-        void UpdatePanel(Agent_Biped w, int score, int matchWins, float push,
-            Label spd, Label lean, Label edge, VisualElement balFill,
-            VisualElement pushFill, Label pushVal, Label time, Label stats)
+        void UpdatePanel(PanelRefs p, Agg agg, int matchWins, float dominance)
         {
-            var body = w.GetComponent<Agent_BipedBody>();
-            float speed = w.Torso.linearVelocity.magnitude;
-            float leanDeg = Vector2.SignedAngle(Vector2.up, body.Chest.transform.up);
-            float edgeDist = Mathf.Max(0f, w.ringHalfWidth - Mathf.Abs(w.TorsoX - w.arenaCenterX));
-            float balance = Mathf.Clamp01(Vector2.Dot(body.Chest.transform.up, Vector2.up));
+            float n = Mathf.Max(1, _samples);
 
-            spd.text = $"SPD  {speed:F1} m/s";
-            lean.text = $"LEAN {Mathf.Abs(leanDeg):F0}°";
-            edge.text = $"EDGE {edgeDist:F1} m";
-            edge.style.color = edgeDist < 0.5f ? new Color(1f, 0.4f, 0.3f) : new Color(0.95f, 0.94f, 0.9f);
+            p.dom.text = $"{dominance:F0}";
+            p.dom.style.color = dominance >= 55f
+                ? new Color(0.55f, 0.9f, 0.5f)
+                : dominance <= 45f ? new Color(0.95f, 0.5f, 0.4f) : ValueBright;
 
-            balFill.style.width = Length.Percent(balance * 100f);
-            balFill.style.backgroundColor = balance > 0.7f
+            p.territory.text = $"{agg.territorySamples / n * 100f:F0}%";
+            p.kd.text = $"{agg.kdDealt}–{agg.kdSuffered}";
+            p.shoves.text = agg.shoves > 0 ? $"{agg.shoves} · {agg.bestPush:F0}N" : "0";
+            p.work.text = $"{agg.sumWork / n * 100f:F0}%";
+
+            float avgBal = agg.sumBal / n;
+            p.balFill.style.width = Length.Percent(avgBal * 100f);
+            p.balFill.style.backgroundColor = avgBal > 0.7f
                 ? new Color(0.35f, 0.75f, 0.4f)
-                : balance > 0.4f ? new Color(0.9f, 0.75f, 0.25f) : new Color(0.9f, 0.35f, 0.25f);
+                : avgBal > 0.4f ? new Color(0.9f, 0.75f, 0.25f) : new Color(0.9f, 0.35f, 0.25f);
 
-            float pushN = Mathf.Clamp(push, 0f, PUSH_MAX);
-            pushFill.style.width = Length.Percent(pushN / PUSH_MAX * 100f);
-            pushVal.text = $"{pushN:F0} N";
+            float avgPush = Mathf.Clamp(agg.sumPush / Mathf.Max(1, agg.touchSamples), 0f, AVG_PUSH_MAX);
+            p.pushFill.style.width = Length.Percent(avgPush / AVG_PUSH_MAX * 100f);
+            p.pushVal.text = $"{avgPush:F0} N";
 
-            time.text = manager.RoundActive ? $"TIME {manager.RoundElapsed:F1}s" : "TIME —";
-            stats.text = $"ROUNDS {score}  ·  MATCHES {matchWins}\nLONGEST {manager.LongestRound:F0}s";
+            p.footer.text = $"MATCHES {matchWins} · LONGEST RD {manager.LongestRound:F0}s";
         }
     }
 }
