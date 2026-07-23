@@ -37,3 +37,7 @@ Thumbs.db
 # ML-Agents auto-generated profiling timers (regenerated every play/run)
 /Assets/ML-Agents/Timers/
 /Assets/ML-Agents/Timers.meta
+
+# Editor crash-recovery scene backups
+/Assets/_Recovery/
+/Assets/_Recovery.meta
