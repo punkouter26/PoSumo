@@ -299,7 +299,7 @@ MonoBehaviour:
   hasUpgradedFromAgentParameters: 1
   MaxStep: 0
   character: {fileID: 0}
-  mode: 2
+  mode: 0
   teamId: 0
   opponent: {fileID: 0}
   ringHalfWidth: 10
@@ -308,7 +308,7 @@ MonoBehaviour:
   decisionPeriod: 3
   inferenceOnly: 1
   recoverShoveChance: 0
-  inferenceModel: {fileID: 5022602860645237092, guid: bf05610b661fb6b479a493cc0810b4c1, type: 3}
+  inferenceModel: {fileID: 5022602860645237092, guid: 95275fda98386c84b8cbb3bb41334205, type: 3}
   NonFootGroundContacts: 0
   actionsEnabled: 1
   behaviorName: Matt
@@ -357,7 +357,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Agent_BipedBody
   character: {fileID: 0}
   facingSign: 1
-  teamColor: {r: 0.2, g: 0.5, b: 0.3, a: 1}
+  teamColor: {r: 0.85, g: 0.25, b: 0.2, a: 1}
   massScale: 1
   widthScale: 1
   torqueScale: 1

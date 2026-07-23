@@ -18,8 +18,8 @@ MonoBehaviour:
   massScale: 1
   widthScale: 1
   torqueScale: 1
-  extendedObservations: 0
-  decisionPeriod: 5
+  extendedObservations: 1
+  decisionPeriod: 3
   inferenceModel: {fileID: 5022602860645237092, guid: 8f76568562941a345ae69c088f1518bf, type: 3}
   uprightReward: 0.0005
   closingReward: 0.0006
