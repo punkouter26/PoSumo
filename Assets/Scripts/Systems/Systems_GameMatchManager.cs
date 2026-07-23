@@ -20,7 +20,7 @@ namespace PoSumo
         public Agent_Biped wrestlerA;           // teamId 0
         public Agent_Biped wrestlerB;           // teamId 1
         public string nameA = "MATT";
-        public string nameB = "DAVE";
+        public string nameB = "STANDARD";
         public Color colorA = new Color(0.85f, 0.25f, 0.2f);
         public Color colorB = new Color(0.2f, 0.5f, 0.3f);
         public int pointsToWin = 3;

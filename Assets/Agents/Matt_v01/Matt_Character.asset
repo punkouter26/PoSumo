@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 501a6b866812e4d4a82886b13f0d0814, type: 3}
+  m_Name: Matt_Character
+  m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Agent_CharacterDefinition
+  behaviorName: Matt
+  teamColor: {r: 0.85, g: 0.25, b: 0.2, a: 1}
+  headSprite: {fileID: -7686771571381700282, guid: 95006877e9fe8ff44b732eaf725260ae, type: 3}
+  massScale: 1
+  widthScale: 1
+  torqueScale: 1
+  extendedObservations: 0
+  decisionPeriod: 5
+  inferenceModel: {fileID: 5022602860645237092, guid: 239f499b7abb2934f8d71d52682b5f23, type: 3}
+  uprightReward: 0.0005
+  closingReward: 0.0009
+  lungeBonus: 0.0016
+  lungeThreshold: 1.2
+  impactReward: 0.015
+  impactCap: 8
+  kneeBendReward: 0.0004
+  hipsLowReward: 0.0003
+  cadenceReward: 0.0015
+  riseReward: 0.02
+  energyPenalty: 0.0003
+  jerkPenalty: 0.0003
+  straightLegEarnFraction: 0.3

@@ -12,6 +12,9 @@ namespace PoSumo
     /// their own body) but still collide with the ground and the opponent.
     public class Agent_BipedBody : MonoBehaviour
     {
+        [Tooltip("Character sheet; when set, overrides teamColor/headSprite/body scales at Awake.")]
+        public Agent_CharacterDefinition character;
+
         public int facingSign = 1;
         public Color teamColor = new Color(0.85f, 0.25f, 0.2f);
 
@@ -102,7 +105,18 @@ namespace PoSumo
             new JointDef(13,12, 0f, 1.13f,    0f, 150f, 100f, 500f), // elbow far
         };
 
-        void Awake() { Build(); }
+        void Awake()
+        {
+            if (character != null)
+            {
+                teamColor = character.teamColor;
+                headSprite = character.headSprite;
+                massScale = character.massScale;
+                widthScale = character.widthScale;
+                torqueScale = character.torqueScale;
+            }
+            Build();
+        }
 
         public static Sprite BoxSprite()
         {

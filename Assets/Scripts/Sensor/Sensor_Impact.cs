@@ -14,9 +14,18 @@ namespace PoSumo
         [System.NonSerialized] public Agent_BipedBody owner;
         [System.NonSerialized] public bool isFoot;
 
+        Agent_Biped _ownerAgent;
+
         void OnCollisionEnter2D(Collision2D c)
         {
             AnyImpact?.Invoke(this, c);
+
+            // Opponent contact feeds the impact reward (momentum delivered).
+            if (owner == null) return;
+            var otherBody = c.collider.GetComponentInParent<Agent_BipedBody>();
+            if (otherBody == null || otherBody == owner) return;
+            if (_ownerAgent == null) _ownerAgent = owner.GetComponent<Agent_Biped>();
+            if (_ownerAgent != null) _ownerAgent.ReportOpponentImpact(c.relativeVelocity.magnitude);
         }
     }
 }

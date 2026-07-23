@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace PoSumo
 {
-    /// Static roster for the planned 8-fighter tournament. Matt and Dave have
+    /// Static roster for the planned 8-fighter tournament. Matt and Standard have
     /// trained policies; the other six are placeholders awaiting training
     /// (folders under Assets/Agents/<Folder>/ hold their manifests). When a
     /// fighter gets a model, copy the checkpoint to
@@ -31,7 +31,7 @@ namespace PoSumo
         public static readonly FighterDef[] Fighters =
         {
             new FighterDef("MATT",     "Matt",     "Matt_v01",     new Color(0.85f, 0.25f, 0.2f),  true),
-            new FighterDef("DAVE",     "Dave",     "Dave_v01",     new Color(0.2f,  0.5f,  0.3f),  true),
+            new FighterDef("STANDARD", "Standard", "Standard_v01", new Color(0.2f,  0.5f,  0.3f),  true),
             new FighterDef("NICK",     "Nick",     "Nick_v01",     new Color(0.25f, 0.4f,  0.75f), false),
             new FighterDef("MAYA",     "Maya",     "Maya_v01",     new Color(0.55f, 0.3f,  0.65f), false),
             new FighterDef("TONGTONG", "TongTong", "TongTong_v01", new Color(0.85f, 0.65f, 0.2f),  false),

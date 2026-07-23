@@ -3026,7 +3026,7 @@ GameObject:
   - component: {fileID: 417591335}
   - component: {fileID: 417591334}
   m_Layer: 0
-  m_Name: Dave
+  m_Name: Standard
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -3063,15 +3063,19 @@ MonoBehaviour:
     maxStep: 0
   hasUpgradedFromAgentParameters: 1
   MaxStep: 0
+  character: {fileID: 11400000, guid: 91b65372f7078aa4b8bb28a92751993f, type: 2}
   mode: 1
   teamId: 1
   opponent: {fileID: 0}
   ringHalfWidth: 7
   arenaCenterX: 0
+  extendedObservations: 0
+  decisionPeriod: 5
+  inferenceOnly: 0
   inferenceModel: {fileID: 5022602860645237092, guid: 8f76568562941a345ae69c088f1518bf, type: 3}
   NonFootGroundContacts: 0
   actionsEnabled: 1
-  behaviorName: Dave
+  behaviorName: Standard
 --- !u!114 &417591335
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3115,6 +3119,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b24980fb881ebcf418846e3d7a13dde8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Agent_BipedBody
+  character: {fileID: 11400000, guid: 91b65372f7078aa4b8bb28a92751993f, type: 2}
   facingSign: -1
   teamColor: {r: 0.2, g: 0.5, b: 0.3, a: 1}
   massScale: 2
@@ -11244,11 +11249,15 @@ MonoBehaviour:
     maxStep: 0
   hasUpgradedFromAgentParameters: 1
   MaxStep: 0
+  character: {fileID: 11400000, guid: b89138aaf741e7d4692d1d40e34b26d4, type: 2}
   mode: 1
   teamId: 0
   opponent: {fileID: 0}
   ringHalfWidth: 7
   arenaCenterX: 0
+  extendedObservations: 0
+  decisionPeriod: 5
+  inferenceOnly: 0
   inferenceModel: {fileID: 5022602860645237092, guid: 239f499b7abb2934f8d71d52682b5f23, type: 3}
   NonFootGroundContacts: 0
   actionsEnabled: 1
@@ -11296,6 +11305,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b24980fb881ebcf418846e3d7a13dde8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Agent_BipedBody
+  character: {fileID: 11400000, guid: b89138aaf741e7d4692d1d40e34b26d4, type: 2}
   facingSign: 1
   teamColor: {r: 0.85, g: 0.25, b: 0.2, a: 1}
   massScale: 1
@@ -15311,7 +15321,7 @@ MonoBehaviour:
   wrestlerA: {fileID: 0}
   wrestlerB: {fileID: 0}
   nameA: MATT
-  nameB: DAVE
+  nameB: STANDARD
   colorA: {r: 0.85, g: 0.25, b: 0.2, a: 1}
   colorB: {r: 0.2, g: 0.5, b: 0.3, a: 1}
   pointsToWin: 3

@@ -126,6 +126,17 @@ namespace PoSumo
             return new PhysicsMaterial2D(name) { friction = friction, bounciness = bounciness };
         }
 
+        /// Training-env only (runtime-built arenas): mutates the platform's
+        /// physics material friction for domain randomization. Never call on a
+        /// baked scene — there the material is a shared asset.
+        public void SetSurfaceFriction(float friction)
+        {
+            surfaceFriction = friction;
+            if (_platform == null) return;
+            var col = _platform.GetComponent<BoxCollider2D>();
+            if (col != null && col.sharedMaterial != null) col.sharedMaterial.friction = friction;
+        }
+
         static Sprite Box() => SourceSprite("Box", 4f, false, new Vector2(0.5f, 0.5f), () =>
         {
             var tex = new Texture2D(4, 4, TextureFormat.RGBA32, false);

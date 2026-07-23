@@ -1,0 +1,134 @@
+[INFO] Connected to Unity environment with package version 4.0.0 and communication version 1.5.0
+[INFO] Connected to Unity environment with package version 4.0.0 and communication version 1.5.0
+[INFO] Connected new brain: Matt?team=0
+[INFO] Connected new brain: Matt?team=0
+
+
+	Unity Technologies
+
+ Version information:
+  ml-agents: 1.2.0.dev0,
+  ml-agents-envs: 1.2.0.dev0,
+  Communicator API: 1.5.0,
+  PyTorch: 2.5.1+cpu
+[INFO] Hyperparameters for behavior name Matt: 
+	trainer_type:	ppo
+	hyperparameters:	
+	  batch_size:	2048
+	  buffer_size:	20480
+	  learning_rate:	0.0003
+	  beta:	0.01
+	  epsilon:	0.2
+	  lambd:	0.95
+	  num_epoch:	3
+	  shared_critic:	False
+	  learning_rate_schedule:	linear
+	  beta_schedule:	linear
+	  epsilon_schedule:	linear
+	checkpoint_interval:	200000
+	network_settings:	
+	  normalize:	True
+	  hidden_units:	512
+	  num_layers:	3
+	  vis_encode_type:	simple
+	  memory:	None
+	  goal_conditioning_type:	hyper
+	  deterministic:	False
+	reward_signals:	
+	  extrinsic:	
+	    gamma:	0.995
+	    strength:	1.0
+	    network_settings:	
+	      normalize:	False
+	      hidden_units:	128
+	      num_layers:	2
+	      vis_encode_type:	simple
+	      memory:	None
+	      goal_conditioning_type:	hyper
+	      deterministic:	False
+	init_path:	Training/results\matt_recover01\Matt\checkpoint.pt
+	keep_checkpoints:	10
+	even_checkpoints:	False
+	max_steps:	8000000
+	time_horizon:	1000
+	summary_freq:	30000
+	threaded:	True
+	self_play:	None
+	behavioral_cloning:	None
+[INFO] Initializing from Training/results\matt_recover01\Matt\checkpoint.pt.
+[INFO] Starting training from step 0 and saving to Training/results\matt_recover04\Matt.
+[INFO] Matt. Step: 30000. Time Elapsed: 81.017 s. Mean Reward: -15.853. Std of Reward: 70.399. Training.
+[INFO] Matt. Step: 60000. Time Elapsed: 125.009 s. Mean Reward: -18.717. Std of Reward: 70.072. Training.
+[INFO] Matt. Step: 90000. Time Elapsed: 175.507 s. Mean Reward: -25.812. Std of Reward: 81.559. Training.
+[INFO] Matt. Step: 120000. Time Elapsed: 221.318 s. Mean Reward: -10.047. Std of Reward: 58.155. Training.
+[INFO] Matt. Step: 150000. Time Elapsed: 267.580 s. Mean Reward: -20.697. Std of Reward: 79.367. Training.
+[INFO] Matt. Step: 180000. Time Elapsed: 303.072 s. Mean Reward: -18.326. Std of Reward: 72.135. Training.
+[INFO] Exported Training/results\matt_recover04\Matt\Matt-199980.onnx
+[INFO] Matt. Step: 210000. Time Elapsed: 345.661 s. Mean Reward: -16.630. Std of Reward: 72.133. Training.
+[INFO] Matt. Step: 240000. Time Elapsed: 379.990 s. Mean Reward: -16.179. Std of Reward: 72.136. Training.
+[INFO] Matt. Step: 270000. Time Elapsed: 425.069 s. Mean Reward: -18.362. Std of Reward: 74.709. Training.
+[INFO] Matt. Step: 300000. Time Elapsed: 454.392 s. Mean Reward: -21.034. Std of Reward: 76.632. Training.
+[INFO] Matt. Step: 330000. Time Elapsed: 486.838 s. Mean Reward: -20.368. Std of Reward: 76.668. Training.
+[INFO] Matt. Step: 360000. Time Elapsed: 529.189 s. Mean Reward: -17.225. Std of Reward: 72.588. Training.
+[INFO] Matt. Step: 390000. Time Elapsed: 564.099 s. Mean Reward: -12.124. Std of Reward: 61.539. Training.
+[INFO] Exported Training/results\matt_recover04\Matt\Matt-399960.onnx
+[INFO] Matt. Step: 420000. Time Elapsed: 602.962 s. Mean Reward: -21.467. Std of Reward: 79.384. Training.
+[INFO] Matt. Step: 450000. Time Elapsed: 638.426 s. Mean Reward: -18.418. Std of Reward: 70.615. Training.
+[INFO] Matt. Step: 480000. Time Elapsed: 681.917 s. Mean Reward: -17.255. Std of Reward: 71.971. Training.
+[INFO] Matt. Step: 510000. Time Elapsed: 712.956 s. Mean Reward: -18.247. Std of Reward: 72.503. Training.
+[INFO] Matt. Step: 540000. Time Elapsed: 758.523 s. Mean Reward: -19.854. Std of Reward: 75.934. Training.
+[INFO] Matt. Step: 570000. Time Elapsed: 787.598 s. Mean Reward: -20.638. Std of Reward: 76.478. Training.
+[INFO] Matt. Step: 600000. Time Elapsed: 822.013 s. Mean Reward: -16.775. Std of Reward: 71.893. Training.
+[INFO] Exported Training/results\matt_recover04\Matt\Matt-599850.onnx
+[INFO] Matt. Step: 630000. Time Elapsed: 863.192 s. Mean Reward: -17.055. Std of Reward: 69.176. Training.
+[INFO] Matt. Step: 660000. Time Elapsed: 896.964 s. Mean Reward: -26.217. Std of Reward: 82.757. Training.
+[INFO] Matt. Step: 690000. Time Elapsed: 938.645 s. Mean Reward: -22.012. Std of Reward: 79.555. Training.
+[INFO] Matt. Step: 720000. Time Elapsed: 971.312 s. Mean Reward: -24.636. Std of Reward: 80.717. Training.
+[INFO] Matt. Step: 750000. Time Elapsed: 1016.222 s. Mean Reward: -18.821. Std of Reward: 70.501. Training.
+[INFO] Matt. Step: 780000. Time Elapsed: 1047.315 s. Mean Reward: -11.215. Std of Reward: 59.080. Training.
+[INFO] Exported Training/results\matt_recover04\Matt\Matt-799982.onnx
+[INFO] Matt. Step: 810000. Time Elapsed: 1081.688 s. Mean Reward: -14.513. Std of Reward: 65.709. Training.
+[INFO] Matt. Step: 840000. Time Elapsed: 1122.327 s. Mean Reward: -12.327. Std of Reward: 58.945. Training.
+[INFO] Matt. Step: 870000. Time Elapsed: 1154.740 s. Mean Reward: -40.467. Std of Reward: 101.571. Training.
+[INFO] Matt. Step: 900000. Time Elapsed: 1196.886 s. Mean Reward: -16.535. Std of Reward: 69.293. Training.
+[INFO] Matt. Step: 930000. Time Elapsed: 1230.928 s. Mean Reward: -29.147. Std of Reward: 87.117. Training.
+[INFO] Matt. Step: 960000. Time Elapsed: 1270.399 s. Mean Reward: -32.009. Std of Reward: 88.788. Training.
+[INFO] Matt. Step: 990000. Time Elapsed: 1305.004 s. Mean Reward: -23.086. Std of Reward: 79.808. Training.
+[INFO] Exported Training/results\matt_recover04\Matt\Matt-999863.onnx
+[INFO] Matt. Step: 1020000. Time Elapsed: 1346.360 s. Mean Reward: -19.049. Std of Reward: 73.088. Training.
+[INFO] Matt. Step: 1050000. Time Elapsed: 1378.134 s. Mean Reward: -23.939. Std of Reward: 81.505. Training.
+[INFO] Matt. Step: 1080000. Time Elapsed: 1410.875 s. Mean Reward: -12.650. Std of Reward: 56.236. Training.
+[INFO] Matt. Step: 1110000. Time Elapsed: 1448.620 s. Mean Reward: -16.233. Std of Reward: 65.591. Training.
+[INFO] Matt. Step: 1140000. Time Elapsed: 1484.527 s. Mean Reward: -29.855. Std of Reward: 86.641. Training.
+[ERROR] UnityEnvironment worker 1: environment raised an unexpected exception.
+Traceback (most recent call last):
+  File "C:\Users\punko\AppData\Local\Programs\Python\Python310\lib\multiprocessing\connection.py", line 312, in _recv_bytes
+    nread, err = ov.GetOverlappedResult(True)
+BrokenPipeError: [WinError 109] The pipe has been ended
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\punko\Downloads\PoSumo\Training\venv\lib\site-packages\mlagents\trainers\subprocess_env_manager.py", line 175, in worker
+    req: EnvironmentRequest = parent_conn.recv()
+  File "C:\Users\punko\AppData\Local\Programs\Python\Python310\lib\multiprocessing\connection.py", line 250, in recv
+    buf = self._recv_bytes()
+  File "C:\Users\punko\AppData\Local\Programs\Python\Python310\lib\multiprocessing\connection.py", line 321, in _recv_bytes
+    raise EOFError
+EOFError
+[ERROR] UnityEnvironment worker 0: environment raised an unexpected exception.
+Traceback (most recent call last):
+  File "C:\Users\punko\AppData\Local\Programs\Python\Python310\lib\multiprocessing\connection.py", line 312, in _recv_bytes
+    nread, err = ov.GetOverlappedResult(True)
+BrokenPipeError: [WinError 109] The pipe has been ended
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\punko\Downloads\PoSumo\Training\venv\lib\site-packages\mlagents\trainers\subprocess_env_manager.py", line 175, in worker
+    req: EnvironmentRequest = parent_conn.recv()
+  File "C:\Users\punko\AppData\Local\Programs\Python\Python310\lib\multiprocessing\connection.py", line 250, in recv
+    buf = self._recv_bytes()
+  File "C:\Users\punko\AppData\Local\Programs\Python\Python310\lib\multiprocessing\connection.py", line 321, in _recv_bytes
+    raise EOFError
+EOFError

@@ -6,20 +6,38 @@ using UnityEngine;
 
 namespace PoSumo
 {
-    /// ML-Agents brain for one sumo biped. One shared behavior ("Matt")
-    /// serves both training phases; observations are mirrored by facing sign so
-    /// a single policy works facing left or right. All observations are
+    /// ML-Agents brain for one sumo biped. Observations are mirrored by facing
+    /// sign so a single policy works facing left or right. All observations are
     /// sanitized against NaN/Inf before submission.
+    ///
+    /// Two brain generations coexist:
+    ///  - legacy (41 obs, decision period 5) — the Standard fighter's shipped policy;
+    ///  - extended (44 obs: +opponent uprightness/down/edge, period 3) — Matt's
+    ///    technique brain, trained with the stance/gait/impact shaping below.
     [RequireComponent(typeof(Agent_BipedBody))]
     public class Agent_Biped : Agent
     {
-        public enum Mode { Walk, Sumo }
+        public enum Mode { Walk, Sumo, Recover }
+
+        [Tooltip("Character sheet; when set, overrides behavior name, brain generation, and reward shaping at Awake.")]
+        public Agent_CharacterDefinition character;
 
         public Mode mode = Mode.Walk;
         public int teamId;
-        public Agent_Biped opponent;         // null in Walk mode
+        public Agent_Biped opponent;         // null in Walk/Recover mode
         public float ringHalfWidth = 7f;
         public float arenaCenterX = 0f;
+
+        [Tooltip("Adds 3 opponent-state observations (uprightness, down flag, edge distance). Must match the assigned model's input size.")]
+        public bool extendedObservations = false;
+        [Tooltip("ML-Agents DecisionRequester period. Legacy brains trained at 5; the extended Matt brain at 3.")]
+        public int decisionPeriod = 5;
+
+        [Tooltip("Sparring dummy: run the assigned model locally and never contact a connected trainer.")]
+        public bool inferenceOnly = false;
+
+        [Tooltip("Recover mode: chance an episode starts with a knockdown shove. 0 for pure walking demos.")]
+        [Range(0f, 1f)] public float recoverShoveChance = 0.7f;
 
         [Tooltip("Optional trained model for in-editor inference playback (no Python needed).")]
         public Unity.InferenceEngine.ModelAsset inferenceModel;
@@ -39,16 +57,50 @@ namespace PoSumo
         [System.NonSerialized] public float[] LastActions = new float[ActionCount];
 
         Agent_BipedBody _b;
+        Agent_BipedBody _opponentBody;
+        readonly float[] _prevActions = new float[ActionCount];
+        float _pendingImpact;
+        float _lastTorsoY;
+        int _lastSinglePlant;
+        float _lastStepTime;
+
+        // Sumo reward coefficients — defaults here; overridden by `character`.
+        float _rUpright = 0.0005f, _rClosing = 0.0006f, _rLunge = 0.001f, _lungeThresh = 1.5f;
+        float _rImpact = 0.01f, _impactCap = 8f, _rKnee = 0.0004f, _rHips = 0.0003f;
+        float _rCadence = 0.0015f, _rRise = 0.02f, _pEnergy = 0.0004f, _pJerk = 0.0003f;
+        float _bendFloor = 0.3f;
 
         protected override void Awake()
         {
             _b = GetComponent<Agent_BipedBody>();
 
+            if (character != null)
+            {
+                behaviorName = character.behaviorName;
+                extendedObservations = character.extendedObservations;
+                decisionPeriod = character.decisionPeriod;
+                if (inferenceModel == null) inferenceModel = character.inferenceModel;
+                _rUpright = character.uprightReward;
+                _rClosing = character.closingReward;
+                _rLunge = character.lungeBonus;
+                _lungeThresh = character.lungeThreshold;
+                _rImpact = character.impactReward;
+                _impactCap = character.impactCap;
+                _rKnee = character.kneeBendReward;
+                _rHips = character.hipsLowReward;
+                _rCadence = character.cadenceReward;
+                _rRise = character.riseReward;
+                _pEnergy = character.energyPenalty;
+                _pJerk = character.jerkPenalty;
+                _bendFloor = character.straightLegEarnFraction;
+            }
+
             var bp = GetComponent<BehaviorParameters>();
             if (bp == null) bp = gameObject.AddComponent<BehaviorParameters>();
             bp.BehaviorName = behaviorName;
             bp.TeamId = teamId;
-            bp.BrainParameters.VectorObservationSize = ObservationCount;
+            bp.BrainParameters.VectorObservationSize =
+                ObservationCount + (extendedObservations ? 3 : 0);
             bp.BrainParameters.NumStackedVectorObservations = 1;
             bp.BrainParameters.ActionSpec = ActionSpec.MakeContinuous(ActionCount);
 
@@ -57,15 +109,16 @@ namespace PoSumo
                 bp.Model = inferenceModel;
                 bp.InferenceDevice = Unity.MLAgents.Policies.InferenceDevice.Burst;
             }
+            if (inferenceOnly) bp.BehaviorType = BehaviorType.InferenceOnly;
 
             if (GetComponent<DecisionRequester>() == null)
             {
                 var dr = gameObject.AddComponent<DecisionRequester>();
-                dr.DecisionPeriod = 5;
+                dr.DecisionPeriod = Mathf.Clamp(decisionPeriod, 1, 20);
                 dr.TakeActionsBetweenDecisions = true;
             }
 
-            MaxStep = mode == Mode.Walk ? 1500 : 0; // sumo rounds are ended by the match manager
+            MaxStep = mode == Mode.Walk ? 1500 : mode == Mode.Recover ? 2000 : 0;
 
             base.Awake();
         }
@@ -75,12 +128,38 @@ namespace PoSumo
             _b.ResetPose();
             foreach (var c in GetComponentsInChildren<Sensor_BodyPartContact>()) c.Clear();
             NonFootGroundContacts = 0;
+            _pendingImpact = 0f;
+            _lastTorsoY = _b.Torso.position.y;
+            _lastSinglePlant = 0;
+            _lastStepTime = 0f;
+            for (int j = 0; j < ActionCount; j++) _prevActions[j] = 0f;
+
+            // Recovery school: episodes may start with a knockdown shove. The
+            // trainer's curriculum ramps the chance — gentle standing starts
+            // while walking is being learned, shoves once it's mastered.
+            if (mode == Mode.Recover && Academy.IsInitialized)
+            {
+                recoverShoveChance = Academy.Instance.EnvironmentParameters
+                    .GetWithDefault("shove_chance", recoverShoveChance);
+            }
+            if (mode == Mode.Recover && Random.value < recoverShoveChance)
+            {
+                var dir = new Vector2(Random.Range(-1f, 1f), Random.Range(-0.3f, 0.5f)).normalized;
+                _b.Chest.AddForce(dir * Random.Range(25f, 70f), ForceMode2D.Impulse);
+                _b.Chest.AddTorque(Random.Range(-25f, 25f), ForceMode2D.Impulse);
+            }
         }
 
         float Fs => _b.facingSign;
         public Rigidbody2D Torso => _b.Torso;
         public float TorsoX => Torso.position.x;
         public bool IsDown => NonFootGroundContacts > 0;
+
+        /// Called by Sensor_Impact when a body part hits the opponent.
+        public void ReportOpponentImpact(float relativeSpeed)
+        {
+            _pendingImpact += relativeSpeed;
+        }
 
         /// NaN/Inf sanitization guard for every value submitted to the model.
         static float San(float v) => float.IsFinite(v) ? v : 0f;
@@ -97,7 +176,7 @@ namespace PoSumo
             sensor.AddObservation(San(lean * Fs / 180f));                         // 1
             sensor.AddObservation(San(_b.Chest.angularVelocity * Fs / 500f));     // 1
 
-            for (int j = 0; j < ActionCount; j++)                                 // 20
+            for (int j = 0; j < ActionCount; j++)                                 // 26
             {
                 sensor.AddObservation(San(_b.JointAngleNorm(j)));
                 sensor.AddObservation(San(_b.JointSpeedNorm(j)));
@@ -110,7 +189,7 @@ namespace PoSumo
             sensor.AddObservation(San(ff.x * Fs / 2f));
             sensor.AddObservation(San(ff.y / 2f));
 
-            // Opponent torso (or, in Walk mode, a virtual target at ring center).
+            // Opponent torso (or, in Walk/Recover mode, a virtual target at ring center).
             Vector2 op, ov;
             if (mode == Mode.Sumo && opponent != null)
             {
@@ -128,6 +207,56 @@ namespace PoSumo
             float xLocal = (tp.x - arenaCenterX) * Fs;                            // 2
             sensor.AddObservation(San((ringHalfWidth - xLocal) / ringHalfWidth)); // dist to edge ahead
             sensor.AddObservation(San((ringHalfWidth + xLocal) / ringHalfWidth)); // dist to edge behind
+
+            if (extendedObservations)                                             // +3
+            {
+                if (mode == Mode.Sumo && opponent != null)
+                {
+                    if (_opponentBody == null) _opponentBody = opponent.GetComponent<Agent_BipedBody>();
+                    float oppUp = _opponentBody != null
+                        ? Vector2.Dot(_opponentBody.Chest.transform.up, Vector2.up) : 1f;
+                    float oppEdge = (ringHalfWidth - Mathf.Abs(opponent.TorsoX - arenaCenterX)) / ringHalfWidth;
+                    sensor.AddObservation(San(oppUp));
+                    sensor.AddObservation(opponent.IsDown ? 1f : 0f);
+                    sensor.AddObservation(San(Mathf.Clamp01(oppEdge)));
+                }
+                else
+                {
+                    sensor.AddObservation(1f);
+                    sensor.AddObservation(0f);
+                    sensor.AddObservation(1f);
+                }
+            }
+        }
+
+        /// Mean knee flexion mapped to 0..1 (1 = both knees bent 60°+).
+        float KneeBendFactor()
+        {
+            float near = Mathf.Clamp01(-_b.JointAngleNorm(1) * 180f / 60f);
+            float far = Mathf.Clamp01(-_b.JointAngleNorm(4) * 180f / 60f);
+            return (near + far) * 0.5f;
+        }
+
+        float HipsLowFactor() => Mathf.Clamp01((0.95f - San(Torso.position.y)) / 0.3f);
+
+        /// Step-cadence bonus: pays once per alternation of the single planted
+        /// foot (near->far or far->near), i.e. actual stepping, not skating.
+        void CadenceReward(float scale)
+        {
+            bool nearPlanted = _b.FootNear.position.y < 0.12f
+                && Mathf.Abs(_b.FootNear.linearVelocity.x) < 0.5f;
+            bool farPlanted = _b.FootFar.position.y < 0.12f
+                && Mathf.Abs(_b.FootFar.linearVelocity.x) < 0.5f;
+            int pattern = (nearPlanted ? 1 : 0) | (farPlanted ? 2 : 0);
+            if ((pattern == 1 && _lastSinglePlant == 2) || (pattern == 2 && _lastSinglePlant == 1))
+            {
+                if (Time.time - _lastStepTime > 0.25f)
+                {
+                    AddReward(scale);
+                    _lastStepTime = Time.time;
+                }
+            }
+            if (pattern == 1 || pattern == 2) _lastSinglePlant = pattern;
         }
 
         public override void OnActionReceived(ActionBuffers actions)
@@ -138,23 +267,32 @@ namespace PoSumo
                 {
                     _b.ApplyMotor(j, 0f);
                     LastActions[j] = 0f;
+                    _prevActions[j] = 0f;
                 }
+                _pendingImpact = 0f;
                 return;
             }
             var a = actions.ContinuousActions;
-            float energy = 0f;
+            float energy = 0f, jerk = 0f;
             for (int j = 0; j < ActionCount; j++)
             {
                 _b.ApplyMotor(j, a[j]);
-                LastActions[j] = Mathf.Clamp(a[j], -1f, 1f);
-                energy += Mathf.Abs(a[j]);
+                float clamped = Mathf.Clamp(a[j], -1f, 1f);
+                LastActions[j] = clamped;
+                energy += Mathf.Abs(clamped);
+                jerk += Mathf.Abs(clamped - _prevActions[j]);
+                _prevActions[j] = clamped;
             }
             energy /= ActionCount;
+            jerk /= ActionCount;
             _b.ClampAngularVelocities();
 
             float upright = Mathf.Clamp01(Vector2.Dot(_b.Chest.transform.up, Vector2.up));
             Vector2 tv = Torso.linearVelocity;
+            float torsoY = San(Torso.position.y);
             float xLocal = (Torso.position.x - arenaCenterX) * Fs;
+            float bend = KneeBendFactor();
+            float bendGate = _bendFloor + (1f - _bendFloor) * bend; // straight legs earn the floor fraction
 
             if (mode == Mode.Walk)
             {
@@ -166,33 +304,80 @@ namespace PoSumo
                 if (IsDown) { SetReward(-1f); EndEpisode(); return; }
                 if (xLocal > -0.3f) { AddReward(2f); EndEpisode(); }
             }
-            else
+            else if (mode == Mode.Recover)
+            {
+                // Recovery school: get up from anything, then WALK — standing,
+                // knees bent, stepping — to the target. Falling never ends the
+                // episode, but time spent down costs, so crawling can't pay.
+                if (IsDown || torsoY < 0.6f)
+                {
+                    // No passive income while down — ONLY rising pays, and every
+                    // step on the ground bleeds. Lying comfortably cannot profit.
+                    AddReward((torsoY - _lastTorsoY) * 0.08f);
+                    AddReward(-0.0012f);
+                    AddReward(-energy * 0.0001f);
+                }
+                else
+                {
+                    // Stricter stance gate than sumo: straight legs earn 15%.
+                    float strictGate = 0.15f + 0.85f * bend;
+                    AddReward(San(tv.x * Fs) * 0.004f * strictGate);
+                    AddReward(bend * 0.0006f);
+                    AddReward(upright * 0.001f);
+                    AddReward(HipsLowFactor() * 0.0005f);
+                    CadenceReward(0.002f);
+                    AddReward(-energy * 0.0002f);
+                    // Loitering bleeds: standing still must never be the best plan.
+                    if (Mathf.Abs(San(tv.x)) < 0.15f) AddReward(-0.0008f);
+                    // Graduation requires ARRIVING ON YOUR FEET.
+                    if (xLocal > -0.3f && upright > 0.9f && torsoY > 0.7f)
+                    {
+                        AddReward(3f);
+                        EndEpisode();
+                        return;
+                    }
+                }
+                AddReward(-jerk * 0.0002f);
+            }
+            else // Sumo
             {
                 // Shaping only; win/loss (+1/-1) is assigned by Systems_SumoMatchManager.
-                AddReward(upright * 0.0005f);
+                AddReward(upright * _rUpright);
+
                 if (opponent != null)
                 {
                     float toward = Mathf.Sign(opponent.TorsoX - Torso.position.x);
                     float closing = San(tv.x) * toward;
-                    AddReward(closing * 0.0005f);
+                    AddReward(closing * _rClosing * bendGate);
                     // Lunge: explosive bursts toward the opponent pay extra.
-                    if (closing > 1.5f) AddReward((closing - 1.5f) * 0.001f);
+                    if (closing > _lungeThresh) AddReward((closing - _lungeThresh) * _rLunge * bendGate);
                 }
 
-                // Sumo stance, gated on actually standing: bent knees and low
-                // hips pay every step, so the crouch survives the win objective.
+                // Impact reward: momentum actually delivered into the opponent.
+                float impact = Mathf.Min(_pendingImpact, _impactCap);
+                _pendingImpact = 0f;
+                if (impact > 0f) AddReward(impact * _rImpact);
+
                 if (!IsDown && upright > 0.6f)
                 {
-                    float bendNear = Mathf.Clamp01(-_b.JointAngleNorm(1) * 180f / 60f);
-                    float bendFar = Mathf.Clamp01(-_b.JointAngleNorm(4) * 180f / 60f);
-                    AddReward((bendNear + bendFar) * 0.00015f);
-
-                    float hipsLow = Mathf.Clamp01((0.95f - San(Torso.position.y)) / 0.3f);
-                    AddReward(hipsLow * 0.0003f);
+                    AddReward(bend * _rKnee);
+                    AddReward(HipsLowFactor() * _rHips);
+                    CadenceReward(_rCadence);
+                }
+                else if (IsDown)
+                {
+                    // Getting back up mid-round pays (falls are not losses).
+                    AddReward(Mathf.Max(0f, tv.y) * 0.0005f);
+                    AddReward((torsoY - _lastTorsoY) * _rRise);
                 }
 
-                AddReward(-energy * 0.0001f);
+                // Useless effort costs; driving toward the opponent is cheap.
+                float useful = Mathf.Clamp01(Mathf.Abs(San(tv.x)) / 1.5f);
+                AddReward(-energy * _pEnergy * (1f - useful));
+                AddReward(-jerk * _pJerk);
             }
+
+            _lastTorsoY = torsoY;
         }
 
         public override void Heuristic(in ActionBuffers actionsOut)

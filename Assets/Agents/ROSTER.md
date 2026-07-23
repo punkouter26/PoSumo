@@ -6,7 +6,7 @@ Code mirror: `Assets/Scripts/Systems/Systems_FighterRoster.cs`.
 | # | Fighter | Behavior | Folder | Color | Status |
 |---|---------|----------|--------|-------|--------|
 | 1 | MATT | `Matt` | Matt_v01 | red | ✅ trained (`matt_sumo02`) |
-| 2 | DAVE | `Dave` | Dave_v01 | green | ✅ trained (`dave_sumo01`) |
+| 2 | STANDARD | `Standard` | Standard_v01 | green | ✅ trained (`dave_sumo01`) |
 | 3 | NICK | `Nick` | Nick_v01 | blue | ⬜ placeholder |
 | 4 | MAYA | `Maya` | Maya_v01 | purple | ⬜ placeholder |
 | 5 | TONGTONG | `TongTong` | TongTong_v01 | gold | ⬜ placeholder |
