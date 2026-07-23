@@ -403,3 +403,5 @@
 [INFO] Matt. Step: 8190000. Time Elapsed: 27064.039 s. Mean Reward: 9.090. Std of Reward: 2.100. Training. ELO: 3301.041.
 [INFO] Exported Training/results\matt_sumo04\Matt\Matt-8199980.onnx
 [INFO] Matt. Step: 8220000. Time Elapsed: 27231.462 s. Mean Reward: 9.145. Std of Reward: 2.252. Training. ELO: 3299.182.
+[INFO] Matt. Step: 8250000. Time Elapsed: 27390.951 s. Mean Reward: 8.397. Std of Reward: 2.547. Training. ELO: 3299.654.
+[INFO] Matt. Step: 8280000. Time Elapsed: 27497.278 s. Mean Reward: 4.861. Std of Reward: 3.523. Training. ELO: 3318.557.
