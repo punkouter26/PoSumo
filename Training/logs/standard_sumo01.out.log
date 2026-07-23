@@ -314,3 +314,43 @@
 [INFO] Standard. Step: 5850000. Time Elapsed: 20639.682 s. Mean Reward: 7.313. Std of Reward: 2.858. Training. ELO: 2596.319.
 [INFO] Standard. Step: 5880000. Time Elapsed: 20812.170 s. Mean Reward: 7.423. Std of Reward: 2.462. Training. ELO: 2595.325.
 [INFO] Standard. Step: 5910000. Time Elapsed: 20975.271 s. Mean Reward: 7.070. Std of Reward: 2.993. Training. ELO: 2597.003.
+[INFO] Standard. Step: 5940000. Time Elapsed: 21144.779 s. Mean Reward: 7.064. Std of Reward: 2.855. Training. ELO: 2596.236.
+[INFO] Standard. Step: 5970000. Time Elapsed: 21258.836 s. Mean Reward: 7.624. Std of Reward: 2.610. Training. ELO: 2595.743.
+[INFO] Standard. Step: 6000000. Time Elapsed: 21384.020 s. Mean Reward: 7.231. Std of Reward: 2.456. Training. ELO: 2593.871.
+[INFO] Exported Training/results\standard_sumo01\Standard\Standard-5999981.onnx
+[INFO] Standard. Step: 6030000. Time Elapsed: 21457.181 s. Mean Reward: 3.847. Std of Reward: 2.998. Training. ELO: 2610.978.
+[INFO] Standard. Step: 6060000. Time Elapsed: 21528.568 s. Mean Reward: 3.901. Std of Reward: 2.931. Training. ELO: 2642.121.
+[INFO] Standard. Step: 6090000. Time Elapsed: 21590.239 s. Mean Reward: 3.825. Std of Reward: 2.872. Training. ELO: 2663.077.
+[INFO] Standard. Step: 6120000. Time Elapsed: 21661.210 s. Mean Reward: 3.680. Std of Reward: 2.913. Training. ELO: 2678.804.
+[INFO] Standard. Step: 6150000. Time Elapsed: 21727.798 s. Mean Reward: 3.786. Std of Reward: 2.688. Training. ELO: 2680.666.
+[INFO] Standard. Step: 6180000. Time Elapsed: 21792.392 s. Mean Reward: 3.844. Std of Reward: 2.773. Training. ELO: 2680.666.
+[INFO] Exported Training/results\standard_sumo01\Standard\Standard-6199775.onnx
+[INFO] Standard. Step: 6210000. Time Elapsed: 21856.518 s. Mean Reward: 3.711. Std of Reward: 2.662. Training. ELO: 2681.090.
+[INFO] Standard. Step: 6240000. Time Elapsed: 21915.329 s. Mean Reward: 3.954. Std of Reward: 2.539. Training. ELO: 2695.646.
+[INFO] Standard. Step: 6270000. Time Elapsed: 22006.109 s. Mean Reward: 4.866. Std of Reward: 3.297. Training. ELO: 2715.282.
+[INFO] Standard. Step: 6300000. Time Elapsed: 22114.582 s. Mean Reward: 6.791. Std of Reward: 2.597. Training. ELO: 2716.947.
+[INFO] Standard. Step: 6330000. Time Elapsed: 22221.414 s. Mean Reward: 7.420. Std of Reward: 2.751. Training. ELO: 2706.920.
+[INFO] Standard. Step: 6360000. Time Elapsed: 22326.428 s. Mean Reward: 7.724. Std of Reward: 2.304. Training. ELO: 2703.319.
+[INFO] Standard. Step: 6390000. Time Elapsed: 22436.900 s. Mean Reward: 7.680. Std of Reward: 2.361. Training. ELO: 2698.035.
+[INFO] Exported Training/results\standard_sumo01\Standard\Standard-6399691.onnx
+[INFO] Standard. Step: 6420000. Time Elapsed: 22538.591 s. Mean Reward: 7.105. Std of Reward: 2.782. Training. ELO: 2696.062.
+[INFO] Standard. Step: 6450000. Time Elapsed: 22649.441 s. Mean Reward: 7.272. Std of Reward: 2.815. Training. ELO: 2694.840.
+[INFO] Standard. Step: 6480000. Time Elapsed: 22751.149 s. Mean Reward: 7.267. Std of Reward: 2.402. Training. ELO: 2696.441.
+[INFO] Standard. Step: 6510000. Time Elapsed: 22848.922 s. Mean Reward: 5.882. Std of Reward: 3.365. Training. ELO: 2695.540.
+[INFO] Standard. Step: 6540000. Time Elapsed: 22909.948 s. Mean Reward: 4.009. Std of Reward: 2.705. Training. ELO: 2695.297.
+[INFO] Standard. Step: 6570000. Time Elapsed: 22966.375 s. Mean Reward: 3.539. Std of Reward: 2.623. Training. ELO: 2695.297.
+[INFO] Standard. Step: 6600000. Time Elapsed: 23028.444 s. Mean Reward: 3.948. Std of Reward: 2.870. Training. ELO: 2695.297.
+[INFO] Exported Training/results\standard_sumo01\Standard\Standard-6599569.onnx
+[INFO] Standard. Step: 6630000. Time Elapsed: 23086.221 s. Mean Reward: 4.106. Std of Reward: 2.853. Training. ELO: 2695.297.
+[INFO] Standard. Step: 6660000. Time Elapsed: 23150.800 s. Mean Reward: 3.881. Std of Reward: 2.775. Training. ELO: 2695.297.
+[INFO] Standard. Step: 6690000. Time Elapsed: 23207.538 s. Mean Reward: 4.020. Std of Reward: 3.131. Training. ELO: 2695.297.
+[INFO] Standard. Step: 6720000. Time Elapsed: 23272.774 s. Mean Reward: 3.711. Std of Reward: 2.856. Training. ELO: 2695.297.
+[INFO] Standard. Step: 6750000. Time Elapsed: 23328.823 s. Mean Reward: 3.956. Std of Reward: 2.974. Training. ELO: 2695.297.
+[INFO] Standard. Step: 6780000. Time Elapsed: 23428.786 s. Mean Reward: 6.398. Std of Reward: 3.503. Training. ELO: 2695.297.
+[INFO] Exported Training/results\standard_sumo01\Standard\Standard-6799591.onnx
+[INFO] Standard. Step: 6810000. Time Elapsed: 23536.347 s. Mean Reward: 7.388. Std of Reward: 2.812. Training. ELO: 2695.297.
+[INFO] Standard. Step: 6840000. Time Elapsed: 23639.202 s. Mean Reward: 7.232. Std of Reward: 2.935. Training. ELO: 2694.998.
+[INFO] Standard. Step: 6870000. Time Elapsed: 23747.007 s. Mean Reward: 8.032. Std of Reward: 2.690. Training. ELO: 2696.999.
+[INFO] Standard. Step: 6900000. Time Elapsed: 23849.098 s. Mean Reward: 8.545. Std of Reward: 2.226. Training. ELO: 2697.666.
+[INFO] Standard. Step: 6930000. Time Elapsed: 23957.646 s. Mean Reward: 7.417. Std of Reward: 2.753. Training. ELO: 2698.714.
+[INFO] Standard. Step: 6960000. Time Elapsed: 24063.542 s. Mean Reward: 7.562. Std of Reward: 2.503. Training. ELO: 2699.543.
