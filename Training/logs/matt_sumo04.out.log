@@ -344,3 +344,59 @@
 [INFO] Matt. Step: 6630000. Time Elapsed: 21752.992 s. Mean Reward: 7.925. Std of Reward: 2.249. Training. ELO: 2893.302.
 [INFO] Matt. Step: 6660000. Time Elapsed: 21913.549 s. Mean Reward: 8.285. Std of Reward: 2.036. Training. ELO: 2891.588.
 [INFO] Matt. Step: 6690000. Time Elapsed: 22069.377 s. Mean Reward: 8.292. Std of Reward: 1.683. Training. ELO: 2891.553.
+[INFO] Matt. Step: 6720000. Time Elapsed: 22236.578 s. Mean Reward: 8.361. Std of Reward: 2.397. Training. ELO: 2891.407.
+[INFO] Matt. Step: 6750000. Time Elapsed: 22393.543 s. Mean Reward: 8.549. Std of Reward: 2.057. Training. ELO: 2894.015.
+[INFO] Matt. Step: 6780000. Time Elapsed: 22496.537 s. Mean Reward: 4.240. Std of Reward: 3.383. Training. ELO: 2909.855.
+[INFO] Exported Training/results\matt_sumo04\Matt\Matt-6799771.onnx
+[INFO] Matt. Step: 6810000. Time Elapsed: 22591.389 s. Mean Reward: 3.996. Std of Reward: 2.926. Training. ELO: 2937.692.
+[INFO] Matt. Step: 6840000. Time Elapsed: 22676.553 s. Mean Reward: 3.843. Std of Reward: 3.085. Training. ELO: 2961.710.
+[INFO] Matt. Step: 6870000. Time Elapsed: 22765.931 s. Mean Reward: 3.819. Std of Reward: 2.932. Training. ELO: 3000.974.
+[INFO] Matt. Step: 6900000. Time Elapsed: 22867.280 s. Mean Reward: 4.025. Std of Reward: 3.237. Training. ELO: 3028.189.
+[INFO] Matt. Step: 6930000. Time Elapsed: 22983.905 s. Mean Reward: 4.263. Std of Reward: 3.080. Training. ELO: 3049.857.
+[INFO] Matt. Step: 6960000. Time Elapsed: 23072.735 s. Mean Reward: 3.939. Std of Reward: 2.862. Training. ELO: 3066.293.
+[INFO] Matt. Step: 6990000. Time Elapsed: 23168.649 s. Mean Reward: 3.519. Std of Reward: 2.783. Training. ELO: 3099.696.
+[INFO] Exported Training/results\matt_sumo04\Matt\Matt-6999874.onnx
+[INFO] Matt. Step: 7020000. Time Elapsed: 23293.409 s. Mean Reward: 4.935. Std of Reward: 3.489. Training. ELO: 3128.715.
+[INFO] Matt. Step: 7050000. Time Elapsed: 23456.854 s. Mean Reward: 8.628. Std of Reward: 1.461. Training. ELO: 3126.451.
+[INFO] Matt. Step: 7080000. Time Elapsed: 23630.882 s. Mean Reward: 8.192. Std of Reward: 2.267. Training. ELO: 3121.034.
+[INFO] Matt. Step: 7110000. Time Elapsed: 23793.771 s. Mean Reward: 8.212. Std of Reward: 2.256. Training. ELO: 3119.350.
+[INFO] Matt. Step: 7140000. Time Elapsed: 23973.440 s. Mean Reward: 8.203. Std of Reward: 2.338. Training. ELO: 3110.062.
+[INFO] Matt. Step: 7170000. Time Elapsed: 24088.186 s. Mean Reward: 7.567. Std of Reward: 2.810. Training. ELO: 3103.870.
+[INFO] Matt. Step: 7200000. Time Elapsed: 24210.846 s. Mean Reward: 8.292. Std of Reward: 2.325. Training. ELO: 3096.733.
+[INFO] Exported Training/results\matt_sumo04\Matt\Matt-7199839.onnx
+[INFO] Matt. Step: 7230000. Time Elapsed: 24328.848 s. Mean Reward: 8.022. Std of Reward: 2.842. Training. ELO: 3096.297.
+[INFO] Matt. Step: 7260000. Time Elapsed: 24449.517 s. Mean Reward: 8.066. Std of Reward: 2.227. Training. ELO: 3091.638.
+[INFO] Matt. Step: 7290000. Time Elapsed: 24514.526 s. Mean Reward: 4.003. Std of Reward: 3.213. Training. ELO: 3102.506.
+[INFO] Matt. Step: 7320000. Time Elapsed: 24590.883 s. Mean Reward: 3.890. Std of Reward: 3.140. Training. ELO: 3140.311.
+[INFO] Matt. Step: 7350000. Time Elapsed: 24652.423 s. Mean Reward: 4.034. Std of Reward: 3.090. Training. ELO: 3175.892.
+[INFO] Matt. Step: 7380000. Time Elapsed: 24711.246 s. Mean Reward: 4.342. Std of Reward: 3.381. Training. ELO: 3200.059.
+[INFO] Exported Training/results\matt_sumo04\Matt\Matt-7399977.onnx
+[INFO] Matt. Step: 7410000. Time Elapsed: 24775.125 s. Mean Reward: 3.821. Std of Reward: 2.999. Training. ELO: 3214.618.
+[INFO] Matt. Step: 7440000. Time Elapsed: 24833.254 s. Mean Reward: 3.999. Std of Reward: 3.143. Training. ELO: 3229.096.
+[INFO] Matt. Step: 7470000. Time Elapsed: 24897.212 s. Mean Reward: 3.988. Std of Reward: 3.199. Training. ELO: 3243.502.
+[INFO] Matt. Step: 7500000. Time Elapsed: 24952.002 s. Mean Reward: 3.909. Std of Reward: 3.320. Training. ELO: 3259.484.
+[INFO] Matt. Step: 7530000. Time Elapsed: 25051.774 s. Mean Reward: 6.390. Std of Reward: 3.480. Training. ELO: 3267.067.
+[INFO] Matt. Step: 7560000. Time Elapsed: 25156.668 s. Mean Reward: 8.448. Std of Reward: 2.463. Training. ELO: 3260.636.
+[INFO] Matt. Step: 7590000. Time Elapsed: 25265.669 s. Mean Reward: 8.461. Std of Reward: 2.405. Training. ELO: 3261.123.
+[INFO] Exported Training/results\matt_sumo04\Matt\Matt-7599629.onnx
+[INFO] Matt. Step: 7620000. Time Elapsed: 25370.246 s. Mean Reward: 8.580. Std of Reward: 2.456. Training. ELO: 3260.320.
+[INFO] Matt. Step: 7650000. Time Elapsed: 25473.858 s. Mean Reward: 8.850. Std of Reward: 2.287. Training. ELO: 3254.701.
+[INFO] Matt. Step: 7680000. Time Elapsed: 25583.954 s. Mean Reward: 8.209. Std of Reward: 2.363. Training. ELO: 3252.328.
+[INFO] Matt. Step: 7710000. Time Elapsed: 25686.965 s. Mean Reward: 8.612. Std of Reward: 2.140. Training. ELO: 3251.063.
+[INFO] Matt. Step: 7740000. Time Elapsed: 25798.154 s. Mean Reward: 9.033. Std of Reward: 1.914. Training. ELO: 3250.202.
+[INFO] Matt. Step: 7770000. Time Elapsed: 25886.083 s. Mean Reward: 5.429. Std of Reward: 3.625. Training. ELO: 3246.565.
+[INFO] Matt. Step: 7800000. Time Elapsed: 25948.688 s. Mean Reward: 3.835. Std of Reward: 3.141. Training. ELO: 3246.136.
+[INFO] Exported Training/results\matt_sumo04\Matt\Matt-7799731.onnx
+[INFO] Matt. Step: 7830000. Time Elapsed: 26009.019 s. Mean Reward: 4.367. Std of Reward: 3.396. Training. ELO: 3246.136.
+[INFO] Matt. Step: 7860000. Time Elapsed: 26071.965 s. Mean Reward: 4.373. Std of Reward: 3.155. Training. ELO: 3246.136.
+[INFO] Matt. Step: 7890000. Time Elapsed: 26129.939 s. Mean Reward: 4.279. Std of Reward: 3.331. Training. ELO: 3246.136.
+[INFO] Matt. Step: 7920000. Time Elapsed: 26187.480 s. Mean Reward: 4.259. Std of Reward: 3.286. Training. ELO: 3246.136.
+[INFO] Matt. Step: 7950000. Time Elapsed: 26249.292 s. Mean Reward: 4.612. Std of Reward: 3.578. Training. ELO: 3246.136.
+[INFO] Matt. Step: 7980000. Time Elapsed: 26305.439 s. Mean Reward: 4.330. Std of Reward: 3.225. Training. ELO: 3256.539.
+[INFO] Exported Training/results\matt_sumo04\Matt\Matt-7999973.onnx
+[INFO] Matt. Step: 8010000. Time Elapsed: 26371.024 s. Mean Reward: 3.898. Std of Reward: 3.400. Training. ELO: 3294.456.
+[INFO] Matt. Step: 8040000. Time Elapsed: 26474.312 s. Mean Reward: 8.466. Std of Reward: 2.148. Training. ELO: 3308.118.
+[INFO] Matt. Step: 8070000. Time Elapsed: 26580.180 s. Mean Reward: 8.923. Std of Reward: 1.998. Training. ELO: 3306.917.
+[INFO] Matt. Step: 8100000. Time Elapsed: 26683.475 s. Mean Reward: 8.992. Std of Reward: 2.292. Training. ELO: 3304.676.
+[INFO] Matt. Step: 8130000. Time Elapsed: 26791.687 s. Mean Reward: 8.742. Std of Reward: 2.535. Training. ELO: 3302.737.
+[INFO] Matt. Step: 8160000. Time Elapsed: 26896.081 s. Mean Reward: 8.746. Std of Reward: 2.278. Training. ELO: 3301.060.

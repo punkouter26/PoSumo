@@ -108,3 +108,57 @@
 [INFO] Matt. Step: 1260000. Time Elapsed: 1709.447 s. Mean Reward: -13.733. Std of Reward: 54.831. Training.
 [INFO] Matt. Step: 1290000. Time Elapsed: 1754.625 s. Mean Reward: -13.585. Std of Reward: 54.852. Training.
 [INFO] Matt. Step: 1320000. Time Elapsed: 1789.250 s. Mean Reward: -11.842. Std of Reward: 50.039. Training.
+[INFO] Matt. Step: 1350000. Time Elapsed: 1835.320 s. Mean Reward: -21.884. Std of Reward: 72.392. Training.
+[INFO] Matt. Step: 1380000. Time Elapsed: 1868.501 s. Mean Reward: -14.251. Std of Reward: 53.684. Training.
+[INFO] Exported Training/results\matt_recover05\Matt\Matt-1399944.onnx
+[INFO] Matt. Step: 1410000. Time Elapsed: 1901.349 s. Mean Reward: -17.722. Std of Reward: 57.601. Training.
+[INFO] Matt. Step: 1440000. Time Elapsed: 1944.197 s. Mean Reward: -13.314. Std of Reward: 39.165. Training.
+[INFO] Matt. Step: 1470000. Time Elapsed: 1978.638 s. Mean Reward: -1.760. Std of Reward: 1.557. Training.
+[INFO] Matt. Step: 1500000. Time Elapsed: 2019.625 s. Mean Reward: -9.750. Std of Reward: 30.470. Training.
+[INFO] Matt. Step: 1530000. Time Elapsed: 2054.264 s. Mean Reward: -12.923. Std of Reward: 49.822. Training.
+[INFO] Matt. Step: 1560000. Time Elapsed: 2098.348 s. Mean Reward: -11.835. Std of Reward: 44.086. Training.
+[INFO] Matt. Step: 1590000. Time Elapsed: 2130.026 s. Mean Reward: -7.299. Std of Reward: 33.874. Training.
+[INFO] Exported Training/results\matt_recover05\Matt\Matt-1599982.onnx
+[INFO] Matt. Step: 1620000. Time Elapsed: 2175.938 s. Mean Reward: -2.428. Std of Reward: 1.062. Training.
+[INFO] Matt. Step: 1650000. Time Elapsed: 2207.267 s. Mean Reward: -2.158. Std of Reward: 0.932. Training.
+[INFO] Matt. Step: 1680000. Time Elapsed: 2240.893 s. Mean Reward: -2.646. Std of Reward: 1.923. Training.
+[INFO] Matt. Step: 1710000. Time Elapsed: 2283.281 s. Mean Reward: -4.826. Std of Reward: 18.336. Training.
+[INFO] Matt. Step: 1740000. Time Elapsed: 2317.471 s. Mean Reward: -2.569. Std of Reward: 3.585. Training.
+[INFO] Matt. Step: 1770000. Time Elapsed: 2357.719 s. Mean Reward: -2.244. Std of Reward: 0.220. Training.
+[INFO] Matt. Step: 1800000. Time Elapsed: 2393.009 s. Mean Reward: -2.107. Std of Reward: 0.895. Training.
+[INFO] Exported Training/results\matt_recover05\Matt\Matt-1799561.onnx
+[INFO] Matt. Step: 1830000. Time Elapsed: 2435.326 s. Mean Reward: -2.207. Std of Reward: 0.283. Training.
+[INFO] Matt. Step: 1860000. Time Elapsed: 2468.524 s. Mean Reward: -5.987. Std of Reward: 25.227. Training.
+[INFO] Matt. Step: 1890000. Time Elapsed: 2517.943 s. Mean Reward: -2.263. Std of Reward: 0.216. Training.
+[ERROR] UnityEnvironment worker 0: environment raised an unexpected exception.
+Traceback (most recent call last):
+  File "C:\Users\punko\AppData\Local\Programs\Python\Python310\lib\multiprocessing\connection.py", line 312, in _recv_bytes
+    nread, err = ov.GetOverlappedResult(True)
+BrokenPipeError: [WinError 109] The pipe has been ended
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\punko\Downloads\PoSumo\Training\venv\lib\site-packages\mlagents\trainers\subprocess_env_manager.py", line 175, in worker
+    req: EnvironmentRequest = parent_conn.recv()
+  File "C:\Users\punko\AppData\Local\Programs\Python\Python310\lib\multiprocessing\connection.py", line 250, in recv
+    buf = self._recv_bytes()
+  File "C:\Users\punko\AppData\Local\Programs\Python\Python310\lib\multiprocessing\connection.py", line 321, in _recv_bytes
+    raise EOFError
+EOFError
+[ERROR] UnityEnvironment worker 1: environment raised an unexpected exception.
+Traceback (most recent call last):
+  File "C:\Users\punko\AppData\Local\Programs\Python\Python310\lib\multiprocessing\connection.py", line 312, in _recv_bytes
+    nread, err = ov.GetOverlappedResult(True)
+BrokenPipeError: [WinError 109] The pipe has been ended
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\punko\Downloads\PoSumo\Training\venv\lib\site-packages\mlagents\trainers\subprocess_env_manager.py", line 175, in worker
+    req: EnvironmentRequest = parent_conn.recv()
+  File "C:\Users\punko\AppData\Local\Programs\Python\Python310\lib\multiprocessing\connection.py", line 250, in recv
+    buf = self._recv_bytes()
+  File "C:\Users\punko\AppData\Local\Programs\Python\Python310\lib\multiprocessing\connection.py", line 321, in _recv_bytes
+    raise EOFError
+EOFError

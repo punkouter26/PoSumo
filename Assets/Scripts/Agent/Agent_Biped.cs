@@ -296,13 +296,20 @@ namespace PoSumo
 
             if (mode == Mode.Walk)
             {
-                AddReward(San(tv.x * Fs) * 0.002f);     // progress toward center
+                // The proven walk-school structure: falling ENDS the episode, so
+                // no on-the-ground reward exploit can exist. Stance/cadence
+                // shaping keeps the gait crouched and stepping.
+                float walkGate = 0.15f + 0.85f * bend;
+                AddReward(San(tv.x * Fs) * 0.004f * walkGate);
+                AddReward(bend * 0.0006f);
                 AddReward(upright * 0.001f);
-                AddReward(-energy * 0.0005f);
+                CadenceReward(0.002f);
+                AddReward(-energy * 0.0003f);
+                if (Mathf.Abs(San(tv.x)) < 0.15f) AddReward(-0.0008f); // no statue farming
 
                 // Catastrophic posture failure is an absolute episode termination gate.
                 if (IsDown) { SetReward(-1f); EndEpisode(); return; }
-                if (xLocal > -0.3f) { AddReward(2f); EndEpisode(); }
+                if (xLocal > -0.3f) { AddReward(3f); EndEpisode(); }
             }
             else if (mode == Mode.Recover)
             {

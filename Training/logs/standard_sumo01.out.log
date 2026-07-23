@@ -310,3 +310,7 @@
 [INFO] Standard. Step: 5760000. Time Elapsed: 20126.969 s. Mean Reward: 3.850. Std of Reward: 2.867. Training. ELO: 2584.470.
 [INFO] Standard. Step: 5790000. Time Elapsed: 20305.514 s. Mean Reward: 7.114. Std of Reward: 2.926. Training. ELO: 2597.545.
 [INFO] Exported Training/results\standard_sumo01\Standard\Standard-5799713.onnx
+[INFO] Standard. Step: 5820000. Time Elapsed: 20473.702 s. Mean Reward: 6.494. Std of Reward: 2.869. Training. ELO: 2597.545.
+[INFO] Standard. Step: 5850000. Time Elapsed: 20639.682 s. Mean Reward: 7.313. Std of Reward: 2.858. Training. ELO: 2596.319.
+[INFO] Standard. Step: 5880000. Time Elapsed: 20812.170 s. Mean Reward: 7.423. Std of Reward: 2.462. Training. ELO: 2595.325.
+[INFO] Standard. Step: 5910000. Time Elapsed: 20975.271 s. Mean Reward: 7.070. Std of Reward: 2.993. Training. ELO: 2597.003.
