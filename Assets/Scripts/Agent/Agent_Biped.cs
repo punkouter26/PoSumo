@@ -42,6 +42,14 @@ namespace PoSumo
         [Tooltip("Optional trained model for in-editor inference playback (no Python needed).")]
         public Unity.InferenceEngine.ModelAsset inferenceModel;
 
+        [Tooltip("Locomotion brain for the round-opening walk-in (copied from the character sheet).")]
+        public Unity.InferenceEngine.ModelAsset walkModel;
+
+        /// While true, OnActionReceived only drives motors — no rewards, no
+        /// episode termination. Used while the presentation layer (walk-in)
+        /// borrows the body.
+        [System.NonSerialized] public bool suppressEpisodeControl;
+
         [HideInInspector] public int NonFootGroundContacts;
 
         /// When false the brain still runs but all motors are cut — the body
@@ -80,6 +88,7 @@ namespace PoSumo
                 extendedObservations = character.extendedObservations;
                 decisionPeriod = character.decisionPeriod;
                 if (inferenceModel == null) inferenceModel = character.inferenceModel;
+                if (walkModel == null) walkModel = character.walkModel;
                 _rUpright = character.uprightReward;
                 _rClosing = character.closingReward;
                 _rLunge = character.lungeBonus;
@@ -159,6 +168,34 @@ namespace PoSumo
         public void ReportOpponentImpact(float relativeSpeed)
         {
             _pendingImpact += relativeSpeed;
+        }
+
+        Unity.InferenceEngine.ModelAsset _fightModel;
+        float _savedCenterX;
+
+        /// Round-opening walk-in: borrow the locomotion brain and walk toward
+        /// targetX (the opponent). The fight brain takes back over via
+        /// EndWalkIn(). No-op when no walk model is assigned.
+        public void BeginWalkIn(float targetX)
+        {
+            if (walkModel == null || mode != Mode.Sumo) return;
+            var bp = GetComponent<BehaviorParameters>();
+            _fightModel = bp.Model;
+            _savedCenterX = arenaCenterX;
+            mode = Mode.Recover;              // walk-brain observation layout (virtual target)
+            arenaCenterX = targetX;
+            suppressEpisodeControl = true;
+            bp.Model = walkModel;
+        }
+
+        public void EndWalkIn()
+        {
+            if (mode != Mode.Recover) return;
+            mode = Mode.Sumo;
+            arenaCenterX = _savedCenterX;
+            suppressEpisodeControl = false;
+            var bp = GetComponent<BehaviorParameters>();
+            if (_fightModel != null) bp.Model = _fightModel;
         }
 
         /// NaN/Inf sanitization guard for every value submitted to the model.
@@ -286,6 +323,14 @@ namespace PoSumo
             energy /= ActionCount;
             jerk /= ActionCount;
             _b.ClampAngularVelocities();
+
+            // Presentation layer owns the body: motors only, no rewards or
+            // episode control (prevents Recover-mode terminations mid-walk-in).
+            if (suppressEpisodeControl)
+            {
+                _lastTorsoY = San(Torso.position.y);
+                return;
+            }
 
             float upright = Mathf.Clamp01(Vector2.Dot(_b.Chest.transform.up, Vector2.up));
             Vector2 tv = Torso.linearVelocity;

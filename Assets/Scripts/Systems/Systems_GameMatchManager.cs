@@ -42,9 +42,13 @@ namespace PoSumo
         public bool enableAudio = true;
         [Tooltip("Spawn Systems_FaceMood (Matt's expression follows dominance) at startup.")]
         public bool enableFaceMood = true;
+        [Tooltip("Rounds open with the locomotion brain walking both fighters in; fight brains take over at this gap (m) or after walkInSeconds.")]
+        public float engageDistance = 1.1f;
+        public float walkInSeconds = 4f;
 
         int _scoreA, _scoreB;
         float _elapsed, _phaseLeft, _downA, _downB;
+        bool _walkInActive;
         int _lastShownSeconds = -1;
         Phase _phase = Phase.Fighting;
         Systems_SumoArena _arena;
@@ -113,6 +117,25 @@ namespace PoSumo
             BuildUi();
             UpdateScoreboard(false);
             SpawnCompanionSystems();
+            BeginWalkIn();
+        }
+
+        /// Ceremonial opening: both fighters approach under the locomotion
+        /// brain (guaranteed upright walking); fight brains engage at range.
+        void BeginWalkIn()
+        {
+            if (wrestlerA.walkModel == null || wrestlerB.walkModel == null) return;
+            wrestlerA.BeginWalkIn(wrestlerB.TorsoX);
+            wrestlerB.BeginWalkIn(wrestlerA.TorsoX);
+            _walkInActive = true;
+        }
+
+        void EndWalkIn()
+        {
+            if (!_walkInActive) return;
+            wrestlerA.EndWalkIn();
+            wrestlerB.EndWalkIn();
+            _walkInActive = false;
         }
 
         /// Presentation, audio and face-mood are runtime-spawned children so
@@ -335,6 +358,7 @@ namespace PoSumo
                         _downA = _downB = 0f;
                         EffectiveRingHalfWidth = ringHalfWidth;
                         if (_arena != null) _arena.SetPlatformHalfWidth(ringHalfWidth);
+                        BeginWalkIn();
                         RoundStarted?.Invoke();
                     }
                     return;
@@ -343,6 +367,15 @@ namespace PoSumo
             // Phase.Fighting
             _elapsed += Time.fixedDeltaTime;
             UpdateClock();
+
+            // Hand the bodies from the walk-in brains to the fight brains at
+            // engagement range (or on timeout, whichever comes first).
+            if (_walkInActive
+                && (Mathf.Abs(wrestlerA.TorsoX - wrestlerB.TorsoX) < engageDistance
+                    || _elapsed >= walkInSeconds))
+            {
+                EndWalkIn();
+            }
 
             _downA = wrestlerA.IsDown ? _downA + Time.fixedDeltaTime : 0f;
             _downB = wrestlerB.IsDown ? _downB + Time.fixedDeltaTime : 0f;
@@ -374,6 +407,7 @@ namespace PoSumo
 
         void EndRound(Agent_Biped roundWinner, string drawText)
         {
+            EndWalkIn(); // never leave a body under the walk brain past a round
             LongestRound = Mathf.Max(LongestRound, _elapsed);
             if (roundWinner == wrestlerA) _scoreA++;
             else if (roundWinner == wrestlerB) _scoreB++;
