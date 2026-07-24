@@ -309,6 +309,11 @@ namespace PoSumo
                     _phaseLeft -= Time.fixedDeltaTime;
                     if (_phaseLeft <= 0f)
                     {
+                        // Restore the full dohyo BEFORE the poses reset — the
+                        // wrestlers respawn at ±1.2 and must land on clay, not
+                        // on the air left by a stall-shrunk ring.
+                        EffectiveRingHalfWidth = ringHalfWidth;
+                        if (_arena != null) _arena.SetPlatformHalfWidth(ringHalfWidth);
                         wrestlerA.EndEpisode();   // resets poses via OnEpisodeBegin
                         wrestlerB.EndEpisode();
                         wrestlerA.actionsEnabled = true;
