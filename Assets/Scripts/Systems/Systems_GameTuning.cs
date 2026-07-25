@@ -23,12 +23,5 @@ namespace PoSumo
         public float graceSeconds = 0.4f;
         [Tooltip("Non-foot ground contact must persist this long to count as a throw-down.")]
         public float downGraceSeconds = 0.2f;
-
-        [Header("Stall breaker")]
-        [Tooltip("After this many seconds of fighting, the effective ring starts shrinking.")]
-        public float stallBreakStart = 12f;
-        [Tooltip("Meters per second the ring boundary closes in from each side.")]
-        public float stallShrinkRate = 0.15f;
-        public float minRingHalfWidth = 0.6f;
     }
 }

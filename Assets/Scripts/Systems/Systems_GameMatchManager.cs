@@ -31,9 +31,6 @@ namespace PoSumo
         public float betweenRoundsPause = 2.5f;
         public float graceSeconds = 0.4f;
         public float downGraceSeconds = 0.2f;
-        public float stallBreakStart = 12f;
-        public float stallShrinkRate = 0.15f;
-        public float minRingHalfWidth = 0.6f;
         public PanelSettings panelSettings;
         public Systems_GameTuning tuning;
         [Tooltip("Spawn Systems_MatchPresentation (slow-mo, punch-in, replay) at startup.")]
@@ -42,16 +39,20 @@ namespace PoSumo
         public bool enableAudio = true;
         [Tooltip("Spawn Systems_FaceMood (Matt's expression follows dominance) at startup.")]
         public bool enableFaceMood = true;
-        [Tooltip("Rounds open with the locomotion brain walking both fighters in; fight brains take over at this gap (m) or after walkInSeconds.")]
-        public float engageDistance = 1.1f;
-        public float walkInSeconds = 4f;
+        [Tooltip("Round-opening countdown length; physics and brains are held until it finishes.")]
+        public int countdownSeconds = 3;
+        [Tooltip("Camera ortho when the countdown punches in on a fighter's head.")]
+        public float countdownHeadOrtho = 0.85f;
+        [Tooltip("Half the gap between the fighters' neutral stand-off positions during the countdown.")]
+        public float neutralGapHalf = 0.9f;
 
         int _scoreA, _scoreB;
         float _elapsed, _phaseLeft, _downA, _downB;
-        bool _walkInActive;
         int _lastShownSeconds = -1;
+        float _countdownLeft;
+        int _lastCountdownDigit = -1;
         Phase _phase = Phase.Fighting;
-        Systems_SumoArena _arena;
+        Systems_CameraFollow _camFollow;
 
         // Read-only stats for HUDs.
         public int ScoreA => _scoreA;
@@ -61,8 +62,6 @@ namespace PoSumo
         public float RoundElapsed => _elapsed;
         public float LongestRound { get; private set; }
         public bool RoundActive => _phase == Phase.Fighting;
-        /// Current stall-shrunk scoring boundary (equals ringHalfWidth early in a round).
-        public float EffectiveRingHalfWidth { get; private set; }
 
         /// Fired when a round is decided: (roundWinner, roundLoser) — both null on a draw.
         public event System.Action<Agent_Biped, Agent_Biped> RoundEnded;
@@ -72,7 +71,7 @@ namespace PoSumo
         public event System.Action<Agent_Biped> MatchEnded;
         /// Fired when a rematch resets the scores (HUD aggregates restart here).
         public event System.Action MatchReset;
-        Label _scoreLabel, _banner, _clock;
+        Label _scoreLabel, _banner, _clock, _countdown;
         Button _rematchBtn;
         VisualElement _overlay, _resultCard;
         Label _resultTitle, _resultScore;
@@ -94,9 +93,6 @@ namespace PoSumo
                 betweenRoundsPause = tuning.betweenRoundsPause;
                 graceSeconds = tuning.graceSeconds;
                 downGraceSeconds = tuning.downGraceSeconds;
-                stallBreakStart = tuning.stallBreakStart;
-                stallShrinkRate = tuning.stallShrinkRate;
-                minRingHalfWidth = tuning.minRingHalfWidth;
             }
 
             if (wrestlerA == null || wrestlerB == null)
@@ -112,30 +108,54 @@ namespace PoSumo
             wrestlerB.ringHalfWidth = ringHalfWidth;
             wrestlerA.arenaCenterX = transform.position.x;
             wrestlerB.arenaCenterX = transform.position.x;
-            _arena = FindAnyObjectByType<Systems_SumoArena>();
-            EffectiveRingHalfWidth = ringHalfWidth;
+            _camFollow = FindAnyObjectByType<Systems_CameraFollow>();
             BuildUi();
             UpdateScoreboard(false);
             SpawnCompanionSystems();
-            BeginWalkIn();
+            FreezeForCountdown();
+            StartCountdown();
         }
 
-        /// Ceremonial opening: both fighters approach under the locomotion
-        /// brain (guaranteed upright walking); fight brains engage at range.
-        void BeginWalkIn()
+        /// Round opening: both fighters hold a neutral standing pose at the
+        /// stand-off gap, physics off, until the countdown releases them.
+        void FreezeForCountdown()
         {
-            if (wrestlerA.walkModel == null || wrestlerB.walkModel == null) return;
-            wrestlerA.BeginWalkIn(wrestlerB.TorsoX);
-            wrestlerB.BeginWalkIn(wrestlerA.TorsoX);
-            _walkInActive = true;
+            PoseNeutral(wrestlerA, -neutralGapHalf);
+            PoseNeutral(wrestlerB, +neutralGapHalf);
         }
 
-        void EndWalkIn()
+        void PoseNeutral(Agent_Biped w, float offsetX)
         {
-            if (!_walkInActive) return;
-            wrestlerA.EndWalkIn();
-            wrestlerB.EndWalkIn();
-            _walkInActive = false;
+            var p = w.transform.position;
+            w.transform.position = new Vector3(transform.position.x + offsetX, p.y, p.z);
+            var body = w.GetComponent<Agent_BipedBody>();
+            if (body == null) return;
+            body.ResetPose();
+            for (int partIndex = 0; partIndex < body.Parts.Length; partIndex++)
+            {
+                body.Parts[partIndex].simulated = false;
+            }
+            w.actionsEnabled = false;
+        }
+
+        /// Countdown hit zero: physics back on, fight brains live.
+        void BeginSimulation()
+        {
+            Unfreeze(wrestlerA);
+            Unfreeze(wrestlerB);
+        }
+
+        static void Unfreeze(Agent_Biped w)
+        {
+            var body = w.GetComponent<Agent_BipedBody>();
+            if (body != null)
+            {
+                for (int partIndex = 0; partIndex < body.Parts.Length; partIndex++)
+                {
+                    body.Parts[partIndex].simulated = true;
+                }
+            }
+            w.actionsEnabled = true;
         }
 
         /// Presentation, audio and face-mood are runtime-spawned children so
@@ -229,6 +249,20 @@ namespace PoSumo
             _banner.style.display = DisplayStyle.None;
             root.Add(_banner);
 
+            // Round-opening countdown: one huge digit over the ring center.
+            _countdown = new Label();
+            _countdown.style.position = Position.Absolute;
+            _countdown.style.top = Length.Percent(36);
+            _countdown.style.left = 0;
+            _countdown.style.right = 0;
+            _countdown.style.unityTextAlign = TextAnchor.MiddleCenter;
+            _countdown.style.fontSize = 120;
+            _countdown.style.unityFontStyleAndWeight = FontStyle.Bold;
+            _countdown.style.color = new Color(1f, 0.85f, 0.3f);
+            _countdown.style.textShadow = OutlineShadow;
+            _countdown.style.display = DisplayStyle.None;
+            root.Add(_countdown);
+
             // Match-over: one centered results card owns the moment.
             _resultCard = new VisualElement();
             _resultCard.style.position = Position.Absolute;
@@ -288,19 +322,61 @@ namespace PoSumo
             }
         }
 
+        void StartCountdown()
+        {
+            _countdownLeft = countdownSeconds;
+            _lastCountdownDigit = -1;
+        }
+
+        /// 3-2-1 over the walk-in: the camera punches in on one fighter's head
+        /// per digit (A on the first, B on the second), then releases back to
+        /// the wide two-shot on the final digit so the engage reads clearly.
+        void TickCountdown()
+        {
+            _countdownLeft -= Time.fixedDeltaTime;
+            if (_countdownLeft <= 0f)
+            {
+                _countdown.text = "FIGHT!";
+                _countdown.schedule.Execute(HideCountdown).StartingIn(600);
+                return;
+            }
+
+            int digit = Mathf.CeilToInt(_countdownLeft);
+            if (digit == _lastCountdownDigit) return;
+            _lastCountdownDigit = digit;
+            _countdown.style.display = DisplayStyle.Flex;
+            _countdown.text = digit.ToString();
+
+            if (digit == 1) return; // let the last punch-in expire — wide for the engage
+            var fighter = ((countdownSeconds - digit) & 1) == 0 ? wrestlerA : wrestlerB;
+            PunchOnHead(fighter);
+        }
+
+        void PunchOnHead(Agent_Biped fighter)
+        {
+            if (_camFollow == null || fighter == null) return;
+            var body = fighter.GetComponent<Agent_BipedBody>();
+            Transform focus = body != null && body.HeadRenderer != null
+                ? body.HeadRenderer.transform
+                : fighter.Torso.transform;
+            _camFollow.PunchIn(focus, countdownHeadOrtho, 1.05f);
+        }
+
+        void HideCountdown()
+        {
+            _countdown.style.display = DisplayStyle.None;
+        }
+
         void UpdateClock()
         {
             int remaining = Mathf.Max(0, Mathf.CeilToInt(roundTimeoutSeconds - _elapsed));
             if (remaining != _lastShownSeconds)
             {
-                bool shrinking = _elapsed > stallBreakStart;
                 _lastShownSeconds = remaining;
-                _clock.text = shrinking ? $"{remaining} · RING CLOSING" : remaining.ToString();
+                _clock.text = remaining.ToString();
                 _clock.style.color = remaining <= 5
                     ? new Color(1f, 0.4f, 0.3f)
-                    : shrinking
-                        ? new Color(1f, 0.62f, 0.25f)
-                        : new Color(0.8f, 0.76f, 0.68f);
+                    : new Color(0.8f, 0.76f, 0.68f);
             }
         }
 
@@ -332,15 +408,9 @@ namespace PoSumo
                     _phaseLeft -= Time.fixedDeltaTime;
                     if (_phaseLeft <= 0f)
                     {
-                        // Restore the full dohyo BEFORE the poses reset — the
-                        // wrestlers respawn at ±1.2 and must land on clay, not
-                        // on the air left by a stall-shrunk ring.
-                        EffectiveRingHalfWidth = ringHalfWidth;
-                        if (_arena != null) _arena.SetPlatformHalfWidth(ringHalfWidth);
                         wrestlerA.EndEpisode();   // resets poses via OnEpisodeBegin
                         wrestlerB.EndEpisode();
-                        wrestlerA.actionsEnabled = true;
-                        wrestlerB.actionsEnabled = true;
+                        FreezeForCountdown();
                         _downA = _downB = 0f;
                         _banner.style.display = DisplayStyle.None;
                         _phase = Phase.Grace;
@@ -349,44 +419,34 @@ namespace PoSumo
                     return;
 
                 case Phase.Grace:
-                    // Freshly reset; give physics a beat before scoring resumes.
+                    // Fighters are frozen in the stand-off; brief beat before
+                    // the countdown starts ticking.
                     _phaseLeft -= Time.fixedDeltaTime;
                     if (_phaseLeft <= 0f)
                     {
                         _phase = Phase.Fighting;
                         _elapsed = 0f;
                         _downA = _downB = 0f;
-                        EffectiveRingHalfWidth = ringHalfWidth;
-                        if (_arena != null) _arena.SetPlatformHalfWidth(ringHalfWidth);
-                        BeginWalkIn();
+                        StartCountdown();
                         RoundStarted?.Invoke();
                     }
                     return;
             }
 
-            // Phase.Fighting
+            // Phase.Fighting — the round clock and scoring hold until the
+            // countdown releases the frozen fighters.
+            if (_countdownLeft > 0f)
+            {
+                TickCountdown();
+                if (_countdownLeft > 0f) return;
+                BeginSimulation();
+            }
+
             _elapsed += Time.fixedDeltaTime;
             UpdateClock();
 
-            // Hand the bodies from the walk-in brains to the fight brains at
-            // engagement range (or on timeout, whichever comes first).
-            if (_walkInActive
-                && (Mathf.Abs(wrestlerA.TorsoX - wrestlerB.TorsoX) < engageDistance
-                    || _elapsed >= walkInSeconds))
-            {
-                EndWalkIn();
-            }
-
             _downA = wrestlerA.IsDown ? _downA + Time.fixedDeltaTime : 0f;
             _downB = wrestlerB.IsDown ? _downB + Time.fixedDeltaTime : 0f;
-
-            // Stall breaker: past stallBreakStart, the dohyo physically closes
-            // in — the ground vanishes under cagey wrestlers until someone
-            // drops off the edge.
-            float effectiveRing = Mathf.Max(minRingHalfWidth,
-                ringHalfWidth - Mathf.Max(0f, _elapsed - stallBreakStart) * stallShrinkRate);
-            EffectiveRingHalfWidth = effectiveRing;
-            if (_arena != null) _arena.SetPlatformHalfWidth(effectiveRing);
 
             bool aOut = OutOfRing(wrestlerA) || (knockdownLoses && _downA >= downGraceSeconds);
             bool bOut = OutOfRing(wrestlerB) || (knockdownLoses && _downB >= downGraceSeconds);
@@ -398,8 +458,7 @@ namespace PoSumo
         }
 
         /// Ring-out is physical: you lose only after actually falling off the
-        /// dohyo (the shrinking platform removes the ground; gravity does the
-        /// rest). No invisible scoring line.
+        /// dohyo. No invisible scoring line.
         bool OutOfRing(Agent_Biped w)
         {
             return w.Torso.position.y < fallY;
@@ -407,7 +466,6 @@ namespace PoSumo
 
         void EndRound(Agent_Biped roundWinner, string drawText)
         {
-            EndWalkIn(); // never leave a body under the walk brain past a round
             LongestRound = Mathf.Max(LongestRound, _elapsed);
             if (roundWinner == wrestlerA) _scoreA++;
             else if (roundWinner == wrestlerB) _scoreB++;
@@ -424,6 +482,8 @@ namespace PoSumo
 
             _clock.text = "";
             _lastShownSeconds = -1;
+            _countdownLeft = 0f;
+            HideCountdown();
 
             RoundEnded?.Invoke(roundWinner, loser);
 
@@ -463,8 +523,7 @@ namespace PoSumo
             _resultCard.style.display = DisplayStyle.None;
             wrestlerA.EndEpisode();
             wrestlerB.EndEpisode();
-            wrestlerA.actionsEnabled = true;
-            wrestlerB.actionsEnabled = true;
+            FreezeForCountdown();
             _downA = _downB = 0f;
             _phase = Phase.Grace;
             _phaseLeft = graceSeconds;

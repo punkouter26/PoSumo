@@ -14,9 +14,6 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/SCN_SUMO_STICKY.unity
     guid: 7168941eee38a2c46a2dd8f799dd57cb
-  - enabled: 1
-    path: Assets/Scenes/SCN_SUMO_SHRINK.unity
-    guid: 9ed20033a8c355241bdae411d7948b1d
   m_configObjects:
     com.unity.dt.app-ui: {fileID: 11400000, guid: 1b1c20d82303e4b5781c3ef50ac1449f, type: 2}
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 2bcd2660ca9b64942af0de543d8d7100, type: 3}

@@ -5,8 +5,7 @@ namespace PoSumo
 {
     /// Training referee for the sumo env. Mirrors the deployed game's rules
     /// exactly: falling down is NOT a loss — a wrestler loses only after
-    /// physically dropping off the dohyo (torso below fallY). The platform
-    /// shrinks past stallBreakStart just like the game, and each round can
+    /// physically dropping off the dohyo (torso below fallY). Each round can
     /// randomize the starting platform width and surface friction so policies
     /// train across the whole endgame space. Timeout is a draw.
     public class Systems_SumoMatchManager : MonoBehaviour
@@ -19,11 +18,6 @@ namespace PoSumo
         [Tooltip("Legacy rule: any non-foot ground contact loses. Off for game parity.")]
         public bool knockdownLoses = false;
         public float fallY = -0.2f;
-
-        [Header("Stall breaker (game parity)")]
-        public float stallBreakStart = 12f;
-        public float stallShrinkRate = 0.15f;
-        public float minRingHalfWidth = 0.6f;
 
         [Header("Domain randomization")]
         public bool randomizeRounds = true;
@@ -70,11 +64,6 @@ namespace PoSumo
         {
             if (wrestlerA == null || wrestlerB == null) return;
             _elapsed += Time.fixedDeltaTime;
-
-            // Physical stall breaker, exactly like the game.
-            float effective = Mathf.Max(minRingHalfWidth,
-                _startHalf - Mathf.Max(0f, _elapsed - stallBreakStart) * stallShrinkRate);
-            if (arena != null) arena.SetPlatformHalfWidth(effective);
 
             // Curriculum perturbation shoves: random balance attacks keep the
             // recovery skill exercised in context; lessons fade them out.

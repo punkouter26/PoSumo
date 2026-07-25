@@ -32,7 +32,7 @@ namespace PoSumo
         [Tooltip("Dohyo top-surface friction. Clay 0.9, ice ~0.08, sticky ~1.3.")]
         public float surfaceFriction = 0.9f;
 
-        // Tawara bales, kept for the platform shrink: (transform, side, index).
+        // Tawara bales, kept so width changes reposition them: (transform, side, index).
         struct TawaraRef { public Transform t; public int side; public int index; }
         readonly List<TawaraRef> _tawara = new List<TawaraRef>();
         Transform _platform, _surface, _baseLip;
@@ -40,10 +40,10 @@ namespace PoSumo
 
         static readonly Dictionary<string, Sprite> RuntimeSprites = new Dictionary<string, Sprite>();
 
-        /// Physically shrinks the dohyo to the given half-width: platform
-        /// visuals AND collider narrow together, so ground genuinely vanishes
-        /// under a stalling wrestler and they fall off before losing. The
-        /// tawara ride the shrinking edge. Called by the match manager.
+        /// Physically resizes the dohyo to the given half-width: platform
+        /// visuals AND collider change together, and the tawara ride the
+        /// moving edge. Used by the training referee's per-round platform
+        /// width randomization.
         public void SetPlatformHalfWidth(float half)
         {
             half = Mathf.Clamp(half, 0.1f, groundWidth * 0.5f);
