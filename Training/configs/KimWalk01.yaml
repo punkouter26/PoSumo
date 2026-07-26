@@ -1,0 +1,54 @@
+# Kim — walk school on the HEAVYWEIGHT body (mass 1.45, width 1.30, torque 1.50).
+# Every fighter needs a locomotion brain because Agent_Biped.BeginWalkIn borrows
+# it for the ceremonial round-opening walk-in; Kim and Nick were the two without
+# one, so their walk-in silently did nothing.
+#
+# Warm start, not cold: the baseline gait from standard_walk01 already knows how
+# to step, so this only has to adapt it to carrying +45% mass on +50% torque.
+# 4M steps instead of the 12M that gait cost to discover from scratch.
+#
+#   New-Item -ItemType Directory -Force Training/results/kim_walk_init/Kim
+#   Copy-Item Training/results/standard_walk01/Matt/checkpoint.pt `
+#     Training/results/kim_walk_init/Kim/checkpoint.pt
+#   mlagents-learn Training/configs/KimWalk01.yaml --run-id=kim_walk01 \
+#     --initialize-from=kim_walk_init --results-dir=Training/results \
+#     --env=Builds/KimWalkEnv/KimWalkEnv.exe --num-envs=2 --no-graphics --base-port 5200
+#
+# --initialize-from resolves by the NEW behavior name, hence the staged Kim/ folder.
+# network_settings MUST stay 512 x 3 to match standard_walk01's weights.
+#
+# Mode.Walk means falling ENDS the episode, so there is no on-the-ground reward
+# exploit to guard against here — the reward shaping lives in Agent_Biped, not in
+# this file, and is identical to the one that produced the baseline gait.
+#
+# lower learning_rate than standard_walk01 (3.0e-4): nudging a trained gait, not
+# discovering one. Heavier body = noisier returns, so beta is also reduced to keep
+# her committed to one gait instead of experimenting mid-adaptation.
+
+behaviors:
+  Kim:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 1.5e-4
+      beta: 5.0e-3
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:      # MUST match standard_walk01 exactly (initialize-from)
+      normalize: true
+      hidden_units: 512
+      num_layers: 3
+      vis_encode_type: simple
+    reward_signals:
+      extrinsic:
+        gamma: 0.995
+        strength: 1.0
+    keep_checkpoints: 5
+    checkpoint_interval: 200000
+    max_steps: 4000000
+    time_horizon: 500
+    summary_freq: 30000
+    threaded: true
