@@ -18,6 +18,7 @@ MonoBehaviour:
   horizontalMargin: 0.5
   smoothing: 4
   pointsToWin: 3
+  tournamentPointsToWin: 2
   roundTimeoutSeconds: 30
   betweenRoundsPause: 2.5
   graceSeconds: 0.4

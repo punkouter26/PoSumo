@@ -13,10 +13,24 @@ namespace PoSumo.EditorTools
     /// silently break those references.
     public static class DeployBrain
     {
+        // Run ids below are the runs that currently back each deployed brain —
+        // re-deploying from them reproduces exactly what ships in Assets/Agents.
+        [MenuItem("PoSumo/Deploy Matt Brain")]
+        public static void DeployMatt()
+        {
+            Deploy("matt_sumo05", "Matt", "Assets/Agents/Matt_v01");
+        }
+
+        [MenuItem("PoSumo/Deploy Standard Brain")]
+        public static void DeployStandard()
+        {
+            Deploy("standard_sumo01", "Standard", "Assets/Agents/Standard_v01");
+        }
+
         [MenuItem("PoSumo/Deploy Nick Brain")]
         public static void DeployNick()
         {
-            Deploy("nick_sumo01", "Nick", "Assets/Agents/Nick_v01");
+            Deploy("nick_sumo02", "Nick", "Assets/Agents/Nick_v01");
         }
 
         [MenuItem("PoSumo/Deploy Kim Brain")]
@@ -25,16 +39,14 @@ namespace PoSumo.EditorTools
             Deploy("kim_sumo01", "Kim", "Assets/Agents/Kim_v01");
         }
 
-        [MenuItem("PoSumo/Deploy Nick Latest Checkpoint")]
-        public static void DeployNickLatestCheckpoint()
-        {
-            DeployLatestCheckpoint("nick_sumo02", "Nick", "Assets/Agents/Nick_v01");
-        }
-
         /// Deploy the newest numbered checkpoint of a RUNNING training run, so a
         /// brain can be tried before the run finishes. The trainer only writes
         /// the unnumbered `<Behavior>.onnx` on shutdown, hence the separate path.
         /// Safe while training continues — this only reads the exported files.
+        ///
+        /// No menu item: the run id changes every run, so this is invoked by
+        /// name through MCP `script-execute` while a run is in flight. Finished
+        /// runs keep only their final export, so this finds nothing in them.
         public static void DeployLatestCheckpoint(string runId, string behaviorName, string agentFolder)
         {
             string dir = $"Training/results/{runId}/{behaviorName}";

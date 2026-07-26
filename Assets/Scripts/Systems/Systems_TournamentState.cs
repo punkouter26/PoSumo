@@ -14,11 +14,19 @@ namespace PoSumo
     ///   4     semifinal     — winners of 0 and 1
     ///   5     semifinal     — winners of 2 and 3
     ///   6     final         — winners of 4 and 5
-    public static class Tournament_State
+    public static class Systems_TournamentState
     {
         public const int SEED_COUNT = 8;
         public const int MATCH_COUNT = 7;
         public const int FINAL_MATCH = 6;
+
+        /// This project runs with Enter Play Mode domain reload DISABLED, so
+        /// statics survive Stop -> Play and a finished bracket would still be on
+        /// screen next session. SubsystemRegistration runs once at the start of
+        /// every play session, before the first scene loads, which is exactly the
+        /// hook needed to clear it — relying on the domain reload does not work.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ClearOnPlaySessionStart() => ResetAll();
 
         static readonly Agent_CharacterDefinition[] _seeds = new Agent_CharacterDefinition[SEED_COUNT];
         static readonly Agent_CharacterDefinition[] _winners = new Agent_CharacterDefinition[MATCH_COUNT];

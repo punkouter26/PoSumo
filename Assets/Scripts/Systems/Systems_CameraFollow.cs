@@ -19,10 +19,14 @@ namespace PoSumo
         public float feetDrop = 0.95f; // camera centers this far below the average torso — at the feet
         public float horizontalMargin = 0.5f;
         public float smoothing = 4f;
+        [Tooltip("Keep the dohyo in frame: the follow target is clamped to the ring plus this margin, so a fighter flung off the edge cannot drag the camera off the mat.")]
+        public bool clampToRing = true;
+        public float ringMargin = 0.9f;
         public Systems_GameTuning tuning;
 
         Camera _cam;
         Agent_Biped _a, _b;
+        Systems_GameMatchManager _manager;
 
         // Temporary punch-in override (slow-mo finishes): blend toward a focus
         // transform at a tighter ortho until the realtime deadline passes.
@@ -82,6 +86,22 @@ namespace PoSumo
             {
                 mid = Mathf.Lerp(mid, _focus.position.x, 0.75f);
                 midY = Mathf.Lerp(midY, _focus.position.y, 0.75f);
+            }
+
+            // Clamp LAST, after the punch-in blend: otherwise a slow-mo zoom on a
+            // loser who has fallen off the edge still drags the camera clear of
+            // the mat, which is exactly how the dohyo ended up out of frame.
+            if (clampToRing)
+            {
+                if (_manager == null) _manager = FindAnyObjectByType<Systems_GameMatchManager>();
+                if (_manager != null)
+                {
+                    float centerX = _manager.transform.position.x;
+                    float matY = _manager.transform.position.y;
+                    float limit = _manager.ringHalfWidth + ringMargin;
+                    mid = Mathf.Clamp(mid, centerX - limit, centerX + limit);
+                    midY = Mathf.Max(midY, matY - feetDrop);   // dohyo stays on screen
+                }
             }
 
             var p = transform.position;

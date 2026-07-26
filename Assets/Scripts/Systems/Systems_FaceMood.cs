@@ -10,7 +10,8 @@ namespace PoSumo
     /// target: scoring a round targets happy3, losing one sad3, a knockdown
     /// sad2; a decided match holds the extreme until rematch. Dominance is
     /// smoothed (~2 s) so the face doesn't flicker. Sprites load from
-    /// Resources (matt_*-removebg-preview). Spawned by Systems_GameMatchManager.
+    /// Resources (Matt_neutral / Matt_happy1-3 / Matt_sad1-3). Spawned by
+    /// Systems_GameMatchManager.
     public class Systems_FaceMood : MonoBehaviour
     {
         [Tooltip("Behavior name of the fighter whose face reacts.")]
@@ -29,18 +30,18 @@ namespace PoSumo
 
         // Fallback for characters with no face names on their definition asset
         // (Matt predates the per-character face fields).
-        const string FALLBACK_NEUTRAL = "matt_neutral1-removebg-preview";
+        const string FALLBACK_NEUTRAL = "Matt_neutral";
         static readonly string[] FallbackHappy =
         {
-            "matt_happy1-removebg-preview",
-            "matt_happy2-removebg-preview",
-            "matt_happy3-removebg-preview",
+            "Matt_happy1",
+            "Matt_happy2",
+            "Matt_happy3",
         };
         static readonly string[] FallbackSad =
         {
-            "matt_sad1-removebg-preview",
-            "matt_sad2-removebg-preview",
-            "matt_sad3-removebg-preview",
+            "Matt_sad1",
+            "Matt_sad2",
+            "Matt_sad3",
         };
 
         Systems_GameMatchManager _manager;
@@ -142,10 +143,27 @@ namespace PoSumo
             _idleDelay = Random.Range(idleMinSeconds, idleMaxSeconds);
         }
 
+        /// Round results flash to a level scaled by the score margin rather than
+        /// always slamming to ±3. Winning the opener shows happy1, pulling ahead
+        /// happy2, clinching happy3 — which is what actually gets the middle
+        /// expressions on screen. Rounds are far too short for in-round dominance
+        /// drift to reach them on its own.
         void OnRoundEnded(Agent_Biped winner, Agent_Biped loser)
         {
-            if (winner == _fighter) Flash(3, flashSeconds);
-            else if (loser == _fighter) Flash(-3, flashSeconds);
+            int margin = MarginForFighter();
+            int level = Mathf.Clamp(Mathf.Abs(margin), 1, 3);
+            if (winner == _fighter) Flash(level, flashSeconds);
+            else if (loser == _fighter) Flash(-level, flashSeconds);
+        }
+
+        /// Score margin from this fighter's point of view, after the round.
+        int MarginForFighter()
+        {
+            if (_manager == null) return 1;
+            int mine = _fighterIsA ? _manager.ScoreA : _manager.ScoreB;
+            int theirs = _fighterIsA ? _manager.ScoreB : _manager.ScoreA;
+            int margin = mine - theirs;
+            return margin == 0 ? 1 : margin;
         }
 
         void OnMatchEnded(Agent_Biped winner)

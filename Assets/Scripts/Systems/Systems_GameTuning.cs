@@ -17,7 +17,10 @@ namespace PoSumo
         public float smoothing = 4f;
 
         [Header("Match")]
+        [Tooltip("Round wins needed in a standalone exhibition match.")]
         public int pointsToWin = 3;
+        [Tooltip("Round wins needed to take a tournament bracket. 2 = best of three. Single source for both modes so they cannot drift apart.")]
+        public int tournamentPointsToWin = 2;
         public float roundTimeoutSeconds = 30f;
         public float betweenRoundsPause = 2.5f;
         public float graceSeconds = 0.4f;

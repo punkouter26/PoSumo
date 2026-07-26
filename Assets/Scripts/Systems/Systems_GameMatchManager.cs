@@ -49,6 +49,10 @@ namespace PoSumo
         public bool timeoutDecidesOnPosition = true;
         [Tooltip("Centre-distance difference (m) below which a timeout is still a genuine draw.")]
         public float timeoutDeadHeat = 0.15f;
+        [Tooltip("Seconds the loser flops as a limp ragdoll before the winner is announced.")]
+        public float limpBeforeAnnounce = 1.2f;
+        [Tooltip("A foot dropping below this height (mat top is y=0) counts as stepping off the mat — an instant loss, sumo's stepping-out rule.")]
+        public float footOffMatY = -0.06f;
 
         int _scoreA, _scoreB;
         float _elapsed, _phaseLeft, _downA, _downB;
@@ -57,6 +61,9 @@ namespace PoSumo
         int _lastCountdownDigit = -1;
         Phase _phase = Phase.Fighting;
         Systems_CameraFollow _camFollow;
+        // Cached in Start: the foot check runs every FixedUpdate, so no
+        // GetComponent in the hot path.
+        Agent_BipedBody _bodyA, _bodyB;
 
         // Read-only stats for HUDs.
         public int ScoreA => _scoreA;
@@ -65,6 +72,9 @@ namespace PoSumo
         public int MatchWinsB { get; private set; }
         public float RoundElapsed => _elapsed;
         public float LongestRound { get; private set; }
+        /// How many rounds were settled by the timeout tiebreak rather than a
+        /// ring-out. Zero over a long session means the tiebreak is unreachable.
+        public int TimeoutDecisions { get; private set; }
         public bool RoundActive => _phase == Phase.Fighting;
 
         /// Fired when a round is decided: (roundWinner, roundLoser) — both null on a draw.
@@ -76,6 +86,7 @@ namespace PoSumo
         /// Fired when a rematch resets the scores (HUD aggregates restart here).
         public event System.Action MatchReset;
         Label _scoreLabel, _banner, _clock, _countdown;
+        VisualElement _scoreBlock;   // hidden while the result card is up
         Button _rematchBtn;
         VisualElement _overlay, _resultCard;
         Label _resultTitle, _resultScore;
@@ -92,7 +103,13 @@ namespace PoSumo
         {
             if (tuning != null)
             {
-                pointsToWin = tuning.pointsToWin;
+                // Bracket matches are shorter than exhibitions. Decided HERE
+                // rather than by the tournament reporter: Start order between
+                // components is undefined, and this Start was overwriting the
+                // reporter's value, silently running brackets as best-of-5.
+                pointsToWin = Systems_TournamentState.Active
+                    ? tuning.tournamentPointsToWin
+                    : tuning.pointsToWin;
                 roundTimeoutSeconds = tuning.roundTimeoutSeconds;
                 betweenRoundsPause = tuning.betweenRoundsPause;
                 graceSeconds = tuning.graceSeconds;
@@ -100,6 +117,8 @@ namespace PoSumo
             }
 
             ResolveWrestlers();
+            _bodyA = wrestlerA.GetComponent<Agent_BipedBody>();
+            _bodyB = wrestlerB.GetComponent<Agent_BipedBody>();
             wrestlerA.opponent = wrestlerB;
             wrestlerB.opponent = wrestlerA;
             wrestlerA.ringHalfWidth = ringHalfWidth;
@@ -260,6 +279,7 @@ namespace PoSumo
             scoreBlock.style.right = 0;
             scoreBlock.style.alignItems = Align.Center;
             root.Add(scoreBlock);
+            _scoreBlock = scoreBlock;
 
             var scoreCard = new VisualElement();
             scoreCard.style.backgroundColor = new Color(0f, 0f, 0f, 0.45f);
@@ -500,8 +520,15 @@ namespace PoSumo
             _downA = wrestlerA.IsDown ? _downA + Time.fixedDeltaTime : 0f;
             _downB = wrestlerB.IsDown ? _downB + Time.fixedDeltaTime : 0f;
 
-            bool aOut = OutOfRing(wrestlerA) || (knockdownLoses && _downA >= downGraceSeconds);
-            bool bOut = OutOfRing(wrestlerB) || (knockdownLoses && _downB >= downGraceSeconds);
+            // Anyone off the mat goes limp the instant it happens, so the ragdoll
+            // flop plays out before the result is announced.
+            bool aOffMat = OutOfRing(wrestlerA, _bodyA);
+            bool bOffMat = OutOfRing(wrestlerB, _bodyB);
+            if (aOffMat) GoLimp(wrestlerA);
+            if (bOffMat) GoLimp(wrestlerB);
+
+            bool aOut = aOffMat || (knockdownLoses && _downA >= downGraceSeconds);
+            bool bOut = bOffMat || (knockdownLoses && _downB >= downGraceSeconds);
 
             if (aOut && bOut) EndRound(null, "DOUBLE OUT — DRAW");
             else if (aOut) EndRound(wrestlerB, null);
@@ -531,13 +558,41 @@ namespace PoSumo
             Agent_Biped winner = distanceA < distanceB ? wrestlerA : wrestlerB;
             string label = WrapName(winner == wrestlerA ? nameA : nameB,
                                     winner == wrestlerA ? colorA : colorB);
+            // Logged because this path is easy to assume dead: with a tight ring
+            // and the stepping-out rule, rounds almost never reach the timeout.
+            // It only matters for genuine stalemates on a wide mat.
+            TimeoutDecisions++;
+            Debug.Log($"[MATCH] timeout decision #{TimeoutDecisions}: " +
+                      $"{(winner == wrestlerA ? nameA : nameB)} held the centre " +
+                      $"({distanceA:F2}m vs {distanceB:F2}m from middle)");
             EndRound(winner, null, $"TIME — {label} DECISION");
         }
 
-        /// Ring-out is physical: you lose only after actually falling off the
-        /// dohyo. No invisible scoring line.
-        bool OutOfRing(Agent_Biped w)
+        /// Cut a fighter's motors so it flops lifelessly off the edge instead of
+        /// holding a rigid pose on the way down.
+        static void GoLimp(Agent_Biped fighter)
         {
+            fighter.actionsEnabled = false;
+            var body = fighter.GetComponent<Agent_BipedBody>();
+            if (body != null) body.GoLimp();
+        }
+
+        /// Sumo's stepping-out rule: the moment either foot drops off the edge of
+        /// the mat the bout is lost, without waiting for the body to tumble clear.
+        /// A foot cannot get below the mat surface while still standing on it, so
+        /// dipping under footOffMatY means it has gone over the edge.
+        ///
+        /// The torso/fallY test is kept as a backstop for a body that leaves the
+        /// mat without a foot leading — thrown clear, or landing head-first.
+        bool OutOfRing(Agent_Biped w, Agent_BipedBody body)
+        {
+            if (body != null)
+            {
+                float matTop = transform.position.y;
+                float limit = matTop + footOffMatY;
+                if (body.FootNear != null && body.FootNear.position.y < limit) return true;
+                if (body.FootFar != null && body.FootFar.position.y < limit) return true;
+            }
             return w.Torso.position.y < fallY;
         }
 
@@ -553,9 +608,29 @@ namespace PoSumo
             if (loser != null)
                 Systems_DustPuff.Burst(loser.Torso.position);
 
-            // Cut motors so the loser ragdolls off / down in full view.
-            wrestlerA.actionsEnabled = false;
-            wrestlerB.actionsEnabled = false;
+            bool matchOver = _scoreA >= pointsToWin || _scoreB >= pointsToWin;
+            if (matchOver)
+            {
+                // Match decided: the loser goes fully limp and stays down, while
+                // the winner keeps its brain running so it carries on moving
+                // instead of freezing mid-pose over the body.
+                Agent_Biped matchWinner = _scoreA > _scoreB ? wrestlerA : wrestlerB;
+                Agent_Biped matchLoser = matchWinner == wrestlerA ? wrestlerB : wrestlerA;
+                GoLimp(matchLoser);
+                matchWinner.actionsEnabled = true;
+            }
+            else
+            {
+                // Between rounds both stop driving; whoever left the mat is
+                // already fully limp from GoLimp in FixedUpdate, and the survivor
+                // simply holds its stance until the next round resets them.
+                wrestlerA.actionsEnabled = false;
+                wrestlerB.actionsEnabled = false;
+            }
+
+            // A ragdoll flop deserves a beat before the result is declared.
+            bool limpFlop = IsLimp(wrestlerA) || IsLimp(wrestlerB);
+            long announceDelayMs = limpFlop ? (long)(limpBeforeAnnounce * 1000f) : 0L;
 
             _clock.text = "";
             _lastShownSeconds = -1;
@@ -564,7 +639,7 @@ namespace PoSumo
 
             RoundEnded?.Invoke(roundWinner, loser);
 
-            if (_scoreA >= pointsToWin || _scoreB >= pointsToWin)
+            if (matchOver)
             {
                 _phase = Phase.MatchOver;
                 bool aWon = _scoreA > _scoreB;
@@ -573,8 +648,11 @@ namespace PoSumo
                 _resultTitle.text = $"{WrapName(aWon ? nameA : nameB, aWon ? colorA : colorB)} WINS";
                 _resultScore.text = $"{Mathf.Max(_scoreA, _scoreB)} — {Mathf.Min(_scoreA, _scoreB)}";
                 _resultCard.style.borderTopColor = aWon ? colorA : colorB;
-                _resultCard.style.display = DisplayStyle.Flex;
-                _overlay.style.display = DisplayStyle.Flex;
+                ShowAfter(_resultCard, announceDelayMs);
+                ShowAfter(_overlay, announceDelayMs);
+                // The running scoreboard would otherwise sit under the result
+                // card competing with it; the card already states the score.
+                HideAfter(_scoreBlock, announceDelayMs);
                 MatchEnded?.Invoke(aWon ? wrestlerA : wrestlerB);
                 return;
             }
@@ -582,10 +660,39 @@ namespace PoSumo
             _banner.text = roundWinner != null
                 ? (winText ?? $"{WrapName(roundWinner == wrestlerA ? nameA : nameB, roundWinner == wrestlerA ? colorA : colorB)} SCORES!")
                 : drawText;
-            _banner.style.display = DisplayStyle.Flex;
+            ShowAfter(_banner, announceDelayMs);
 
             _phase = Phase.RoundEnded;
-            _phaseLeft = betweenRoundsPause;
+            // Extend the pause by the announce delay so the result stays on
+            // screen just as long as it did before.
+            _phaseLeft = betweenRoundsPause + announceDelayMs / 1000f;
+        }
+
+        static bool IsLimp(Agent_Biped fighter)
+        {
+            var body = fighter.GetComponent<Agent_BipedBody>();
+            return body != null && body.IsLimp;
+        }
+
+        static void HideAfter(VisualElement element, long delayMs)
+        {
+            if (element == null) return;
+            if (delayMs <= 0L) { element.style.display = DisplayStyle.None; return; }
+            element.schedule.Execute(() => element.style.display = DisplayStyle.None)
+                   .StartingIn(delayMs);
+        }
+
+        /// Reveal a UI element now, or after a delay so the ragdoll lands first.
+        static void ShowAfter(VisualElement element, long delayMs)
+        {
+            if (delayMs <= 0L)
+            {
+                element.style.display = DisplayStyle.Flex;
+                return;
+            }
+            element.style.display = DisplayStyle.None;
+            element.schedule.Execute(() => element.style.display = DisplayStyle.Flex)
+                   .StartingIn(delayMs);
         }
 
         static string WrapName(string n, Color c) => $"<color=#{Hex(c)}>{n}</color>";
@@ -598,6 +705,7 @@ namespace PoSumo
             _overlay.style.display = DisplayStyle.None;
             _banner.style.display = DisplayStyle.None;
             _resultCard.style.display = DisplayStyle.None;
+            if (_scoreBlock != null) _scoreBlock.style.display = DisplayStyle.Flex;
             wrestlerA.EndEpisode();
             wrestlerB.EndEpisode();
             FreezeForCountdown();

@@ -294,6 +294,7 @@ namespace PoSumo
 
         public void ResetPose()
         {
+            RestoreMotors();   // a limp body from last round must drive again
             for (int i = 0; i < Parts.Length; i++)
             {
                 Parts[i].transform.localPosition = _initialLocalPos[i];
@@ -307,9 +308,54 @@ namespace PoSumo
             Physics2D.SyncTransforms();
         }
 
+        /// True ragdoll: switch every joint motor OFF so the body goes limp and
+        /// flops under gravity alone. Note that merely zeroing the action leaves
+        /// the motors at full torque holding a zero-velocity target, which reads
+        /// as rigid rather than lifeless — so this disables them outright.
+        public void GoLimp()
+        {
+            if (IsLimp) return;
+            IsLimp = true;
+            for (int jointIndex = 0; jointIndex < Joints.Length; jointIndex++)
+            {
+                HingeJoint2D joint = Joints[jointIndex];
+                if (joint == null) continue;
+                var motor = joint.motor;
+                motor.motorSpeed = 0f;
+                motor.maxMotorTorque = 0f;
+                joint.motor = motor;
+                joint.useMotor = false;
+            }
+        }
+
+        /// Re-arm the motors after a limp. ApplyMotor writes torque back per
+        /// joint, but useMotor stays false until it is turned on again here.
+        public void RestoreMotors()
+        {
+            if (!IsLimp) return;
+            IsLimp = false;
+            for (int jointIndex = 0; jointIndex < Joints.Length; jointIndex++)
+            {
+                HingeJoint2D joint = Joints[jointIndex];
+                if (joint == null) continue;
+                joint.useMotor = true;
+                var motor = joint.motor;
+                motor.maxMotorTorque = _maxTorque[jointIndex];
+                joint.motor = motor;
+            }
+        }
+
+        /// True while the body is a limp ragdoll (motors disabled).
+        public bool IsLimp { get; private set; }
+
         /// action in [-1,1] -> motor target speed; sign mirrored with facing.
         public void ApplyMotor(int jointIndex, float action)
         {
+            // A limp body ignores motor commands outright. Without this the
+            // agent's own zeroed-action path keeps writing full maxMotorTorque
+            // back every decision step, which silently un-limps the ragdoll.
+            if (IsLimp) return;
+
             var joint = Joints[jointIndex];
             var m = joint.motor;
             m.motorSpeed = Mathf.Clamp(action, -1f, 1f) * _maxSpeed[jointIndex] * facingSign;

@@ -17,8 +17,14 @@ namespace PoSumo
         [Tooltip("Characters available as entrants. With 4, each appears twice in the 8-slot bracket.")]
         [SerializeField] private Agent_CharacterDefinition[] _roster;
         [SerializeField] private PanelSettings _panelSettings;
-        [Tooltip("Scene loaded to play each match.")]
-        [SerializeField] private string _arenaScene = "SCN_SUMO";
+        [Tooltip("Arenas cycled through as the bracket progresses, so successive matches are fought on different surfaces.")]
+        [SerializeField] private string[] _arenaScenes = { "SCN_SUMO", "SCN_SUMO_ICE", "SCN_SUMO_STICKY" };
+        [Tooltip("Play the whole bracket unattended once it is seeded, pausing on this screen between matches.")]
+        [SerializeField] private bool _autoPlay = true;
+        [Tooltip("Seconds the updated bracket is shown before the next match starts.")]
+        [SerializeField] private float _betweenMatchSeconds = 2.5f;
+
+        private float _autoTimer;
 
         private const int SLOT_SIZE = 116;
 
@@ -50,9 +56,9 @@ namespace PoSumo
 
             // Returning from a match mid-tournament: keep the existing bracket.
             // Otherwise this is a fresh visit, so draw a new field.
-            if (!Tournament_State.SeedsReady())
+            if (!Systems_TournamentState.SeedsReady())
             {
-                Tournament_State.AutoSeed(_roster, Time.frameCount);
+                Systems_TournamentState.AutoSeed(_roster, Time.frameCount);
             }
 
             BuildUi();
@@ -100,7 +106,7 @@ namespace PoSumo
             AddResultRow(feederA: 2, feederB: 3, winnerMatch: 5);
 
             AddRoundHeader("FINAL");
-            AddResultRow(feederA: 4, feederB: 5, winnerMatch: Tournament_State.FINAL_MATCH);
+            AddResultRow(feederA: 4, feederB: 5, winnerMatch: Systems_TournamentState.FINAL_MATCH);
 
             _statusLabel = new Label();
             _statusLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
@@ -226,21 +232,24 @@ namespace PoSumo
 
         private VisualElement MakeSeedSlot(int seedIndex)
         {
-            VisualElement slot = MakeChip(Tournament_State.GetSeed(seedIndex), SLOT_SIZE);
+            VisualElement slot = MakeChip(Systems_TournamentState.GetSeed(seedIndex), SLOT_SIZE);
             slot.userData = seedIndex;
             _seedSlots.Add(slot);
             int captured = seedIndex;
             slot.RegisterCallback<PointerDownEvent>(evt =>
-                BeginDrag(evt, captured, Tournament_State.GetSeed(captured)));
+                BeginDrag(evt, captured, Systems_TournamentState.GetSeed(captured)));
             return slot;
         }
 
         private VisualElement MakeWinnerSlot(int matchIndex)
         {
-            VisualElement slot = MakeChip(Tournament_State.GetWinner(matchIndex), SLOT_SIZE);
+            VisualElement slot = MakeChip(Systems_TournamentState.GetWinner(matchIndex), SLOT_SIZE);
             slot.userData = matchIndex;
-            while (_winnerSlots.Count <= matchIndex) _winnerSlots.Add(null);
-            _winnerSlots[matchIndex] = slot;
+            // Several rows show the SAME match: match 0 is both the QF-0 winner
+            // readout and the semifinal's left entrant. Keeping one chip per match
+            // index meant the later slot overwrote the earlier one and Refresh()
+            // never repainted the orphan — stale winners survived a reshuffle.
+            _winnerSlots.Add(slot);
             return slot;
         }
 
@@ -294,7 +303,7 @@ namespace PoSumo
 
         private void BeginDrag(PointerDownEvent evt, int seedIndex, Agent_CharacterDefinition character)
         {
-            if (Tournament_State.Active) return;   // bracket is locked once running
+            if (Systems_TournamentState.Active) return;   // bracket is locked once running
             if (character == null) return;
             _dragging = true;
             _dragSeedIndex = seedIndex;
@@ -339,11 +348,11 @@ namespace PoSumo
             {
                 if (_dragSeedIndex >= 0)
                 {
-                    Tournament_State.SwapSeeds(_dragSeedIndex, target);
+                    Systems_TournamentState.SwapSeeds(_dragSeedIndex, target);
                 }
                 else
                 {
-                    Tournament_State.SetSeed(target, _dragCharacter);
+                    Systems_TournamentState.SetSeed(target, _dragCharacter);
                 }
                 Refresh();
             }
@@ -370,36 +379,36 @@ namespace PoSumo
             for (int i = 0; i < _seedSlots.Count; i++)
             {
                 int seedIndex = (int)_seedSlots[i].userData;
-                ApplyChip(_seedSlots[i], Tournament_State.GetSeed(seedIndex));
+                ApplyChip(_seedSlots[i], Systems_TournamentState.GetSeed(seedIndex));
             }
-            for (int match = 0; match < _winnerSlots.Count; match++)
+            for (int i = 0; i < _winnerSlots.Count; i++)
             {
-                if (_winnerSlots[match] != null)
-                {
-                    ApplyChip(_winnerSlots[match], Tournament_State.GetWinner(match));
-                }
+                int matchIndex = (int)_winnerSlots[i].userData;
+                ApplyChip(_winnerSlots[i], Systems_TournamentState.GetWinner(matchIndex));
             }
 
-            if (Tournament_State.IsComplete)
+            if (Systems_TournamentState.IsComplete)
             {
-                var champion = Tournament_State.Champion;
+                var champion = Systems_TournamentState.Champion;
                 _statusLabel.text = $"CHAMPION — {champion.behaviorName.ToUpperInvariant()}";
                 _statusLabel.style.color = champion.teamColor;
                 _actionButton.text = "NEW TOURNAMENT";
                 return;
             }
 
-            if (Tournament_State.Active)
+            if (Systems_TournamentState.Active)
             {
-                Tournament_State.GetEntrants(Tournament_State.CurrentMatch, out var a, out var b);
+                Systems_TournamentState.GetEntrants(Systems_TournamentState.CurrentMatch, out var a, out var b);
                 string aName = a != null ? a.behaviorName.ToUpperInvariant() : "?";
                 string bName = b != null ? b.behaviorName.ToUpperInvariant() : "?";
-                _statusLabel.text = $"MATCH {Tournament_State.CurrentMatch + 1} of 7 — {aName} v {bName}";
-                _actionButton.text = "PLAY MATCH";
+                string arena = ArenaForMatch(Systems_TournamentState.CurrentMatch)
+                    .Replace("SCN_SUMO_", "").Replace("SCN_SUMO", "CLAY");
+                _statusLabel.text = $"MATCH {Systems_TournamentState.CurrentMatch + 1} of 7 — {aName} v {bName}  ·  {arena}";
+                _actionButton.text = _autoPlay ? "PLAYING…" : "PLAY MATCH";
                 return;
             }
 
-            _statusLabel.text = "8 entrants · single elimination · one round per match";
+            _statusLabel.text = "8 entrants · single elimination · best of 3 per match";
             _actionButton.text = "START TOURNAMENT";
         }
 
@@ -420,29 +429,56 @@ namespace PoSumo
             name.style.color = character != null ? character.teamColor : TextDim;
         }
 
+        /// Once the bracket is seeded and running, matches chain on their own —
+        /// the user seeds the field, then watches the whole tournament play out.
+        private void Update()
+        {
+            if (!_autoPlay) return;
+            if (!Systems_TournamentState.Active || Systems_TournamentState.IsComplete) return;
+            _autoTimer += Time.deltaTime;
+            if (_autoTimer >= _betweenMatchSeconds)
+            {
+                _autoTimer = 0f;
+                LaunchCurrentMatch();
+            }
+        }
+
         private void OnAction()
         {
-            if (Tournament_State.IsComplete)
+            if (Systems_TournamentState.IsComplete)
             {
                 OnReset();
                 return;
             }
-            if (!Tournament_State.Active)
+            if (!Systems_TournamentState.Active)
             {
-                if (!Tournament_State.SeedsReady())
+                if (!Systems_TournamentState.SeedsReady())
                 {
                     _statusLabel.text = "every slot needs a fighter";
                     return;
                 }
-                Tournament_State.BeginTournament();
+                Systems_TournamentState.BeginTournament();
             }
-            SceneManager.LoadScene(_arenaScene);
+            LaunchCurrentMatch();
+        }
+
+        /// Rotate arenas by match index so the bracket travels across surfaces
+        /// rather than fighting every bout on the same clay.
+        private void LaunchCurrentMatch()
+        {
+            SceneManager.LoadScene(ArenaForMatch(Systems_TournamentState.CurrentMatch));
+        }
+
+        private string ArenaForMatch(int matchIndex)
+        {
+            if (_arenaScenes == null || _arenaScenes.Length == 0) return "SCN_SUMO";
+            return _arenaScenes[matchIndex % _arenaScenes.Length];
         }
 
         private void OnReset()
         {
-            Tournament_State.ResetAll();
-            Tournament_State.AutoSeed(_roster, Time.frameCount);
+            Systems_TournamentState.ResetAll();
+            Systems_TournamentState.AutoSeed(_roster, Time.frameCount);
             Refresh();
         }
     }

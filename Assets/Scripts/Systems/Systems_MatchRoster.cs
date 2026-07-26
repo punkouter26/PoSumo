@@ -23,9 +23,9 @@ namespace PoSumo
         {
             // A tournament match overrides the scene's own roster, so SCN_SUMO
             // serves both the bracket and standalone exhibition play.
-            bool tournament = Tournament_State.Active;
-            Agent_CharacterDefinition slotA = tournament ? Tournament_State.CurrentA : _characterA;
-            Agent_CharacterDefinition slotB = tournament ? Tournament_State.CurrentB : _characterB;
+            bool tournament = Systems_TournamentState.Active;
+            Agent_CharacterDefinition slotA = tournament ? Systems_TournamentState.CurrentA : _characterA;
+            Agent_CharacterDefinition slotB = tournament ? Systems_TournamentState.CurrentB : _characterB;
 
             var agents = FindObjectsByType<Agent_Biped>(FindObjectsInactive.Include, FindObjectsSortMode.None);
             for (int agentIndex = 0; agentIndex < agents.Length; agentIndex++)
@@ -54,6 +54,15 @@ namespace PoSumo
             // model so Agent_Biped picks up the character's own inferenceModel.
             agent.inferenceModel = null;
             agent.walkModel = null;
+
+            // Without a model the agent has no policy and simply collapses as a
+            // ragdoll, with nothing in the log to explain why.
+            if (character.inferenceModel == null)
+            {
+                Debug.LogError($"Systems_MatchRoster: character '{character.behaviorName}' has no " +
+                               $"inferenceModel — {agent.name} will have no brain and will not fight. " +
+                               "Deploy a trained ONNX to that character asset.");
+            }
 
             Agent_BipedBody body = agent.GetComponent<Agent_BipedBody>();
             if (body != null)

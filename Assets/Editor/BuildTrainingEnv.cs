@@ -14,6 +14,9 @@ namespace PoSumo.EditorTools
     /// full reimport.
     public static class BuildTrainingEnv
     {
+        // One entry per surviving training scene, named <Name>Env to match the
+        // scene it builds. Env builds are disposable — they are gitignored and
+        // rebuilt from here, so retired ones are deleted rather than kept.
         [MenuItem("PoSumo/Build Nick Training Env")]
         public static void BuildNick()
         {
@@ -24,6 +27,30 @@ namespace PoSumo.EditorTools
         public static void BuildKim()
         {
             Build("Assets/Scenes/Training/SCN_TRAIN_KIM.unity", "Builds/KimEnv/KimEnv.exe");
+        }
+
+        [MenuItem("PoSumo/Build Matt Training Env")]
+        public static void BuildMatt()
+        {
+            Build("Assets/Scenes/Training/SCN_TRAIN_MATT_AGGR.unity", "Builds/MattAggrEnv/MattAggrEnv.exe");
+        }
+
+        [MenuItem("PoSumo/Build Standard Training Env")]
+        public static void BuildStandard()
+        {
+            Build("Assets/Scenes/Training/SCN_TRAIN_STD.unity", "Builds/StandardEnv/StandardEnv.exe");
+        }
+
+        [MenuItem("PoSumo/Build Walk School Env")]
+        public static void BuildWalk()
+        {
+            Build("Assets/Scenes/Training/SCN_TRAIN_WALK.unity", "Builds/WalkEnv/WalkEnv.exe");
+        }
+
+        [MenuItem("PoSumo/Build Recover School Env")]
+        public static void BuildRecover()
+        {
+            Build("Assets/Scenes/Training/SCN_TRAIN_RECOVER4.unity", "Builds/RecoverEnv/RecoverEnv.exe");
         }
 
         public static void Build(string scenePath, string outputPath)

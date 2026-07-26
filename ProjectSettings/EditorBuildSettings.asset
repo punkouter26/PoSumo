@@ -6,6 +6,9 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
+    path: Assets/Scenes/SCN_TOURNAMENT.unity
+    guid: 4720e80c49211814cbee013a6ab67812
+  - enabled: 1
     path: Assets/Scenes/SCN_SUMO.unity
     guid: 992a0fb30821f604ba1b19a581679fd6
   - enabled: 1

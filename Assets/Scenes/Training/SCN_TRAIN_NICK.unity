@@ -561,6 +561,7 @@ MonoBehaviour:
   roundTimeoutSeconds: 30
   knockdownLoses: 0
   fallY: -0.2
+  footOffMatY: -0.06
   randomizeRounds: 1
   startHalfRange: {x: 1.7, y: 2.75}
   frictionRange: {x: 0.5, y: 1.1}
@@ -1009,6 +1010,7 @@ MonoBehaviour:
   roundTimeoutSeconds: 30
   knockdownLoses: 0
   fallY: -0.2
+  footOffMatY: -0.06
   randomizeRounds: 1
   startHalfRange: {x: 1.7, y: 2.75}
   frictionRange: {x: 0.5, y: 1.1}

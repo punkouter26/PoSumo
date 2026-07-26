@@ -18,6 +18,8 @@ namespace PoSumo
         [Tooltip("Legacy rule: any non-foot ground contact loses. Off for game parity.")]
         public bool knockdownLoses = false;
         public float fallY = -0.2f;
+        [Tooltip("Game parity: a foot dropping below this height loses the bout (stepping out). Must match Systems_GameMatchManager.footOffMatY.")]
+        public float footOffMatY = -0.06f;
 
         [Header("Domain randomization")]
         public bool randomizeRounds = true;
@@ -95,7 +97,18 @@ namespace PoSumo
 
         bool Loses(Agent_Biped w)
         {
-            if (w.Torso.position.y < fallY) return true;   // physically fell off
+            // Stepping out, matching the deployed game exactly: a foot below the
+            // mat surface has gone over the edge. Training previously used only
+            // the torso test, so policies never learned that a stray foot is
+            // fatal — the rules had silently diverged.
+            Agent_BipedBody body = w == wrestlerA ? _bodyA : _bodyB;
+            if (body != null)
+            {
+                float limit = transform.position.y + footOffMatY;
+                if (body.FootNear != null && body.FootNear.position.y < limit) return true;
+                if (body.FootFar != null && body.FootFar.position.y < limit) return true;
+            }
+            if (w.Torso.position.y < fallY) return true;   // backstop: thrown clear
             if (knockdownLoses && w.IsDown) return true;   // legacy instant-loss rule
             return false;
         }

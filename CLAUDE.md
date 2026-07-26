@@ -4,11 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-PoSumo: a Unity 6000.5.4f1 (2D URP) reinforcement-learning game where physics-ragdoll
-bipeds learn sumo wrestling via ML-Agents. The current agent is **Matt** (behavior name
-`Matt` — this string must match the YAML config key exactly). Approved game design is in
-`DESIGN.md`: 1v1 side-view sumo, **ring-out only** rules (falling is not a loss), two-phase
-curriculum (walk first, then self-play sumo initialized from the walk policy).
+PoSumo: a Unity 6000.5.4f1 (2D URP) game where physics-ragdoll bipeds learn sumo
+wrestling via ML-Agents, then fight each other in a playable, presentation-dressed
+match/tournament layer. Portrait orientation, Android target
+(`com.punkouter26.posumo`). `DESIGN.md` is the original approved spec and is now
+partly historical — where it disagrees with this file or the code, the code wins
+(notably: the ring is a raised dohyo of half-width ~2.75 m, not `|x| > 7`).
+
+The roster is exactly four trained fighters — **Matt**, **Standard**, **Nick**,
+**Kim** — each with an `.onnx`, a `*_Character.asset` and a `MANIFEST.md`. The
+8-slot bracket seeds each of them twice. `Assets/Agents/ROSTER.md` is the roster
+overview; there is no code mirror of it.
 
 ## Toolchain versions (validated in production — treat as the required set)
 
@@ -17,7 +23,7 @@ curriculum (walk first, then self-play sumo initialized from the walk policy).
 | Engine | Unity Editor | **6000.5.4f1** (Unity 6.2) | changeset d550df8bd089 |
 | Engine | Unity Hub | 3.x | headless CLI broken — install modules via UI |
 | Package | com.unity.ml-agents | **4.0.0** (release_23) | LOCAL `file:` package with patches — never re-fetch |
-| Package | com.unity.ai.inference | 2.2.1 | auto-dependency of ML-Agents |
+| Package | com.unity.ai.inference | 2.2.1 | auto-dependency of ML-Agents (`Unity.InferenceEngine.ModelAsset`) |
 | Package | URP | 17.6.0 | project template |
 | MCP | unity-mcp-cli (npm) | 0.86.0 | |
 | MCP | com.ivanmurzak.unity.mcp | 0.86.0 | + gamedev-mcp-server 9.2.0 |
@@ -64,25 +70,135 @@ curriculum (walk first, then self-play sumo initialized from the walk policy).
    AND source clone) — `StrictVersion` replaced with a manual tuple parse; the original
    crashes worker auto-restarts.
 
-## Training commands
+## Architecture
+
+### Everything about the biped is built at runtime
+Scenes contain only manager objects. `Agent_BipedBody.Awake()` constructs the 14-part
+ragdoll from code-defined tables (`PART_DEFS` / `JOINT_DEFS`): 4-segment articulated
+spine (pelvis→lowerback→upperback→chest), legs and arms — **13 hinge motors**, mirrored
+via `facingSign` (one policy works both directions because all observations are
+multiplied into a facing-local frame). Intra-biped collisions are disabled pairwise
+(limbs pass through their own body by design). `massScale` / `widthScale` /
+`torqueScale` come from the character asset, so physique is data, not code.
+
+### The brain contract (`Agent_Biped`)
+- **13 continuous actions** (`ActionCount`), always.
+- **41 observations** (legacy, decision period 5) or **44** when `extendedObservations`
+  is on (+ opponent uprightness / down flag / edge distance, decision period 3 — the
+  standard for new characters). Obs count and decision period MUST match what the
+  assigned `.onnx` was trained with, or inference is silently garbage.
+- Three `Mode`s: `Walk` (falling ends the episode), `Recover` (get up, then walk —
+  falling never ends it, but lying down bleeds reward), `Sumo` (refereed externally;
+  shaping only, ±1 comes from the referee).
+- Configures its own `BehaviorParameters` / `DecisionRequester` in `Awake` — nothing to
+  wire in the Inspector.
+- All observations pass through `San()` NaN/Inf sanitization.
+- `BeginWalkIn` / `EndWalkIn` temporarily swap in the character's `walkModel` (and the
+  Recover observation layout) for the ceremonial round-opening walk-in, with
+  `suppressEpisodeControl` so the presentation layer can borrow the body safely.
+
+### Characters are ScriptableObjects
+`Agent_CharacterDefinition` (menu: *PoSumo/Character Definition*) is one asset per
+fighter holding identity (behavior name = YAML key, colour, face sprite names), body
+build scales, brain generation (`extendedObservations`, `decisionPeriod`,
+`inferenceModel`, `walkModel`), and **every sumo reward-shaping coefficient**. Fighter
+personality (Nick = light and mobile, Kim = heavy planted anchor) lives in the asset and
+the YAML header comments, never in `Agent_Biped`. `Systems_MatchRoster`
+(`[DefaultExecutionOrder(-500)]`, must run before the agents' `Awake`) assigns the two
+characters for a scene, or defers to `Tournament_State` when a bracket is active.
+
+### Two referees, deliberately kept in sync
+- `Systems_SumoMatchManager` — **training** referee. Loss = a foot below `footOffMatY`
+  (−0.06) or torso below `fallY`; timeout ⇒ `EpisodeInterrupted` (draw). Per-round domain
+  randomization of platform width and surface friction, plus curriculum dials read from
+  `Academy.Instance.EnvironmentParameters` (`spawn_gap_half`, `shove_impulse`,
+  `platform_difficulty`, `shove_chance`).
+- `Systems_GameMatchManager` — **game** referee. Round state machine
+  Fighting → RoundEnded → Grace → Fighting, scored to `pointsToWin` (exhibition) or
+  `tournamentPointsToWin` (bracket), countdown freeze, timeout tiebreak on position, UI
+  Toolkit HUD built in code. Spawns the presentation companions
+  (`Systems_MatchPresentation` slow-mo/punch-in, `Systems_MatchAudio`, `Systems_FaceMood`)
+  and exposes `RoundEnded` / `RoundStarted` / `MatchEnded` / `MatchReset` events.
+
+Falling is **not** a loss in either referee (`knockdownLoses` is off). If you change a
+losing condition, change it in **both** — they have silently diverged before, and
+policies then never learn that a stray foot over the edge is fatal.
+
+Shared numbers live in `Assets/Settings/GameTuning.asset` (`Systems_GameTuning`); scene
+components copy from it at startup, so tune the asset, not serialized scene values.
+
+### Tournament
+`Systems_TournamentState` is a **static** 8-slot single-elimination bracket (it must
+outlive the scene loads that play each match). Enter Play Mode domain reload is
+**disabled** in this project, so it clears itself via
+`[RuntimeInitializeOnLoadMethod(SubsystemRegistration)]` — any new static game state needs
+the same treatment. `Systems_TournamentBracket` (SCN_TOURNAMENT) draws/seeds the bracket
+and loads the next arena; `Systems_TournamentReporter` is spawned into the arena only
+during a bracket match and reports the winner back, keeping SCN_SUMO usable as a
+standalone exhibition scene.
+
+Bracket UI gotcha: several rows display the *same* match (match 0 is both the QF-0 winner
+and the semifinal's left entrant), so `_winnerSlots` holds one entry **per chip**, not per
+match, and `Refresh()` reads each chip's match from its `userData`. Keying that list by
+match index silently orphans the duplicate chips and they never repaint.
+
+### Scenes
+Build settings: `SCN_TOURNAMENT` (index 0), `SCN_SUMO`, `SCN_SUMO_ICE`, `SCN_SUMO_STICKY` —
+the three arenas differ only by `Systems_SumoArena.style`/friction and are cycled through
+by the bracket. `SCN_WALKVIEW` views a locomotion brain. Arena scenes are **baked**: an
+editor pass ran `Systems_SumoArena.Build()` and saved the children, so `Awake` only
+rebinds references.
+
+Six training scenes remain, one per surviving purpose — every one either produced a
+deployed brain or is the newest template for a training mode:
+`SCN_TRAIN_MATT_AGGR`, `SCN_TRAIN_STD`, `SCN_TRAIN_NICK`, `SCN_TRAIN_KIM` (sumo),
+`SCN_TRAIN_WALK` (walk school), `SCN_TRAIN_RECOVER4` (recover school). Keep that rule when
+adding or retiring scenes — a scene that produced a shipped brain is the only way to
+reproduce it.
+
+### Conventions
+- Scene hierarchy rule: every environment root has exactly 7 groups
+  (Agents/Obstacles/Goals/SpawnPoints/Cameras/UI/Systems).
+- Naming schema, enforced across the whole tree: script prefixes are exactly
+  `Agent_`, `Sensor_`, `Systems_` (three folders under `Assets/Scripts/`, no others);
+  scenes `SCN_*` with training scenes as `SCN_TRAIN_<NAME>`; env builds as
+  `Builds/<Name>Env/` matching their scene; configs as `<Name><Phase><NN>.yaml` paired
+  1:1 with run-id `<name>_<phase><nn>`; agent assets in `Assets/Agents/<Name>_v<NN>/`
+  with a `MANIFEST.md`; face art as `Assets/Resources/<Name>_{neutral,happy1-3,sad1-3}.png`.
+- `Systems_AcademyLifecycle` (static init) sets `runInBackground = true` — **critical**;
+  without it Unity stops simulating on focus loss and the trainer times out — plus
+  gravity, solver iterations, and Academy disposal on quit.
+- Face sprites are resolved by the names on the character asset. Matt is the one exception:
+  his asset leaves those fields empty and `Systems_FaceMood` falls back to its `Matt_*`
+  constants — rename his PNGs and those constants together.
+
+## Training workflow
 
 Always run TensorBoard alongside training (user rule):
 ```powershell
 Training\venv\Scripts\python.exe -m tensorboard.main --logdir Training/results --port 6006 --reload_interval 15
 ```
 
-Current state (post-cleanup): only `SCN_SUMO` (the game) exists; training scenes and env
-builds were pruned. To train again: build a training scene via MCP using
-`Systems_WalkTraining` (walk school) or two agents + `Systems_SumoMatchManager` (self-play),
-build a headless env exe, then:
+Typical loop for a new or updated fighter:
+1. Character asset + a `Training/configs/<Name><Phase><NN>.yaml` whose `behaviors:` key
+   **exactly** matches `behaviorName`. Each config's header comment records why its
+   hyperparameters and shaping differ — keep that habit; it is the project's training log.
+2. Build a headless env from the fighter's training scene
+   (`PoSumo/Build <Name> Training Env` → `Builds/<Name>Env/<Name>Env.exe`).
+3. Train:
 ```powershell
 Training\venv\Scripts\mlagents-learn.exe Training/configs/<cfg>.yaml --run-id=<id> `
-  --results-dir=Training/results --env=Builds/<Env>/<Env>.exe --num-envs=4 --no-graphics
+  --results-dir=Training/results --env=Builds/<Env>/<Env>.exe --num-envs=3 --no-graphics
 ```
-Resume/fine-tune sources kept: `Training/results/matt_sumo02` (Matt) and
-`Training/results/dave_sumo01` (Dave) — use `--initialize-from=<run>`.
+4. Deploy the ONNX (`PoSumo/Deploy <Name> Brain`, or `DeployBrain.DeployLatestCheckpoint(...)`
+   to try a brain from a still-running run — the trainer only writes the unnumbered
+   `<Behavior>.onnx` on shutdown).
 
-Rules for restarts: physics/observation/action changes ⇒ new run-id or `--force` (cold);
+`--initialize-from=<run>` resolves **by behavior name**, so a cross-character fine-tune
+needs the source weights staged under the new name (see the `kim_init` / `nick_init` runs).
+`network_settings` must match the trunk being initialized from exactly (512 × 3 here).
+
+Restart rules: physics/observation/action changes ⇒ new run-id or `--force` (cold);
 parameter-only tweaks ⇒ `--resume`. `--force` deletes the run dir — **restart TensorBoard
 afterward** (it holds a stale handle on Windows and shows an empty run).
 
@@ -90,53 +206,68 @@ To stop training: kill `mlagents-learn.exe` itself. Killing only the env worker 
 nothing — the trainer auto-respawns them. On any disconnect the trainer saves a final
 checkpoint before exiting.
 
-## Architecture
+Deployed models are always **overwritten in place** at `Assets/Agents/<Name>_v01/<Name>.onnx`
+so the `.meta` GUID (and every reference to it) survives; `DeployBrain` does this and also
+sets the character asset's `inferenceModel`. Copying a checkpoint does not require stopping
+a headless run.
 
-- **Everything about the biped is built at runtime.** Scenes contain only manager objects;
-  `Agent_BipedBody.Awake()` constructs the 14-part ragdoll from code-defined tables
-  (`PART_DEFS`/`JOINT_DEFS`): 4-segment articulated spine (pelvis→lowerback→upperback→chest),
-  legs and arms — 13 hinge motors, mirrored via `facingSign` (one policy works both
-  directions because all observations are multiplied into a facing-local frame).
-  Intra-biped collisions are disabled pairwise (limbs pass through own body by design).
-- `Agent_Biped` (ML-Agents `Agent`): 41 observations / 13 continuous actions; configures
-  its own `BehaviorParameters` in `Awake` (nothing to set in the Inspector). `Mode.Walk`
-  self-terminates on falls; `Mode.Sumo` is refereed by `Systems_SumoMatchManager`
-  (ring-out at |x| > 7 from arena center; timeout ⇒ `EpisodeInterrupted`).
-- `Systems_WalkTraining` spawns N self-contained lane environments at runtime; when its
-  `inferenceModel` is set it spawns **one** lane (viewing mode) instead of 8 (training).
-- `Systems_AcademyLifecycle` (static init): `runInBackground=true` (critical — without it
-  Unity stops simulating on focus loss and the trainer times out), gravity, solver
-  iterations, Academy disposal on quit.
-- Scene hierarchy rule: every environment root has exactly 7 groups
-  (Agents/Obstacles/Goals/SpawnPoints/Cameras/UI/Systems). Naming: `Agent_`, `Sensor_`,
-  `Systems_` script prefixes; scenes `SCN_*`; agent assets in `Assets/Agents/<Name>_v<NN>/`.
-- Trained models: copy checkpoint to `Assets/Agents/Matt_v01/Matt.onnx` — **always
-  overwrite in place** (preserves the .meta GUID). Assign to `Systems_WalkTraining.
-  inferenceModel` (or `Agent_Biped.inferenceModel`) for Python-free Burst inference;
-  copying a checkpoint does not require stopping a headless training run.
+`Training/results` hygiene: a finished run keeps only its final `<Behavior>.onnx`, a
+resumable `checkpoint.pt`, `configuration.yaml`, `run_logs/` and its tfevents. The numbered
+per-step checkpoints are ~140 MB per run and nothing deploys from them — prune them once a
+run is deployed. Staging directories for cross-character `--initialize-from` hold no
+history and appear in TensorBoard as empty runs, so delete them after the real run starts;
+they are one `Copy-Item` away from being recreated. `Training/README.md` maps every kept
+config to the run and deployed brain it produced.
+
+## Editor menu tools (`Assets/Editor/`, all under the **PoSumo** menu)
+
+| Tool | Purpose |
+|---|---|
+| `BuildTrainingEnv` | Headless Win64 player containing one training scene (`--env` target). One menu entry per surviving training scene |
+| `BuildAndroid` | APK to `Builds/Android/PoSumo.apk` from the enabled build-settings scenes |
+| `DeployBrain` | Copy a run's ONNX → agent folder + wire the character asset. One entry per fighter, each pinned to the run that currently backs its shipped brain |
+| `MatchTestHarness` | `MatchTestHarness.Run(n)` in Play mode: chains N matches unattended, logs a `HARNESS RESULT:` win/loss tally |
+
+`Builds/` is gitignored and disposable — every env build is reproducible from its menu
+entry, so retire a build by deleting the folder rather than keeping it around.
+
+Judge a character by the harness tally, not by one eyeballed round. The build/deploy tools
+print a `BUILD RESULT:` / `DEPLOY RESULT:` line — that is how their outcome is read back.
 
 ## Unity Editor automation (MCP)
 
-The `ai-game-developer` MCP server (IvanMurzak Unity-MCP, stdio via `.mcp.json`, no login)
+The `ai-game-developer` MCP server (IvanMurzak Unity-MCP, HTTP via `.mcp.json`, no login)
 is the way to drive the editor: `scene-*`, `gameobject-*`, `script-execute`,
-`console-get-logs`, `assets-refresh`, `screenshot-isolated`. Hard-won specifics:
+`console-get-logs`, `assets-refresh`, `screenshot-*`. Hard-won specifics:
 
 - To force import/recompile after writing files, call `assets-refresh` (ForceUpdate) —
   window-focus tricks are unreliable.
 - `script-execute` calls that block the main thread >~30 s (e.g. `BuildPipeline.BuildPlayer`)
   return an MCP retry error **while still executing** — poll `Logs/Editor.log` for the
-  result (the build scripts log a `BUILD RESULT:` line).
+  `BUILD RESULT:` line.
 - The plugin drops briefly on every domain reload (play-mode change, recompile); retry.
-- Game-view verification: `script-execute` a `Camera.main` RenderTexture capture to a PNG
-  under `Temp/`, then read the image.
+- Game-view verification: `screenshot-game-view`, or `script-execute` a `Camera.main`
+  RenderTexture capture to a PNG under `Temp/` and read the image.
 - Scene edits require exiting Play mode first (`EditorApplication.ExitPlaymode()`).
 
 Two other Unity MCP packages are installed but not connected as Claude clients
 (CoplayDev `com.coplaydev.unity-mcp`, Besty `com.besty.unity-skills`); enabling them
 requires in-editor menu steps plus a Claude Code restart.
 
+## Working in this repo (hooks)
+
+`.claude/hooks/` enforces the rules in `.claude/rules/` and blocks several things by
+design — these are not bugs:
+- `.unity` / `.prefab` / `.meta` files cannot be text-edited. Use MCP tools.
+- `UnityEditor` usage in non-`Editor/` C# without an `#if UNITY_EDITOR` guard is blocked.
+- The **first** `Edit`/`Write` on a given `.cs` file is denied on purpose (fact-gathering
+  gate); read the message, then retry the same edit.
+- `git add ProjectSettings/…` and destructive Bash (`rm -rf Library/`, `git clean -fdx`, …)
+  are denied on first attempt.
+
 ## Verification expectations
 
-After scene or body changes, verify in Game view (via the screenshot flow above): biped(s)
-clearly visible against the 1-meter grid (heavy line every 5 m), realistic gravity/contacts,
-no console errors. The user judges creature size by grid squares — keep the grid.
+After scene or body changes, verify in Game view (via the screenshot flow above): both
+fighters clearly visible on the dohyo, realistic gravity/contacts, no console errors, and
+the HUD/score readable in portrait. For behavioural changes, run `MatchTestHarness.Run(n)`
+and report the tally rather than an impression.
