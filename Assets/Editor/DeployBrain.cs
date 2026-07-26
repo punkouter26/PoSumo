@@ -25,6 +25,49 @@ namespace PoSumo.EditorTools
             Deploy("kim_sumo01", "Kim", "Assets/Agents/Kim_v01");
         }
 
+        [MenuItem("PoSumo/Deploy Nick Latest Checkpoint")]
+        public static void DeployNickLatestCheckpoint()
+        {
+            DeployLatestCheckpoint("nick_sumo02", "Nick", "Assets/Agents/Nick_v01");
+        }
+
+        /// Deploy the newest numbered checkpoint of a RUNNING training run, so a
+        /// brain can be tried before the run finishes. The trainer only writes
+        /// the unnumbered `<Behavior>.onnx` on shutdown, hence the separate path.
+        /// Safe while training continues — this only reads the exported files.
+        public static void DeployLatestCheckpoint(string runId, string behaviorName, string agentFolder)
+        {
+            string dir = $"Training/results/{runId}/{behaviorName}";
+            if (!Directory.Exists(dir))
+            {
+                Debug.LogError($"DEPLOY RESULT: Failed — no checkpoint directory at {dir}.");
+                return;
+            }
+
+            string newest = null;
+            long newestStep = -1;
+            foreach (string file in Directory.GetFiles(dir, $"{behaviorName}-*.onnx"))
+            {
+                string stem = Path.GetFileNameWithoutExtension(file);
+                int dash = stem.LastIndexOf('-');
+                if (dash < 0) continue;
+                if (!long.TryParse(stem.Substring(dash + 1), out long step)) continue;
+                if (step > newestStep)
+                {
+                    newestStep = step;
+                    newest = file;
+                }
+            }
+
+            if (newest == null)
+            {
+                Debug.LogError($"DEPLOY RESULT: Failed — no {behaviorName}-<step>.onnx checkpoints in {dir}.");
+                return;
+            }
+
+            CopyInto(newest, behaviorName, agentFolder, $"checkpoint @ {newestStep:N0} steps");
+        }
+
         /// runId: folder under Training/results. behaviorName: the ONNX stem the
         /// trainer writes. agentFolder: destination under Assets/Agents.
         public static void Deploy(string runId, string behaviorName, string agentFolder)
@@ -37,6 +80,11 @@ namespace PoSumo.EditorTools
                 return;
             }
 
+            CopyInto(source, behaviorName, agentFolder, "final export");
+        }
+
+        static void CopyInto(string source, string behaviorName, string agentFolder, string note)
+        {
             Directory.CreateDirectory(agentFolder);
             string destination = $"{agentFolder}/{behaviorName}.onnx";
             File.Copy(source, destination, overwrite: true);
@@ -62,7 +110,7 @@ namespace PoSumo.EditorTools
             AssetDatabase.SaveAssets();
 
             var info = new FileInfo(destination);
-            Debug.Log($"DEPLOY RESULT: Succeeded | {behaviorName} | {info.Length / 1024}KB | " +
+            Debug.Log($"DEPLOY RESULT: Succeeded | {behaviorName} | {note} | {info.Length / 1024}KB | " +
                       $"{source} -> {destination} | character.inferenceModel set");
         }
     }

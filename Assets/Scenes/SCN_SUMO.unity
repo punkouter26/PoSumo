@@ -15376,7 +15376,7 @@ MonoBehaviour:
   colorA: {r: 0.85, g: 0.25, b: 0.2, a: 1}
   colorB: {r: 0.2, g: 0.5, b: 0.3, a: 1}
   pointsToWin: 3
-  ringHalfWidth: 1.6
+  ringHalfWidth: 0.8
   fallY: -0.2
   knockdownLoses: 0
   roundTimeoutSeconds: 30
@@ -15390,7 +15390,7 @@ MonoBehaviour:
   enableFaceMood: 1
   countdownSeconds: 3
   countdownHeadOrtho: 0.85
-  neutralGapHalf: 0.9
+  neutralGapHalf: 0.5
   timeoutDecidesOnPosition: 1
   timeoutDeadHeat: 0.15
 --- !u!1 &1922649009

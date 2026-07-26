@@ -21,16 +21,29 @@ namespace PoSumo
 
         private void Awake()
         {
+            // A tournament match overrides the scene's own roster, so SCN_SUMO
+            // serves both the bracket and standalone exhibition play.
+            bool tournament = Tournament_State.Active;
+            Agent_CharacterDefinition slotA = tournament ? Tournament_State.CurrentA : _characterA;
+            Agent_CharacterDefinition slotB = tournament ? Tournament_State.CurrentB : _characterB;
+
             var agents = FindObjectsByType<Agent_Biped>(FindObjectsInactive.Include, FindObjectsSortMode.None);
             for (int agentIndex = 0; agentIndex < agents.Length; agentIndex++)
             {
                 Agent_Biped agent = agents[agentIndex];
-                Agent_CharacterDefinition wanted = agent.teamId == 0 ? _characterA : _characterB;
+                Agent_CharacterDefinition wanted = agent.teamId == 0 ? slotA : slotB;
                 if (wanted == null)
                 {
                     continue;
                 }
                 Apply(agent, wanted);
+            }
+
+            if (tournament && FindAnyObjectByType<Systems_TournamentReporter>() == null)
+            {
+                var go = new GameObject("TournamentReporter");
+                go.transform.SetParent(transform, false);
+                go.AddComponent<Systems_TournamentReporter>();
             }
         }
 

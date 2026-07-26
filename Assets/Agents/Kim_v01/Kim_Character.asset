@@ -14,11 +14,17 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Agent_CharacterDefinition
   behaviorName: Kim
   teamColor: {r: 0.62, g: 0.32, b: 0.62, a: 1}
-  headSprite: {fileID: 0}
+  headSprite: {fileID: 21300000, guid: d94e953ab64ad254a82ea72f5f20885a, type: 3}
   faceArtFacesLeft: 1
-  faceNeutralName: 
-  faceHappyNames: []
-  faceSadNames: []
+  faceNeutralName: Kim_neutral
+  faceHappyNames:
+  - Kim_happy1
+  - Kim_happy2
+  - Kim_happy3
+  faceSadNames:
+  - Kim_sad1
+  - Kim_sad2
+  - Kim_sad3
   massScale: 1.45
   widthScale: 1.3
   torqueScale: 1.5
