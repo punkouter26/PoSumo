@@ -95,10 +95,43 @@ namespace PoSumo.EditorTools
             CopyInto(source, behaviorName, agentFolder, "final export");
         }
 
-        static void CopyInto(string source, string behaviorName, string agentFolder, string note)
+        [MenuItem("PoSumo/Deploy Kim Walk Brain")]
+        public static void DeployKimWalk()
+        {
+            DeployWalk("kim_walk01", "Kim", "Assets/Agents/Kim_v01");
+        }
+
+        [MenuItem("PoSumo/Deploy Nick Walk Brain")]
+        public static void DeployNickWalk()
+        {
+            DeployWalk("nick_walk01", "Nick", "Assets/Agents/Nick_v01");
+        }
+
+        /// Deploy a locomotion brain: the trainer exports it as `<Behavior>.onnx`
+        /// like any other run, but it lands as `<Name>Walk.onnx` and wires to the
+        /// character's `walkModel` — the brain Agent_Biped.BeginWalkIn borrows for
+        /// the round-opening walk-in. Deploying it over `inferenceModel` would
+        /// replace the fighter's fight brain with a walker.
+        public static void DeployWalk(string runId, string behaviorName, string agentFolder)
+        {
+            string source = $"Training/results/{runId}/{behaviorName}.onnx";
+            if (!File.Exists(source))
+            {
+                Debug.LogError($"DEPLOY RESULT: Failed — no ONNX at {source}. " +
+                               "The run must have finished (or been stopped) so the trainer exported it.");
+                return;
+            }
+
+            CopyInto(source, behaviorName, agentFolder, "walk brain", walkSlot: true);
+        }
+
+        static void CopyInto(string source, string behaviorName, string agentFolder, string note,
+                             bool walkSlot = false)
         {
             Directory.CreateDirectory(agentFolder);
-            string destination = $"{agentFolder}/{behaviorName}.onnx";
+            string destination = walkSlot
+                ? $"{agentFolder}/{behaviorName}Walk.onnx"
+                : $"{agentFolder}/{behaviorName}.onnx";
             File.Copy(source, destination, overwrite: true);
             AssetDatabase.ImportAsset(destination, ImportAssetOptions.ForceUpdate);
 
@@ -117,13 +150,21 @@ namespace PoSumo.EditorTools
                 return;
             }
 
-            character.inferenceModel = model;
+            if (walkSlot)
+            {
+                character.walkModel = model;
+            }
+            else
+            {
+                character.inferenceModel = model;
+            }
             EditorUtility.SetDirty(character);
             AssetDatabase.SaveAssets();
 
             var info = new FileInfo(destination);
             Debug.Log($"DEPLOY RESULT: Succeeded | {behaviorName} | {note} | {info.Length / 1024}KB | " +
-                      $"{source} -> {destination} | character.inferenceModel set");
+                      $"{source} -> {destination} | " +
+                      $"character.{(walkSlot ? "walkModel" : "inferenceModel")} set");
         }
     }
 }

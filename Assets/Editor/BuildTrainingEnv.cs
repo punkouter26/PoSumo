@@ -47,6 +47,20 @@ namespace PoSumo.EditorTools
             Build("Assets/Scenes/Training/SCN_TRAIN_WALK.unity", "Builds/WalkEnv/WalkEnv.exe");
         }
 
+        // Per-fighter walk schools: the gait has to be learned on the physique it
+        // will run on, so a heavyweight and a lightweight each get their own.
+        [MenuItem("PoSumo/Build Kim Walk Env")]
+        public static void BuildKimWalk()
+        {
+            Build("Assets/Scenes/Training/SCN_TRAIN_WALK_KIM.unity", "Builds/KimWalkEnv/KimWalkEnv.exe");
+        }
+
+        [MenuItem("PoSumo/Build Nick Walk Env")]
+        public static void BuildNickWalk()
+        {
+            Build("Assets/Scenes/Training/SCN_TRAIN_WALK_NICK.unity", "Builds/NickWalkEnv/NickWalkEnv.exe");
+        }
+
         [MenuItem("PoSumo/Build Recover School Env")]
         public static void BuildRecover()
         {
