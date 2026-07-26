@@ -45,6 +45,10 @@ namespace PoSumo
         public float countdownHeadOrtho = 0.85f;
         [Tooltip("Half the gap between the fighters' neutral stand-off positions during the countdown.")]
         public float neutralGapHalf = 0.9f;
+        [Tooltip("Settle a timed-out round on position instead of calling it a draw. Without this nothing breaks a stalemate, so cagey matchups draw forever.")]
+        public bool timeoutDecidesOnPosition = true;
+        [Tooltip("Centre-distance difference (m) below which a timeout is still a genuine draw.")]
+        public float timeoutDeadHeat = 0.15f;
 
         int _scoreA, _scoreB;
         float _elapsed, _phaseLeft, _downA, _downB;
@@ -95,25 +99,62 @@ namespace PoSumo
                 downGraceSeconds = tuning.downGraceSeconds;
             }
 
-            if (wrestlerA == null || wrestlerB == null)
-            {
-                foreach (var a in FindObjectsByType<Agent_Biped>(FindObjectsSortMode.None))
-                {
-                    if (a.teamId == 0) wrestlerA = a; else wrestlerB = a;
-                }
-            }
+            ResolveWrestlers();
             wrestlerA.opponent = wrestlerB;
             wrestlerB.opponent = wrestlerA;
             wrestlerA.ringHalfWidth = ringHalfWidth;
             wrestlerB.ringHalfWidth = ringHalfWidth;
             wrestlerA.arenaCenterX = transform.position.x;
             wrestlerB.arenaCenterX = transform.position.x;
+
+            // Size the dohyo to the configured ring once at startup. This is a
+            // STATIC width, not the old stall-breaker: the platform never moves
+            // again during a round. Baked scenes ship a 5.5 m-wide platform, so
+            // without this the physical edge ignores ringHalfWidth entirely.
+            var arena = FindAnyObjectByType<Systems_SumoArena>();
+            if (arena != null) arena.SetPlatformHalfWidth(ringHalfWidth);
+
             _camFollow = FindAnyObjectByType<Systems_CameraFollow>();
             BuildUi();
             UpdateScoreboard(false);
             SpawnCompanionSystems();
             FreezeForCountdown();
             StartCountdown();
+        }
+
+        /// Identity is adopted in Awake, not Start: the fight HUD reads nameA/
+        /// colorA from here during its own Start, and Start-order between two
+        /// components is undefined — resolving late showed a stale name on the
+        /// stat panel while the scoreboard was already correct.
+        void Awake()
+        {
+            ResolveWrestlers();
+            AdoptCharacterIdentity();
+        }
+
+        void ResolveWrestlers()
+        {
+            if (wrestlerA != null && wrestlerB != null) return;
+            foreach (var a in FindObjectsByType<Agent_Biped>(FindObjectsSortMode.None))
+            {
+                if (a.teamId == 0) wrestlerA = a; else wrestlerB = a;
+            }
+        }
+
+        /// Scoreboard name and colour follow whichever characters are actually
+        /// fighting, so swapping the roster needs no further scene edits.
+        void AdoptCharacterIdentity()
+        {
+            if (wrestlerA.character != null)
+            {
+                nameA = wrestlerA.character.behaviorName.ToUpperInvariant();
+                colorA = wrestlerA.character.teamColor;
+            }
+            if (wrestlerB.character != null)
+            {
+                nameB = wrestlerB.character.behaviorName.ToUpperInvariant();
+                colorB = wrestlerB.character.teamColor;
+            }
         }
 
         /// Round opening: both fighters hold a neutral standing pose at the
@@ -174,12 +215,23 @@ namespace PoSumo
                 go.transform.SetParent(transform, false);
                 go.AddComponent<Systems_MatchAudio>();
             }
+            // One mood driver per fighter that actually has face art.
             if (enableFaceMood && FindAnyObjectByType<Systems_FaceMood>() == null)
             {
-                var go = new GameObject("FaceMood");
-                go.transform.SetParent(transform, false);
-                go.AddComponent<Systems_FaceMood>();
+                SpawnFaceMood(wrestlerA);
+                SpawnFaceMood(wrestlerB);
             }
+        }
+
+        void SpawnFaceMood(Agent_Biped fighter)
+        {
+            if (fighter == null) return;
+            var body = fighter.GetComponent<Agent_BipedBody>();
+            if (body == null || body.character == null || body.character.headSprite == null) return;
+            var go = new GameObject($"FaceMood_{fighter.behaviorName}");
+            go.transform.SetParent(transform, false);
+            var mood = go.AddComponent<Systems_FaceMood>();
+            mood.fighterBehaviorName = fighter.behaviorName;
         }
 
         static string Hex(Color c) => ColorUtility.ToHtmlStringRGB(c);
@@ -454,7 +506,32 @@ namespace PoSumo
             if (aOut && bOut) EndRound(null, "DOUBLE OUT — DRAW");
             else if (aOut) EndRound(wrestlerB, null);
             else if (bOut) EndRound(wrestlerA, null);
-            else if (_elapsed >= roundTimeoutSeconds) EndRound(null, "TIME — DRAW");
+            else if (_elapsed >= roundTimeoutSeconds) DecideOnTimeout();
+        }
+
+        /// The shrinking ring used to force stalemates to resolve; with it gone,
+        /// a timeout is settled the way a real bout goes to the judges — whoever
+        /// held nearer the centre pushed the other toward the edge and takes the
+        /// round. Only a near dead heat is still a draw.
+        void DecideOnTimeout()
+        {
+            if (!timeoutDecidesOnPosition)
+            {
+                EndRound(null, "TIME — DRAW");
+                return;
+            }
+            float centerX = transform.position.x;
+            float distanceA = Mathf.Abs(wrestlerA.TorsoX - centerX);
+            float distanceB = Mathf.Abs(wrestlerB.TorsoX - centerX);
+            if (Mathf.Abs(distanceA - distanceB) < timeoutDeadHeat)
+            {
+                EndRound(null, "TIME — DRAW");
+                return;
+            }
+            Agent_Biped winner = distanceA < distanceB ? wrestlerA : wrestlerB;
+            string label = WrapName(winner == wrestlerA ? nameA : nameB,
+                                    winner == wrestlerA ? colorA : colorB);
+            EndRound(winner, null, $"TIME — {label} DECISION");
         }
 
         /// Ring-out is physical: you lose only after actually falling off the
@@ -464,7 +541,7 @@ namespace PoSumo
             return w.Torso.position.y < fallY;
         }
 
-        void EndRound(Agent_Biped roundWinner, string drawText)
+        void EndRound(Agent_Biped roundWinner, string drawText, string winText = null)
         {
             LongestRound = Mathf.Max(LongestRound, _elapsed);
             if (roundWinner == wrestlerA) _scoreA++;
@@ -503,7 +580,7 @@ namespace PoSumo
             }
 
             _banner.text = roundWinner != null
-                ? $"{WrapName(roundWinner == wrestlerA ? nameA : nameB, roundWinner == wrestlerA ? colorA : colorB)} SCORES!"
+                ? (winText ?? $"{WrapName(roundWinner == wrestlerA ? nameA : nameB, roundWinner == wrestlerA ? colorA : colorB)} SCORES!")
                 : drawText;
             _banner.style.display = DisplayStyle.Flex;
 

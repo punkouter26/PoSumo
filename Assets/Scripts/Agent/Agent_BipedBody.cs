@@ -17,6 +17,7 @@ namespace PoSumo
 
         public int facingSign = 1;
         public Color teamColor = new Color(0.85f, 0.25f, 0.2f);
+        bool _faceArtFacesLeft;
 
         [Header("Build (1 = Matt's lightweight baseline)")]
         [Tooltip("Multiplies every part's mass. Heavyweight sumo ~2.")]
@@ -36,8 +37,10 @@ namespace PoSumo
         [HideInInspector] public Rigidbody2D[] Parts;
         [HideInInspector] public List<Collider2D> AllColliders = new List<Collider2D>();
 
-        // Spawn clearance above contact surfaces to avoid frame-0 interpenetration.
-        const float SPAWN_CLEARANCE = 0.03f;
+        // Spawn clearance above contact surfaces: enough to avoid frame-0
+        // interpenetration, small enough that the feet are effectively already
+        // planted when physics starts (a taller drop costs balance).
+        const float SPAWN_CLEARANCE = 0.01f;
         const float MAX_ANGULAR_VELOCITY = 1080f; // deg/s clamp against physics blow-up
 
         float[] _maxSpeed;   // deg/s per joint
@@ -114,6 +117,7 @@ namespace PoSumo
                 massScale = character.massScale;
                 widthScale = character.widthScale;
                 torqueScale = character.torqueScale;
+                _faceArtFacesLeft = character.faceArtFacesLeft;
             }
             Build();
         }
@@ -332,7 +336,9 @@ namespace PoSumo
             if (HeadRenderer == null || s == null) return;
             HeadRenderer.sprite = s;
             HeadRenderer.color = Color.white;
-            HeadRenderer.flipX = facingSign < 0;
+            // Rig geometry is right-facing; left-facing source art flips the
+            // other way so every character looks where it is walking.
+            HeadRenderer.flipX = _faceArtFacesLeft ? facingSign > 0 : facingSign < 0;
             float sy = Mathf.Max(0.0001f, s.bounds.size.y);
             const float TARGET_H = 0.39f;
             HeadRenderer.transform.localScale =

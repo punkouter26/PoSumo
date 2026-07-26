@@ -3072,7 +3072,9 @@ MonoBehaviour:
   extendedObservations: 0
   decisionPeriod: 5
   inferenceOnly: 0
+  recoverShoveChance: 0.7
   inferenceModel: {fileID: 5022602860645237092, guid: 8f76568562941a345ae69c088f1518bf, type: 3}
+  walkModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
   behaviorName: Standard
@@ -6303,6 +6305,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1917483504}
+  - {fileID: 1248869976}
   m_Father: {fileID: 1841710317}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &744210793
@@ -9835,6 +9838,52 @@ SpriteRenderer:
   m_WasSpriteAssigned: 1
   m_SpriteSortPoint: 0
   m_BlendShapeWeights: []
+--- !u!1 &1248869975
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1248869976}
+  - component: {fileID: 1248869977}
+  m_Layer: 0
+  m_Name: Systems_MatchRoster
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1248869976
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1248869975}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 718512668}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1248869977
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1248869975}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1c351b24dc731244f8e7aa1930436905, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Systems_MatchRoster
+  _characterA: {fileID: 11400000, guid: 14211cdaf9881594c90184adc2678b1f, type: 2}
+  _characterB: {fileID: 11400000, guid: 385d01880fa1e394d9a85ae625be52ac, type: 2}
 --- !u!1 &1260524764
 GameObject:
   m_ObjectHideFlags: 0
@@ -11258,7 +11307,9 @@ MonoBehaviour:
   extendedObservations: 0
   decisionPeriod: 5
   inferenceOnly: 0
+  recoverShoveChance: 0.7
   inferenceModel: {fileID: 5022602860645237092, guid: 239f499b7abb2934f8d71d52682b5f23, type: 3}
+  walkModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
   behaviorName: Matt
@@ -15325,21 +15376,23 @@ MonoBehaviour:
   colorA: {r: 0.85, g: 0.25, b: 0.2, a: 1}
   colorB: {r: 0.2, g: 0.5, b: 0.3, a: 1}
   pointsToWin: 3
-  ringHalfWidth: 2.75
+  ringHalfWidth: 1.6
   fallY: -0.2
   knockdownLoses: 0
   roundTimeoutSeconds: 30
   betweenRoundsPause: 2.5
   graceSeconds: 0.4
   downGraceSeconds: 0.2
-  stallBreakStart: 12
-  stallShrinkRate: 0.15
-  minRingHalfWidth: 0.6
   panelSettings: {fileID: 11400000, guid: 5f29889ae85d92343b4edf70b0058e9d, type: 2}
   tuning: {fileID: 11400000, guid: b40c783b035d5814a918a508fb517706, type: 2}
   enablePresentation: 1
   enableAudio: 1
   enableFaceMood: 1
+  countdownSeconds: 3
+  countdownHeadOrtho: 0.85
+  neutralGapHalf: 0.9
+  timeoutDecidesOnPosition: 1
+  timeoutDeadHeat: 0.15
 --- !u!1 &1922649009
 GameObject:
   m_ObjectHideFlags: 0

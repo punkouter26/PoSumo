@@ -1,0 +1,47 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 501a6b866812e4d4a82886b13f0d0814, type: 3}
+  m_Name: Nick_Character
+  m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Agent_CharacterDefinition
+  behaviorName: Nick
+  teamColor: {r: 0.25, g: 0.42, b: 0.72, a: 1}
+  headSprite: {fileID: 21300000, guid: 7c697ab9c86d0f3469db2a68a058ed5b, type: 3}
+  faceArtFacesLeft: 1
+  faceNeutralName: Nick_neutral
+  faceHappyNames:
+  - Nick_happy1
+  - Nick_happy2
+  - Nick_happy3
+  faceSadNames:
+  - Nick_sad1
+  - Nick_sad2
+  - Nick_sad3
+  massScale: 0.72
+  widthScale: 0.82
+  torqueScale: 0.85
+  extendedObservations: 1
+  decisionPeriod: 3
+  inferenceModel: {fileID: 5022602860645237092, guid: 1f15b9a7469d7cc4daafd2020713ebc9, type: 3}
+  walkModel: {fileID: 0}
+  uprightReward: 0.0008
+  closingReward: 0.0005
+  lungeBonus: 0.0024
+  lungeThreshold: 1
+  impactReward: 0.007
+  impactCap: 8
+  kneeBendReward: 0.0002
+  hipsLowReward: 0.0001
+  cadenceReward: 0.0032
+  riseReward: 0.025
+  energyPenalty: 0.0002
+  jerkPenalty: 0.00015
+  straightLegEarnFraction: 0.75

@@ -1,0 +1,117 @@
+# Kim — HEAVYWEIGHT low-stance anchor. The opposite pole from Nick: where he is
+# light (0.72) and mobile, she is heavy (mass 1.45, width 1.30, torque 1.50) and
+# immovable. Style from her character sheet: hipsLow + kneeBend 0.0008 (deep
+# planted stance), impact 0.014 @ cap 10 (wins with force), closing 0.0004 (does
+# NOT chase), lunge only 0.0008 @ 1.8 m/s (rare, big commits), cadence 0.0006
+# (plants rather than dances), straightLegEarnFraction 0.15 (must be deep to
+# earn anything — Nick's is 0.75).
+#   mlagents-learn Training/configs/KimSumo01.yaml --run-id=kim_sumo01 \
+#     --initialize-from=kim_init --results-dir=Training/results \
+#     --env=Builds/KimEnv/KimEnv.exe --num-envs=3 --no-graphics
+#
+# kim_init stages matt_sumo04's checkpoint under a Kim/ folder — --initialize-from
+# resolves by the NEW behavior name, so a cross-character fine-tune needs the
+# weights copied under that name. Matt's aggressive power trunk is a much closer
+# starting point for a heavyweight than Standard's neutral one.
+#
+# network_settings must stay 512 x 3 to match the trunk (initialize-from loads
+# those exact weights). Her hyperparameters differ from Nick's deliberately:
+#   1. gamma 0.99 (Nick 0.997) — short credit horizon. She is reactive and
+#      immediate, not a planner; the payoff is the shove in front of her.
+#   2. beta 3.0e-3 (Nick 7.0e-3) — less exploration, so she commits to one
+#      consistent, stolid policy instead of experimenting.
+#   3. self-play window 10 / latest ratio 0.5 (Nick: 25 / 0.25) — she drills
+#      hard against the strongest recent opponents rather than a broad history.
+#   4. batch/buffer doubled — a heavy body's returns are noisier, so larger
+#      batches keep the gradient stable.
+
+behaviors:
+  Kim:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 4096
+      buffer_size: 40960
+      learning_rate: 2.0e-4
+      beta: 3.0e-3
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:      # MUST match matt_sumo04 exactly (initialize-from)
+      normalize: true
+      hidden_units: 512
+      num_layers: 3
+      vis_encode_type: simple
+    reward_signals:
+      extrinsic:
+        gamma: 0.99
+        strength: 1.0
+    keep_checkpoints: 10
+    checkpoint_interval: 200000
+    max_steps: 12000000
+    time_horizon: 1000
+    summary_freq: 30000
+    threaded: true
+    self_play:
+      window: 10
+      play_against_latest_model_ratio: 0.5
+      save_steps: 50000
+      swap_steps: 50000
+      team_change: 250000
+
+# Curriculum: a heavy body is harder to keep on a narrow, slippery platform, so
+# she gets a longer stable-floor lesson than the lighter characters before the
+# width/friction randomization ramps in.
+environment_parameters:
+  spawn_gap_half:
+    curriculum:
+      - name: CloseQuarters
+        completion_criteria:
+          measure: reward
+          behavior: Kim
+          signal_smoothing: true
+          min_lesson_length: 150
+          threshold: 0.45
+        value: 0.9
+      - name: FullGap
+        value: 1.2
+  shove_impulse:
+    curriculum:
+      - name: HeavyShoves
+        completion_criteria:
+          measure: reward
+          behavior: Kim
+          signal_smoothing: true
+          min_lesson_length: 150
+          threshold: 0.45
+        value: 45.0
+      - name: ModerateShoves
+        completion_criteria:
+          measure: reward
+          behavior: Kim
+          signal_smoothing: true
+          min_lesson_length: 300
+          threshold: 0.6
+        value: 25.0
+      - name: NoShoves
+        value: 0.0
+  platform_difficulty:
+    curriculum:
+      - name: StableFloor
+        completion_criteria:
+          measure: reward
+          behavior: Kim
+          signal_smoothing: true
+          min_lesson_length: 300
+          threshold: 0.5
+        value: 0.0
+      - name: MediumFloor
+        completion_criteria:
+          measure: reward
+          behavior: Kim
+          signal_smoothing: true
+          min_lesson_length: 350
+          threshold: 0.65
+        value: 0.5
+      - name: FullChaos
+        value: 1.0

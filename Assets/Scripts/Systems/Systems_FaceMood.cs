@@ -27,14 +27,16 @@ namespace PoSumo
         [Tooltip("Maximum idle flourishes per match.")]
         public int idleFlourishesPerMatch = 2;
 
-        const string NEUTRAL = "matt_neutral1-removebg-preview";
-        static readonly string[] HappyNames =
+        // Fallback for characters with no face names on their definition asset
+        // (Matt predates the per-character face fields).
+        const string FALLBACK_NEUTRAL = "matt_neutral1-removebg-preview";
+        static readonly string[] FallbackHappy =
         {
             "matt_happy1-removebg-preview",
             "matt_happy2-removebg-preview",
             "matt_happy3-removebg-preview",
         };
-        static readonly string[] SadNames =
+        static readonly string[] FallbackSad =
         {
             "matt_sad1-removebg-preview",
             "matt_sad2-removebg-preview",
@@ -88,20 +90,30 @@ namespace PoSumo
             if (_fighter == null) return;
             _body = _fighter.GetComponent<Agent_BipedBody>();
 
-            _neutral = Resources.Load<Sprite>(NEUTRAL);
-            _happy = new Sprite[HappyNames.Length];
-            _sad = new Sprite[SadNames.Length];
+            // Face names come from the character definition; Matt's legacy
+            // hardcoded set is the fallback when the asset leaves them empty.
+            var def = _body.character;
+            string neutralName = def != null && !string.IsNullOrEmpty(def.faceNeutralName)
+                ? def.faceNeutralName : FALLBACK_NEUTRAL;
+            string[] happyNames = def != null && def.faceHappyNames != null && def.faceHappyNames.Length == 3
+                ? def.faceHappyNames : FallbackHappy;
+            string[] sadNames = def != null && def.faceSadNames != null && def.faceSadNames.Length == 3
+                ? def.faceSadNames : FallbackSad;
+
+            _neutral = Resources.Load<Sprite>(neutralName);
+            _happy = new Sprite[happyNames.Length];
+            _sad = new Sprite[sadNames.Length];
             int loaded = _neutral != null ? 1 : 0;
-            for (int i = 0; i < HappyNames.Length; i++)
+            for (int i = 0; i < happyNames.Length; i++)
             {
-                _happy[i] = Resources.Load<Sprite>(HappyNames[i]);
-                _sad[i] = Resources.Load<Sprite>(SadNames[i]);
+                _happy[i] = Resources.Load<Sprite>(happyNames[i]);
+                _sad[i] = Resources.Load<Sprite>(sadNames[i]);
                 if (_happy[i] != null) loaded++;
                 if (_sad[i] != null) loaded++;
             }
             if (loaded < 7)
             {
-                Debug.LogWarning($"Systems_FaceMood: only {loaded}/7 face sprites loaded from Resources");
+                Debug.LogWarning($"Systems_FaceMood ({fighterBehaviorName}): only {loaded}/7 face sprites loaded from Resources");
             }
 
             _manager.RoundEnded += OnRoundEnded;

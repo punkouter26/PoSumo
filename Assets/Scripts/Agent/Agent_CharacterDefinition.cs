@@ -20,6 +20,16 @@ namespace PoSumo
         [Tooltip("Face texture for the head; null = plain circle.")]
         public Sprite headSprite;
 
+        [Header("Face")]
+        [Tooltip("Tick when the source art faces LEFT. Rig geometry is right-facing, so the head flip is inverted for this character.")]
+        public bool faceArtFacesLeft = false;
+        [Tooltip("Resources name of the neutral face; empty disables the mood ladder for this character.")]
+        public string faceNeutralName = "";
+        [Tooltip("Resources names, mild to extreme (happy1..3).")]
+        public string[] faceHappyNames = new string[0];
+        [Tooltip("Resources names, mild to extreme (sad1..3).")]
+        public string[] faceSadNames = new string[0];
+
         [Header("Body build")]
         [Tooltip("Multiplies every part's mass. Heavyweight sumo ~2.")]
         public float massScale = 1f;

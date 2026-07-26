@@ -1,0 +1,111 @@
+# Nick — skinny lightweight, agile and CLEVER. Physique (mass 0.72, width 0.82,
+# torque 0.85) changes the dynamics enough that the heavier brains do not
+# transfer cleanly, so this is a fine-tune from the finished Standard trunk.
+# Style comes from his character sheet: cadence 0.0032 (constant footwork),
+# closing only 0.0005 (NOT paid to advance mindlessly), lunge 0.0024 @ 1.0 m/s
+# (a chosen moment pays big), impact 0.007 (no slugging), hipsLow 0.0001.
+#   mlagents-learn Training/configs/NickSumo01.yaml --run-id=nick_sumo01 \
+#     --initialize-from=standard_sumo01 --results-dir=Training/results \
+#     --env=Builds/NickEnv/NickEnv.exe --num-envs=3 --no-graphics
+#
+# NOTE: network_settings must stay identical to StandardSumo01.yaml
+# (512 x 3, normalize) — --initialize-from loads those weights and any change
+# is a shape mismatch. Cleverness therefore comes from three other levers:
+#   1. gamma 0.997 (was 0.995) — longer credit horizon, so setting a trap two
+#      seconds ahead actually pays. This is the main "plans ahead" dial.
+#   2. wider self-play window + lower latest ratio — he faces a broader spread
+#      of historical opponents, so a single memorized counter stops working and
+#      he must adapt instead. Robust reads as clever.
+#   3. slightly higher beta — keeps exploring tactics rather than collapsing
+#      early onto one winning shove.
+
+behaviors:
+  Nick:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 2.0e-4
+      beta: 7.0e-3
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:      # MUST match standard_sumo01 exactly (initialize-from)
+      normalize: true
+      hidden_units: 512
+      num_layers: 3
+      vis_encode_type: simple
+    reward_signals:
+      extrinsic:
+        gamma: 0.997
+        strength: 1.0
+    keep_checkpoints: 10
+    checkpoint_interval: 200000
+    max_steps: 12000000
+    time_horizon: 1000
+    summary_freq: 30000
+    threaded: true
+    self_play:
+      window: 25
+      play_against_latest_model_ratio: 0.25
+      save_steps: 50000
+      swap_steps: 50000
+      team_change: 250000
+
+# Adaptive curriculum, same shape as the trunk runs. Nick starts on a stable
+# floor at close quarters so the lighter body learns to keep its feet before
+# the platform and shove chaos ramp in.
+environment_parameters:
+  spawn_gap_half:
+    curriculum:
+      - name: CloseQuarters
+        completion_criteria:
+          measure: reward
+          behavior: Nick
+          signal_smoothing: true
+          min_lesson_length: 150
+          threshold: 0.45
+        value: 0.9
+      - name: FullGap
+        value: 1.2
+  shove_impulse:
+    curriculum:
+      - name: HeavyShoves
+        completion_criteria:
+          measure: reward
+          behavior: Nick
+          signal_smoothing: true
+          min_lesson_length: 150
+          threshold: 0.45
+        value: 45.0
+      - name: ModerateShoves
+        completion_criteria:
+          measure: reward
+          behavior: Nick
+          signal_smoothing: true
+          min_lesson_length: 300
+          threshold: 0.6
+        value: 25.0
+      - name: NoShoves
+        value: 0.0
+  platform_difficulty:
+    curriculum:
+      - name: StableFloor
+        completion_criteria:
+          measure: reward
+          behavior: Nick
+          signal_smoothing: true
+          min_lesson_length: 200
+          threshold: 0.5
+        value: 0.0
+      - name: MediumFloor
+        completion_criteria:
+          measure: reward
+          behavior: Nick
+          signal_smoothing: true
+          min_lesson_length: 300
+          threshold: 0.65
+        value: 0.5
+      - name: FullChaos
+        value: 1.0
