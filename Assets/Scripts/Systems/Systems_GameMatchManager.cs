@@ -45,6 +45,12 @@ namespace PoSumo
         public bool enableLighting = true;
         [Tooltip("Spawn Systems_ImpactFx (dust bursts + camera shake scaled by hit strength).")]
         public bool enableImpactFx = true;
+        [Tooltip("Spawn Systems_PostFx (post-processing that reacts to hits, match point and finishes).")]
+        public bool enablePostFx = true;
+        [Tooltip("Spawn Systems_ArenaAtmosphere (backdrop parallax, haze tinting, crowd sway, light shafts).")]
+        public bool enableAtmosphere = true;
+        [Tooltip("Spawn Systems_MusicDirector (adaptive layered score).")]
+        public bool enableMusic = true;
         [Tooltip("Round-opening countdown length; physics and brains are held until it finishes.")]
         public int countdownSeconds = 3;
         [Tooltip("Camera ortho when the countdown punches in on a fighter's head.")]
@@ -459,6 +465,27 @@ namespace PoSumo
                 var go = new GameObject("CareerRecorder");
                 go.transform.SetParent(transform, false);
                 go.AddComponent<Systems_CareerRecorder>();
+            }
+            // PostFx binds to the volume Systems_ArenaLighting builds, so it must
+            // be spawned after it — SpawnCompanionSystems runs in declaration order
+            // and lighting is created above.
+            if (enablePostFx && FindAnyObjectByType<Systems_PostFx>() == null)
+            {
+                var go = new GameObject("PostFx");
+                go.transform.SetParent(transform, false);
+                go.AddComponent<Systems_PostFx>();
+            }
+            if (enableAtmosphere && FindAnyObjectByType<Systems_ArenaAtmosphere>() == null)
+            {
+                var go = new GameObject("Atmosphere");
+                go.transform.SetParent(transform, false);
+                go.AddComponent<Systems_ArenaAtmosphere>();
+            }
+            if (enableMusic && FindAnyObjectByType<Systems_MusicDirector>() == null)
+            {
+                var go = new GameObject("Music");
+                go.transform.SetParent(transform, false);
+                go.AddComponent<Systems_MusicDirector>();
             }
         }
 

@@ -1,3 +1,4 @@
+using System.Reflection;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
@@ -34,6 +35,17 @@ namespace PoSumo
         public Color rimColor = new Color(0.45f, 0.62f, 1f);
         public float rimSpread = 4.2f;
 
+        [Header("Shadows")]
+        [Tooltip("Off until Agent_BipedBody.castShadows works — a shadow-casting light with no casters still allocates a shadow render texture every frame for nothing. Turn both on together.")]
+        public bool keyCastsShadows = false;
+        [Range(0f, 1f)] public float shadowIntensity = 0.6f;
+        public float shadowSoftness = 0.55f;
+
+        [Header("Light volumes (god rays)")]
+        [Tooltip("Volumetric glow on the key light — the visible cone under the tsuriyane. 0 disables it.")]
+        [Range(0f, 1f)] public float keyVolumeIntensity = 0.22f;
+        [Range(0f, 1f)] public float keyShadowVolumeIntensity = 0.35f;
+
         [Header("Post-processing")]
         public bool enablePost = true;
         public float bloomIntensity = 0.85f;
@@ -44,6 +56,17 @@ namespace PoSumo
         public float grain = 0.18f;
 
         private static Material _litSprite;
+        private static Shader _bodyShader;
+        private static bool _bodyShaderMissingLogged;
+
+        /// The most recently built rig. Systems_PostFx and Systems_ArenaAtmosphere
+        /// read the lights and the volume from here rather than hunting for them.
+        public static Systems_ArenaLighting Instance { get; private set; }
+
+        public Light2D GlobalLight { get; private set; }
+        public Light2D KeyLight { get; private set; }
+        public Volume PostVolume { get; private set; }
+        public VolumeProfile PostProfile { get; private set; }
 
         /// Shared lit-sprite material. Everything drawn in the arena uses this one
         /// instance so the 2D lights apply and the sprites still batch together.
@@ -75,8 +98,99 @@ namespace PoSumo
             return _litSprite;
         }
 
+        /// A fresh PoSumo/BodyLit material for one wrestler. Per-fighter rather
+        /// than shared, because Systems_BodySurface writes sweat and clay into it
+        /// and the two wrestlers get dirty at different rates — one material per
+        /// body still batches all 14 parts of that body together.
+        public static Material CreateBodyMaterial(string materialName)
+        {
+            if (_bodyShader == null)
+            {
+                // Resources.Load, not Shader.Find. A shader that is only ever
+                // reached through Shader.Find is referenced by nothing at build
+                // time and gets stripped out of the player — it would work in the
+                // editor and silently fall back to flat sprites on device. Living
+                // under Resources/ is what guarantees it ships.
+                _bodyShader = Resources.Load<Shader>("Shaders/PoSumo_BodyLit");
+                if (_bodyShader == null)
+                {
+                    _bodyShader = Shader.Find("PoSumo/BodyLit");
+                }
+            }
+            if (_bodyShader == null)
+            {
+                // Shader missing (not yet imported, or stripped): fall back to the
+                // shared lit material so bodies still render, just without sweat,
+                // clay or rim light.
+                if (!_bodyShaderMissingLogged)
+                {
+                    _bodyShaderMissingLogged = true;
+                    Debug.LogWarning("Systems_ArenaLighting: shader 'PoSumo/BodyLit' not found; " +
+                                     "wrestlers fall back to the flat lit sprite material.");
+                }
+                return LitSpriteMaterial();
+            }
+
+            var material = new Material(_bodyShader) { name = materialName };
+
+            if (FlatBodyShading)
+            {
+                // FLAT: no cylinder normal map, so the 2D lights see an even
+                // surface and each part takes one solid tinted colour — the look
+                // this project shipped with. The rim, subsurface and sweat terms
+                // are zeroed rather than compiled out so the shader stays a single
+                // variant and the look can be switched back at runtime.
+                SetIfPresent(material, RimStrengthId, 0f);
+                SetIfPresent(material, WrapWarmId, 0f);
+                SetIfPresent(material, SweatId, 0f);
+                return material;
+            }
+
+            if (material.HasProperty(NormalMapId))
+            {
+                material.SetTexture(NormalMapId, CylinderNormalMap());
+                material.EnableKeyword("_NORMALMAP");
+                material.EnableKeyword("USE_NORMAL_MAP");
+            }
+            return material;
+        }
+
+        /// True for any material this class hands out. Used to keep
+        /// ConvertSceneSpritesToLit from overwriting a per-fighter body material
+        /// with the shared scenery one.
+        private static bool IsPoSumoLitMaterial(Material material)
+        {
+            if (material == null)
+            {
+                return false;
+            }
+            if (material == _litSprite)
+            {
+                return true;
+            }
+            return _bodyShader != null && material.shader == _bodyShader;
+        }
+
         private static readonly int NormalMapId = Shader.PropertyToID("_NormalMap");
+        private static readonly int RimStrengthId = Shader.PropertyToID("_RimStrength");
+        private static readonly int WrapWarmId = Shader.PropertyToID("_WrapWarm");
+        private static readonly int SweatId = Shader.PropertyToID("_Sweat");
         private static Texture2D _normalMap;
+
+        /// Wrestlers render as FLAT tinted shapes — no cylindrical shading, no rim
+        /// light, no subsurface warmth, no sweat highlight. Set false to get the
+        /// rounded, shaded body treatment back (it also wants globalIntensity and
+        /// keyIntensity dropped to roughly 0.78 / 0.7, because shading a normal-
+        /// mapped tube under these levels blows the centreline out to white).
+        public static bool FlatBodyShading = true;
+
+        private static void SetIfPresent(Material material, int propertyId, float value)
+        {
+            if (material.HasProperty(propertyId))
+            {
+                material.SetFloat(propertyId, value);
+            }
+        }
 
         /// Normal map of a horizontal cylinder: normals sweep from pointing left at
         /// the sprite's left edge, through straight out at the middle, to right at
@@ -113,10 +227,19 @@ namespace PoSumo
 
         private void Awake()
         {
+            Instance = this;
             BuildLights();
             if (enablePost)
             {
                 BuildPostProcessing();
+            }
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this)
+            {
+                Instance = null;
             }
         }
 
@@ -137,7 +260,10 @@ namespace PoSumo
             for (int i = 0; i < renderers.Length; i++)
             {
                 SpriteRenderer sr = renderers[i];
-                if (sr.sharedMaterial == lit)
+                // Skip anything already on a PoSumo material. Without this the
+                // per-fighter body materials (sweat, clay, rim) get stomped back to
+                // the flat scenery material the frame after they are created.
+                if (IsPoSumoLitMaterial(sr.sharedMaterial))
                 {
                     continue;
                 }
@@ -151,20 +277,62 @@ namespace PoSumo
         {
             float centerX = transform.position.x;
 
-            CreateLight("Light_Global", Light2D.LightType.Global, globalColor, globalIntensity,
-                        Vector3.zero, 0f, 0f);
+            GlobalLight = CreateLight("Light_Global", Light2D.LightType.Global, globalColor, globalIntensity,
+                                      Vector3.zero, 0f, 0f);
 
             // Key: hangs where the tsuriyane roof would be, so the fighters are lit
             // from the same place the arena's own geometry implies.
-            CreateLight("Light_Key", Light2D.LightType.Point, keyColor, keyIntensity,
-                        new Vector3(centerX, keyHeight, 0f), 1.5f, keyOuterRadius);
+            KeyLight = CreateLight("Light_Key", Light2D.LightType.Point, keyColor, keyIntensity,
+                                   new Vector3(centerX, keyHeight, 0f), 1.5f, keyOuterRadius);
+
+            // Shadows come off the key light only. Two shadow-casting point lights
+            // double the shadow pass for a second set of shadows nobody reads at
+            // this camera distance.
+            if (keyCastsShadows && KeyLight != null)
+            {
+                KeyLight.shadowsEnabled = true;
+                KeyLight.shadowIntensity = shadowIntensity;
+                KeyLight.shadowSoftness = shadowSoftness;
+                KeyLight.shadowSoftnessFalloffIntensity = 0.5f;
+            }
+
+            // Volumetric glow: the visible cone of light under the roof. This is
+            // the cheap version of god rays — no extra geometry, the light renders
+            // its own falloff into the volume pass.
+            if (keyVolumeIntensity > 0f && KeyLight != null)
+            {
+                KeyLight.volumetricEnabled = true;
+                KeyLight.volumeIntensity = keyVolumeIntensity;
+                if (keyCastsShadows && keyShadowVolumeIntensity > 0f)
+                {
+                    // Bodies carve dark wedges out of the light cone.
+                    KeyLight.volumetricShadowsEnabled = true;
+                    KeyLight.shadowVolumeIntensity = keyShadowVolumeIntensity;
+                }
+            }
 
             // Cool rims from the crowd, which separate the wrestlers from the
             // warm clay behind them.
-            CreateLight("Light_RimL", Light2D.LightType.Point, rimColor, rimIntensity,
+            Light2D rimLeft = CreateLight("Light_RimL", Light2D.LightType.Point, rimColor, rimIntensity,
                         new Vector3(centerX - rimSpread, 1.6f, 0f), 0.5f, rimSpread * 1.6f);
-            CreateLight("Light_RimR", Light2D.LightType.Point, rimColor, rimIntensity,
+            Light2D rimRight = CreateLight("Light_RimR", Light2D.LightType.Point, rimColor, rimIntensity,
                         new Vector3(centerX + rimSpread, 1.6f, 0f), 0.5f, rimSpread * 1.6f);
+
+            // Light2D.m_ShadowsEnabled defaults to TRUE, so every light created in
+            // code casts unless told not to. Three extra shadow passes for shadows
+            // that fight the key's and read as mud.
+            DisableShadows(GlobalLight);
+            DisableShadows(rimLeft);
+            DisableShadows(rimRight);
+        }
+
+        private static void DisableShadows(Light2D light)
+        {
+            if (light != null)
+            {
+                light.shadowsEnabled = false;
+                light.volumetricShadowsEnabled = false;
+            }
         }
 
         private Light2D CreateLight(string name, Light2D.LightType type, Color colour, float intensity,
@@ -184,7 +352,52 @@ namespace PoSumo
                 light.pointLightOuterRadius = outerRadius;
                 light.falloffIntensity = 0.65f;
             }
+            EnableNormalMapping(light);
             return light;
+        }
+
+        private static FieldInfo _normalQualityField;
+        private static FieldInfo _useNormalMapField;
+        private static bool _normalReflectionResolved;
+        private static bool _normalReflectionWarned;
+
+        /// Light2D.m_NormalMapQuality defaults to Disabled and the public property
+        /// is get-only — there is no supported way to switch normal mapping on for
+        /// a light created in code. Without this the cylinder normal map above is
+        /// sampled by nothing and every limb lights perfectly flat, which is
+        /// exactly how the rig shipped.
+        private static void EnableNormalMapping(Light2D light)
+        {
+            if (light == null)
+            {
+                return;
+            }
+            if (!_normalReflectionResolved)
+            {
+                _normalReflectionResolved = true;
+                const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+                _normalQualityField = typeof(Light2D).GetField("m_NormalMapQuality", flags);
+                _useNormalMapField = typeof(Light2D).GetField("m_UseNormalMap", flags);
+            }
+            if (_normalQualityField == null)
+            {
+                if (!_normalReflectionWarned)
+                {
+                    _normalReflectionWarned = true;
+                    Debug.LogWarning("Systems_ArenaLighting: could not enable Light2D normal mapping " +
+                                     "(m_NormalMapQuality not found on this URP version). Limbs will light flat.");
+                }
+                return;
+            }
+            // Accurate rather than Fast: the wrestlers fill a large part of a
+            // portrait frame, which is the case Fast is explicitly not for.
+            _normalQualityField.SetValue(light, Light2D.NormalMapQuality.Accurate);
+            if (_useNormalMapField != null && _useNormalMapField.FieldType == typeof(bool))
+            {
+                // Legacy companion flag on older serialized layouts; a version
+                // upgrade path resets quality to Disabled when this is false.
+                _useNormalMapField.SetValue(light, true);
+            }
         }
 
         private void BuildPostProcessing()
@@ -232,12 +445,29 @@ namespace PoSumo
             grainEffect.intensity.Override(grain);
             grainEffect.response.Override(0.7f);
 
+            // Impact effects, parked at zero. Systems_PostFx drives these two on
+            // hits and finishes; they are declared here so the profile layout never
+            // changes at runtime.
+            //
+            // NOTE: no DepthOfField. The 2D renderer does not write sprite depth,
+            // so URP's DoF has nothing to work from — background separation is done
+            // by tinting the backdrop layers in Systems_ArenaAtmosphere instead.
+            var aberration = profile.Add<ChromaticAberration>();
+            aberration.intensity.Override(0f);
+
+            var distortion = profile.Add<LensDistortion>();
+            distortion.intensity.Override(0f);
+            distortion.scale.Override(1f);
+
             var go = new GameObject("ArenaVolume");
             go.transform.SetParent(transform, false);
             Volume volume = go.AddComponent<Volume>();
             volume.isGlobal = true;
             volume.priority = 1f;
             volume.sharedProfile = profile;
+
+            PostVolume = volume;
+            PostProfile = profile;
         }
     }
 }

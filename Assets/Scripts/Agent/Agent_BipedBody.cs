@@ -16,6 +16,11 @@ namespace PoSumo
         public Agent_CharacterDefinition character;
 
         public int facingSign = 1;
+        /// One base colour per fighter, taken from the character sheet in Awake, and
+        /// used by EVERY body part. The head is the only exception — it carries that
+        /// fighter's face art instead. The per-part `tint` in PART_DEFS only shades
+        /// this one colour for near/far depth; it never introduces a second hue, so
+        /// a wrestler always reads as a single identifiable colour.
         public Color teamColor = new Color(0.85f, 0.25f, 0.2f);
         bool _faceArtFacesLeft;
 
@@ -30,12 +35,34 @@ namespace PoSumo
         [Tooltip("Optional face texture for the head (drawn right-facing; auto-flipped when facingSign is -1). Falls back to a plain circle.")]
         public Sprite headSprite;
 
+        // Dressing. Visual only: no extra rigidbodies, no extra colliders, no extra
+        // joints, and nothing that touches a mass or a contact — so it cannot
+        // change the dynamics a policy was trained against.
+        //
+        // The mawashi belt, the sagari cords and the chonmage topknot were built
+        // and then REMOVED: at gameplay zoom the verlet cords and the knot read as
+        // loose floating beads beside the body rather than as cloth and hair. Real
+        // ShadowCaster2D shadows were removed for the same reason — see the note in
+        // Systems_ArenaLighting. Both are in git history if they get revisited.
+        [Header("Dressing (visual only — cannot invalidate a trained brain)")]
+        [Tooltip("Velocity-driven wobble on the torso art. Heavier fighters wobble more.")]
+        public bool enableJiggle = true;
+
         [HideInInspector] public Rigidbody2D Torso;   // pelvis (root mass, ring-out tracking)
         [HideInInspector] public Rigidbody2D Chest;   // top segment (posture/lean sensing)
         [HideInInspector] public SpriteRenderer HeadRenderer; // face sprite (mood swaps)
         [HideInInspector] public HingeJoint2D[] Joints;   // 10 motors
         [HideInInspector] public Rigidbody2D[] Parts;
         [HideInInspector] public List<Collider2D> AllColliders = new List<Collider2D>();
+
+        /// This wrestler's own PoSumo/BodyLit material. Per-fighter rather than
+        /// shared so Systems_BodySurface can write sweat and clay into it without
+        /// the opponent getting sweaty too.
+        public Material BodyMaterial { get; private set; }
+
+        /// Every limb/torso art renderer, in PART_DEFS order. Head excluded — it
+        /// carries face art and is swapped by Systems_FaceMood.
+        public SpriteRenderer[] ArtRenderers { get; private set; }
 
         // Spawn clearance above contact surfaces: enough to avoid frame-0
         // interpenetration, small enough that the feet are effectively already
@@ -55,7 +82,7 @@ namespace PoSumo
         Rigidbody2D[] _thighs;
         float _headCellW, _headCellH; // chest local scale the head must compensate for
 
-        static Sprite _boxSprite, _torsoSprite, _circleSprite;
+        static Sprite _boxSprite, _torsoSprite, _circleSprite, _squareSprite;
         static PhysicsMaterial2D _footMat, _bodyMat;
 
         struct PartDef
@@ -87,16 +114,16 @@ namespace PoSumo
             new PartDef("ThighNear", 0.14f, 0.40f,  7f, 0f,    0.68f,  2, 0.95f),
             new PartDef("ShinNear",  0.11f, 0.38f,  3.5f, 0f,  0.29f,  2, 0.95f),
             new PartDef("FootNear",  0.22f, 0.08f,  1f, 0.05f, 0.04f,  2, 0.95f, false, true),
-            new PartDef("ThighFar",  0.14f, 0.40f,  7f, 0f,    0.68f, -2, 0.55f),
-            new PartDef("ShinFar",   0.11f, 0.38f,  3.5f, 0f,  0.29f, -2, 0.55f),
-            new PartDef("FootFar",   0.22f, 0.08f,  1f, 0.05f, 0.04f, -2, 0.55f, false, true),
+            new PartDef("ThighFar",  0.14f, 0.40f,  7f, 0f,    0.68f, -2, 0.78f),
+            new PartDef("ShinFar",   0.11f, 0.38f,  3.5f, 0f,  0.29f, -2, 0.78f),
+            new PartDef("FootFar",   0.22f, 0.08f,  1f, 0.05f, 0.04f, -2, 0.78f, false, true),
             new PartDef("LowerBack", 0.30f, 0.14f,  7f, 0f,    1.13f,  0, 0.97f),
             new PartDef("UpperBack", 0.31f, 0.14f,  7f, 0f,    1.27f,  0, 0.99f),
             new PartDef("Chest",     0.34f, 0.18f, 13f, 0f,    1.43f,  0, 1f),
             new PartDef("UArmNear",  0.10f, 0.30f,  2.5f, 0f,  1.28f,  3, 0.9f),
             new PartDef("FArmNear",  0.09f, 0.28f,  1.8f, 0f,  0.99f,  3, 0.9f),
-            new PartDef("UArmFar",   0.10f, 0.30f,  2.5f, 0f,  1.28f, -3, 0.5f),
-            new PartDef("FArmFar",   0.09f, 0.28f,  1.8f, 0f,  0.99f, -3, 0.5f),
+            new PartDef("UArmFar",   0.10f, 0.30f,  2.5f, 0f,  1.28f, -3, 0.76f),
+            new PartDef("FArmFar",   0.09f, 0.28f,  1.8f, 0f,  0.99f, -3, 0.76f),
         };
 
         // child, parent, anchor(x,y in root space), min, max (deg), torque, speed
@@ -142,11 +169,46 @@ namespace PoSumo
         /// same shape, and a kick connects where it looks like it connects.
         public static Sprite BoxSprite() => RoundedSprite(ref _boxSprite, 0.5f);
 
-        /// Torso segments and feet: a gentle radius over a BoxCollider2D. Heavy
-        /// rounding here would both break the trunk into loose ovals and inset the
-        /// drawn edge from the box that actually collides — a foot has to look as
-        /// flat as the sole that stands on the clay.
+        /// Soft-cornered rectangle. NOT used for body parts any more — see
+        /// SquareSprite — but kept for dressing (the mawashi band) that has no
+        /// collider and therefore nothing to be accurate to.
         public static Sprite TorsoSprite() => RoundedSprite(ref _torsoSprite, 0.14f);
+
+        /// Exact rectangle for every part that collides with a BoxCollider2D:
+        /// the four torso segments and the two feet.
+        ///
+        /// These were drawn with TorsoSprite's 0.14 corner radius, which insets
+        /// the DRAWN edge from the box that actually collides — so a chest-to-chest
+        /// shove connected slightly before the art touched, and a foot looked
+        /// rounder than the flat sole standing on the clay. The rule this body
+        /// already follows for limbs (the drawn edge IS the colliding edge) now
+        /// holds for the trunk too.
+        ///
+        /// Four texels of solid white: the sprite quad's own edge is the silhouette,
+        /// so it matches the collider exactly at any non-uniform scale.
+        public static Sprite SquareSprite()
+        {
+            if (_squareSprite == null)
+            {
+                const int S = 4;
+                var tex = new Texture2D(S, S, TextureFormat.RGBA32, false)
+                {
+                    wrapMode = TextureWrapMode.Clamp,
+                    filterMode = FilterMode.Bilinear,
+                };
+                for (int y = 0; y < S; y++)
+                {
+                    for (int x = 0; x < S; x++)
+                    {
+                        tex.SetPixel(x, y, Color.white);
+                    }
+                }
+                tex.Apply();
+                _squareSprite = Sprite.Create(tex, new Rect(0, 0, S, S), new Vector2(0.5f, 0.5f), S,
+                                              0, SpriteMeshType.FullRect);
+            }
+            return _squareSprite;
+        }
 
         static Sprite RoundedSprite(ref Sprite cache, float radiusFraction)
         {
@@ -209,6 +271,8 @@ namespace PoSumo
 
             int n = PART_DEFS.Length;
             Parts = new Rigidbody2D[n];
+            ArtRenderers = new SpriteRenderer[n];
+            BodyMaterial = Systems_ArenaLighting.CreateBodyMaterial($"PoSumo_Body_{name}");
             var thighs = new List<Rigidbody2D>();
 
             bool IsTorsoPart(string name) =>
@@ -238,14 +302,21 @@ namespace PoSumo
                 bool boxy = IsTorsoPart(d.name) || d.isFoot;
 
                 var sr = art.AddComponent<SpriteRenderer>();
+                // Drawn shape == colliding shape, part for part. Boxy parts get an
+                // exact rectangle (BoxCollider2D); limbs get the ellipse that a
+                // unit CapsuleCollider2D becomes under the part's own scale. Only
+                // the head is exempt: it carries face art on a CircleCollider2D.
                 sr.sprite = d.circle ? CircleSprite()
-                          : boxy ? TorsoSprite()
+                          : boxy ? SquareSprite()
                           : BoxSprite();
                 sr.color = new Color(teamColor.r * d.tint, teamColor.g * d.tint, teamColor.b * d.tint, 1f);
                 sr.sortingOrder = d.sorting;
-                // Shared lit material so the arena light rig shapes the limbs; the
-                // per-part tint stays on the renderer, which costs no extra material.
-                sr.sharedMaterial = Systems_ArenaLighting.LitSpriteMaterial();
+                // This fighter's body material so the light rig shapes the limbs and
+                // the sweat/clay terms apply; the per-part tint stays on the
+                // renderer, which costs no extra material.
+                sr.sharedMaterial = BodyMaterial;
+                ArtRenderers[i] = sr;
+
 
                 var rb = go.AddComponent<Rigidbody2D>();
                 rb.mass = d.mass * massScale;
@@ -275,6 +346,18 @@ namespace PoSumo
                 Parts[i] = rb;
                 if (d.name.StartsWith("Thigh")) thighs.Add(rb);
 
+                // Soft-tissue lag on the trunk. Lives on the Art child, which
+                // carries no collider, so this is pure rendering: the physics body
+                // it reads from is never written back to.
+                if (enableJiggle && IsTorsoPart(d.name))
+                {
+                    var jiggle = art.AddComponent<Systems_SoftBodyJiggle>();
+                    jiggle.source = rb;
+                    // Bulk wobbles: a heavyweight at massScale 1.45 moves nearly
+                    // twice as much meat as the baseline build.
+                    jiggle.amplitude = 0.055f * widthScale * Mathf.Sqrt(massScale);
+                }
+
                 if (i == 0) Torso = rb; // pelvis: root mass, ring-out tracking
 
                 if (d.name == "Chest")
@@ -288,6 +371,7 @@ namespace PoSumo
                     head.transform.localPosition = new Vector3(0f, 0.25f / d.h, 0f);
                     var hsr = head.AddComponent<SpriteRenderer>();
                     hsr.sortingOrder = 1;
+                    hsr.sharedMaterial = BodyMaterial;
                     float parentW = d.w * widthScale;
                     HeadRenderer = hsr;
                     _headCellW = parentW;
@@ -368,7 +452,9 @@ namespace PoSumo
             var blob = shadow.AddComponent<Systems_BlobShadow>();
             blob.target = Torso;
             blob.baseWidth = 0.9f * widthScale;
+            blob.body = this;
         }
+
 
         public void ResetPose()
         {

@@ -14,8 +14,12 @@ namespace PoSumo
         public float winnerHeadZoomChance = 0.2f;
         public float winnerHeadOrtho = 0.8f;
 
+        [Tooltip("Throw ceremonial salt over the ring at the start of each round (shio-maki).")]
+        public bool enableSaltThrow = true;
+
         Systems_GameMatchManager _manager;
         Systems_CameraFollow _camFollow;
+        Systems_MatchAudio _audio;
 
         bool _slowMoActive;
         float _slowMoEndReal;
@@ -24,9 +28,11 @@ namespace PoSumo
         {
             _manager = FindAnyObjectByType<Systems_GameMatchManager>();
             _camFollow = FindAnyObjectByType<Systems_CameraFollow>();
+            _audio = FindAnyObjectByType<Systems_MatchAudio>();
             if (_manager == null) return;
 
             _manager.RoundEnded += OnRoundEnded;
+            _manager.RoundStarted += OnRoundStarted;
         }
 
         void OnDisable()
@@ -35,6 +41,30 @@ namespace PoSumo
             if (_manager != null)
             {
                 _manager.RoundEnded -= OnRoundEnded;
+                _manager.RoundStarted -= OnRoundStarted;
+            }
+        }
+
+        /// Shio-maki: each wrestler throws purifying salt across the dohyo before
+        /// the bout. Costs two particle bursts and is the most recognisable thing
+        /// sumo does.
+        void OnRoundStarted()
+        {
+            if (!enableSaltThrow || _manager == null) return;
+            ThrowSalt(_manager.wrestlerA);
+            ThrowSalt(_manager.wrestlerB);
+        }
+
+        void ThrowSalt(Agent_Biped fighter)
+        {
+            if (fighter == null || fighter.Torso == null) return;
+            var body = fighter.GetComponent<Agent_BipedBody>();
+            float facing = body != null ? body.facingSign : 1f;
+            Vector3 hand = fighter.Torso.transform.position + new Vector3(0.25f * facing, 0.45f, 0f);
+            Systems_DustPuff.SaltThrow(hand, facing);
+            if (_audio != null)
+            {
+                _audio.PlaySalt(hand.x);
             }
         }
 

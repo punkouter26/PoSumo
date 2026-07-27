@@ -8,15 +8,18 @@ namespace PoSumo
     [RequireComponent(typeof(Camera))]
     public class Systems_CameraFollow : MonoBehaviour
     {
-        // min 1.9: tightest zoom that still fits a full body (~1.85 m) in the
-        // top half of the frame with the feet at screen center.
-        // max 3.5: in portrait the visible width is ortho * aspect (~0.45), so
+        // Pulled back 30% from the original 1.9 / 3.5 / 0.95: the tighter framing
+        // read as a close-up on two bodies rather than a bout on a dohyo, and the
+        // arena dressing (roof, crowd, banners) was mostly off-screen.
+        // min 2.47: tightest zoom, still fits a full body (~1.85 m) with headroom.
+        // max 4.55: in portrait the visible width is ortho * aspect (~0.56), so
         // anything tighter crops the wrestlers off-screen at spawn separation.
+        // feetDrop scales with the zoom so the feet stay at the same screen height.
         // NOTE: GameTuning.asset (and scene-serialized values) win over these
         // defaults — change the asset, not just here.
-        public float minOrtho = 1.9f;
-        public float maxOrtho = 3.5f;
-        public float feetDrop = 0.95f; // camera centers this far below the average torso — at the feet
+        public float minOrtho = 2.47f;
+        public float maxOrtho = 4.55f;
+        public float feetDrop = 1.24f; // camera centers this far below the average torso — at the feet
         public float horizontalMargin = 0.5f;
         public float smoothing = 4f;
         [Tooltip("Keep the dohyo in frame: the follow target is clamped to the ring plus this margin, so a fighter flung off the edge cannot drag the camera off the mat.")]

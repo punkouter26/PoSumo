@@ -77,6 +77,14 @@ namespace PoSumo
                 : reporter.transform.position;
             Systems_DustPuff.Burst(point, Mathf.RoundToInt(Mathf.Lerp(4f, 18f, strength)));
 
+            // Sweat comes off the fighter taking the hit, thrown along the impact
+            // direction. Only on real shoves — a light contact does not spray.
+            if (strength > 0.3f)
+            {
+                Vector2 away = -collision.relativeVelocity.normalized;
+                Systems_DustPuff.SweatSpray(point, away, Mathf.RoundToInt(Mathf.Lerp(2f, 9f, strength)));
+            }
+
             if (maxShake > 0f)
             {
                 _shake = Mathf.Max(_shake, Mathf.Lerp(0.02f, maxShake, strength));
