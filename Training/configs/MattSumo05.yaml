@@ -4,6 +4,10 @@
 # lower beta for fine-tuning. Self-play + frozen Standard sparring arena.
 #   mlagents-learn Training/configs/MattSumo05.yaml --run-id=matt_sumo05 \
 #     --initialize-from=matt_sumo04 --results-dir=Training/results \
+# NOTE: matt_sumo04 now lives in Training/trunks/ (it backs no deployed brain, so
+# it was moved out of the TensorBoard logdir). To re-run this exact command, copy
+# it back first:  Copy-Item -Recurse Training/trunks/matt_sumo04 Training/results/
+# For a plain continuation of the SHIPPED brain, --initialize-from=matt_sumo05.
 #     --env=Builds/MattAggrEnv/MattAggrEnv.exe --num-envs=3 --no-graphics
 
 behaviors:

@@ -9,7 +9,10 @@
 #     --initialize-from=kim_init --results-dir=Training/results \
 #     --env=Builds/KimEnv/KimEnv.exe --num-envs=3 --no-graphics
 #
-# kim_init stages matt_sumo04's checkpoint under a Kim/ folder — --initialize-from
+# kim_init stages Training/trunks/matt_sumo04's checkpoint under a Kim/ folder
+# (that trunk backs no deployed brain, so it sits outside the TensorBoard logdir;
+# the staging dir itself must be created inside Training/results at launch)
+# — --initialize-from
 # resolves by the NEW behavior name, so a cross-character fine-tune needs the
 # weights copied under that name. Matt's aggressive power trunk is a much closer
 # starting point for a heavyweight than Standard's neutral one.

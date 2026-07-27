@@ -15,17 +15,19 @@ namespace PoSumo
             for (int i = 0; i < count; i++)
             {
                 var go = new GameObject("Dust");
-                go.transform.position = pos + new Vector3(Random.Range(-0.25f, 0.25f), Random.Range(0f, 0.25f), 0f);
-                float s = Random.Range(0.08f, 0.22f);
+                go.transform.position = pos + new Vector3(Random.Range(-0.22f, 0.22f), Random.Range(0f, 0.2f), 0f);
+                // Small and faint: at the old size and opacity a hard shove buried
+                // both fighters behind a wall of tan circles.
+                float s = Random.Range(0.04f, 0.11f);
                 go.transform.localScale = new Vector3(s, s, 1f);
                 var sr = go.AddComponent<SpriteRenderer>();
                 sr.sprite = Agent_BipedBody.CircleSprite();
-                sr.color = new Color(0.78f, 0.68f, 0.52f, Random.Range(0.5f, 0.85f));
+                sr.color = new Color(0.8f, 0.72f, 0.56f, Random.Range(0.18f, 0.38f));
                 sr.sortingOrder = 5;
                 var p = go.AddComponent<Systems_DustPuff>();
                 p._sr = sr;
-                p._vel = new Vector2(Random.Range(-1.6f, 1.6f), Random.Range(0.6f, 2.2f));
-                p._maxLife = p._life = Random.Range(0.35f, 0.7f);
+                p._vel = new Vector2(Random.Range(-1.3f, 1.3f), Random.Range(0.5f, 1.8f));
+                p._maxLife = p._life = Random.Range(0.25f, 0.5f);
             }
         }
 
@@ -36,9 +38,9 @@ namespace PoSumo
             _vel += new Vector2(0f, -3f) * Time.deltaTime;
             transform.position += (Vector3)(_vel * Time.deltaTime);
             var c = _sr.color;
-            c.a = (_life / _maxLife) * 0.8f;
+            c.a = (_life / _maxLife) * 0.35f;
             _sr.color = c;
-            transform.localScale *= 1f + 1.2f * Time.deltaTime;
+            transform.localScale *= 1f + 0.9f * Time.deltaTime;
         }
     }
 }

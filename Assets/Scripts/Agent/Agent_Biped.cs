@@ -78,6 +78,12 @@ namespace PoSumo
         float _rCadence = 0.0015f, _rRise = 0.02f, _pEnergy = 0.0004f, _pJerk = 0.0003f;
         float _bendFloor = 0.3f;
 
+        // Walk-school coefficients — defaults are the constants this branch used
+        // before they became per-character, so an unassigned character trains the
+        // identical gait it always did.
+        float _wForward = 0.004f, _wStanceFloor = 0.15f, _wBend = 0.0006f;
+        float _wUpright = 0.001f, _wCadence = 0.002f, _wEnergy = 0.0003f, _wStall = 0.0008f;
+
         protected override void Awake()
         {
             _b = GetComponent<Agent_BipedBody>();
@@ -102,6 +108,13 @@ namespace PoSumo
                 _pEnergy = character.energyPenalty;
                 _pJerk = character.jerkPenalty;
                 _bendFloor = character.straightLegEarnFraction;
+                _wForward = character.walkForwardReward;
+                _wStanceFloor = character.walkStanceFloor;
+                _wBend = character.walkBendReward;
+                _wUpright = character.walkUprightReward;
+                _wCadence = character.walkCadenceReward;
+                _wEnergy = character.walkEnergyPenalty;
+                _wStall = character.walkStallPenalty;
             }
 
             var bp = GetComponent<BehaviorParameters>();
@@ -343,16 +356,22 @@ namespace PoSumo
             {
                 // The proven walk-school structure: falling ENDS the episode, so
                 // no on-the-ground reward exploit can exist. Stance/cadence
-                // shaping keeps the gait crouched and stepping.
-                float walkGate = 0.15f + 0.85f * bend;
-                AddReward(San(tv.x * Fs) * 0.004f * walkGate);
-                AddReward(bend * 0.0006f);
-                AddReward(upright * 0.001f);
-                CadenceReward(0.002f);
-                AddReward(-energy * 0.0003f);
-                if (Mathf.Abs(San(tv.x)) < 0.15f) AddReward(-0.0008f); // no statue farming
+                // shaping keeps the gait crouched and stepping. The coefficients
+                // come from the character sheet, so a fighter's gait can carry the
+                // same personality as its fight style (a driver rewards forward
+                // speed, a dancer rewards cadence).
+                float walkGate = _wStanceFloor + (1f - _wStanceFloor) * bend;
+                AddReward(San(tv.x * Fs) * _wForward * walkGate);
+                AddReward(bend * _wBend);
+                AddReward(upright * _wUpright);
+                CadenceReward(_wCadence);
+                AddReward(-energy * _wEnergy);
+                if (Mathf.Abs(San(tv.x)) < 0.15f) AddReward(-_wStall); // no statue farming
 
                 // Catastrophic posture failure is an absolute episode termination gate.
+                // The two terminals stay hardcoded on purpose: shaping is per-character,
+                // but fall (-1) and graduation (+3) fix the reward scale so different
+                // characters' walk runs remain comparable to each other on TensorBoard.
                 if (IsDown) { SetReward(-1f); EndEpisode(); return; }
                 if (xLocal > -0.3f) { AddReward(3f); EndEpisode(); }
             }

@@ -345,7 +345,7 @@ MonoBehaviour:
     maxStep: 0
   hasUpgradedFromAgentParameters: 1
   MaxStep: 0
-  character: {fileID: 0}
+  character: {fileID: 11400000, guid: 91b65372f7078aa4b8bb28a92751993f, type: 2}
   mode: 0
   teamId: 0
   opponent: {fileID: 0}
@@ -356,9 +356,10 @@ MonoBehaviour:
   inferenceOnly: 0
   recoverShoveChance: 0.7
   inferenceModel: {fileID: 0}
+  walkModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
-  behaviorName: Matt
+  behaviorName: Standard
 --- !u!114 &1107102437
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -402,9 +403,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b24980fb881ebcf418846e3d7a13dde8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Agent_BipedBody
-  character: {fileID: 0}
+  character: {fileID: 11400000, guid: 91b65372f7078aa4b8bb28a92751993f, type: 2}
   facingSign: 1
-  teamColor: {r: 0.85, g: 0.25, b: 0.2, a: 1}
+  teamColor: {r: 0.2, g: 0.5, b: 0.3, a: 1}
   massScale: 1
   widthScale: 1
   torqueScale: 1
@@ -531,7 +532,7 @@ MonoBehaviour:
     maxStep: 0
   hasUpgradedFromAgentParameters: 1
   MaxStep: 0
-  character: {fileID: 0}
+  character: {fileID: 11400000, guid: 91b65372f7078aa4b8bb28a92751993f, type: 2}
   mode: 0
   teamId: 0
   opponent: {fileID: 0}
@@ -542,9 +543,10 @@ MonoBehaviour:
   inferenceOnly: 0
   recoverShoveChance: 0.7
   inferenceModel: {fileID: 0}
+  walkModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
-  behaviorName: Matt
+  behaviorName: Standard
 --- !u!114 &1711591488
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -588,9 +590,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b24980fb881ebcf418846e3d7a13dde8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Agent_BipedBody
-  character: {fileID: 0}
+  character: {fileID: 11400000, guid: 91b65372f7078aa4b8bb28a92751993f, type: 2}
   facingSign: 1
-  teamColor: {r: 0.85, g: 0.25, b: 0.2, a: 1}
+  teamColor: {r: 0.2, g: 0.5, b: 0.3, a: 1}
   massScale: 1
   widthScale: 1
   torqueScale: 1
@@ -651,7 +653,7 @@ MonoBehaviour:
     maxStep: 0
   hasUpgradedFromAgentParameters: 1
   MaxStep: 0
-  character: {fileID: 0}
+  character: {fileID: 11400000, guid: 91b65372f7078aa4b8bb28a92751993f, type: 2}
   mode: 0
   teamId: 0
   opponent: {fileID: 0}
@@ -662,9 +664,10 @@ MonoBehaviour:
   inferenceOnly: 0
   recoverShoveChance: 0.7
   inferenceModel: {fileID: 0}
+  walkModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
-  behaviorName: Matt
+  behaviorName: Standard
 --- !u!114 &1743484268
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -708,9 +711,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b24980fb881ebcf418846e3d7a13dde8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Agent_BipedBody
-  character: {fileID: 0}
+  character: {fileID: 11400000, guid: 91b65372f7078aa4b8bb28a92751993f, type: 2}
   facingSign: 1
-  teamColor: {r: 0.85, g: 0.25, b: 0.2, a: 1}
+  teamColor: {r: 0.2, g: 0.5, b: 0.3, a: 1}
   massScale: 1
   widthScale: 1
   torqueScale: 1
@@ -803,7 +806,7 @@ MonoBehaviour:
     maxStep: 0
   hasUpgradedFromAgentParameters: 1
   MaxStep: 0
-  character: {fileID: 0}
+  character: {fileID: 11400000, guid: 91b65372f7078aa4b8bb28a92751993f, type: 2}
   mode: 0
   teamId: 0
   opponent: {fileID: 0}
@@ -814,9 +817,10 @@ MonoBehaviour:
   inferenceOnly: 0
   recoverShoveChance: 0.7
   inferenceModel: {fileID: 0}
+  walkModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
-  behaviorName: Matt
+  behaviorName: Standard
 --- !u!114 &2131433506
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -860,9 +864,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b24980fb881ebcf418846e3d7a13dde8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Agent_BipedBody
-  character: {fileID: 0}
+  character: {fileID: 11400000, guid: 91b65372f7078aa4b8bb28a92751993f, type: 2}
   facingSign: 1
-  teamColor: {r: 0.85, g: 0.25, b: 0.2, a: 1}
+  teamColor: {r: 0.2, g: 0.5, b: 0.3, a: 1}
   massScale: 1
   widthScale: 1
   torqueScale: 1

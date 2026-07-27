@@ -69,5 +69,25 @@ namespace PoSumo
         [Range(0f, 1f)]
         [Tooltip("Fraction of movement rewards earned with straight legs; deep stance earns 100%.")]
         public float straightLegEarnFraction = 0.3f;
+
+        [Header("Walk school shaping (training only)")]
+        // Defaults are exactly the constants the Mode.Walk branch used before these
+        // fields existed, so an untouched character trains the identical gait it
+        // always did. Only deviate deliberately.
+        [Tooltip("Reward per m/s of forward speed toward the target, gated by stance.")]
+        public float walkForwardReward = 0.004f;
+        [Range(0f, 1f)]
+        [Tooltip("Fraction of the forward reward earned with straight legs; deep stance earns 100%. Low = must crouch to be paid.")]
+        public float walkStanceFloor = 0.15f;
+        [Tooltip("Per-step reward for knee bend while walking.")]
+        public float walkBendReward = 0.0006f;
+        [Tooltip("Per-step reward for an upright chest while walking.")]
+        public float walkUprightReward = 0.001f;
+        [Tooltip("Bonus per alternating-foot step. High = dances, low = drives.")]
+        public float walkCadenceReward = 0.002f;
+        [Tooltip("Per-step cost of motor effort while walking.")]
+        public float walkEnergyPenalty = 0.0003f;
+        [Tooltip("Per-step penalty for standing still — stops the walker farming upright rewards as a statue.")]
+        public float walkStallPenalty = 0.0008f;
     }
 }

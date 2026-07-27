@@ -42,6 +42,11 @@ namespace PoSumo
         // planted when physics starts (a taller drop costs balance).
         const float SPAWN_CLEARANCE = 0.01f;
         const float MAX_ANGULAR_VELOCITY = 1080f; // deg/s clamp against physics blow-up
+        // Art is drawn at EXACTLY collider size. An earlier version oversized it to
+        // hide the seams between segments, but that made the drawing lie about the
+        // physics: a limb appeared to touch the opponent while the colliders were
+        // still apart. Accuracy wins — the drawn edge is the edge that collides.
+        const float ART_OVERLAP = 1f;
 
         float[] _maxSpeed;   // deg/s per joint
         float[] _maxTorque;
@@ -50,7 +55,7 @@ namespace PoSumo
         Rigidbody2D[] _thighs;
         float _headCellW, _headCellH; // chest local scale the head must compensate for
 
-        static Sprite _boxSprite, _circleSprite;
+        static Sprite _boxSprite, _torsoSprite, _circleSprite;
         static PhysicsMaterial2D _footMat, _bodyMat;
 
         struct PartDef
@@ -71,7 +76,11 @@ namespace PoSumo
 
         // Right-facing layout. Heights: ankle 0.10, knee 0.48, hip 0.88,
         // spine joints 1.06 / 1.20 / 1.34, shoulder 1.43, elbow 1.13.
-        // Total ~1.76 m, ~79 kg (torso chain 38 kg incl. 6 kg head).
+        // Total ~1.76 m, 69.6 kg (torso chain 38 kg incl. the 6 kg head, legs
+        // 23 kg, arms 8.6 kg) — see the TotalMass property, which is the number
+        // to trust. Segment masses track Winter's anthropometric fractions:
+        // thigh 10.1% (vs 10.0), shin 5.0% (4.65), foot 1.44% (1.45), torso
+        // chain 54.6% (57.8); the arms run ~20-28% heavy on purpose.
         static readonly PartDef[] PART_DEFS =
         {
             new PartDef("Pelvis",    0.32f, 0.18f, 11f, 0f,    0.97f,  0, 1f),
@@ -122,18 +131,53 @@ namespace PoSumo
             Build();
         }
 
-        public static Sprite BoxSprite()
+        /// Limb sprite: a rounded capsule, not the old 4x4 white square. Parts are
+        /// scaled by their transform, so the corner rounding is stretched into an
+        /// ellipse per part — which is exactly what a limb end should look like.
+        /// Edges are antialiased in the alpha so the silhouette stays smooth at the
+        /// large scale factors the body uses.
+        /// Limb sprite. Radius 0.5 makes it a true ellipse in local space, which is
+        /// exactly the shape a CapsuleCollider2D of size (1,1) takes under the same
+        /// non-uniform part scale — so the drawn limb and the colliding limb are the
+        /// same shape, and a kick connects where it looks like it connects.
+        public static Sprite BoxSprite() => RoundedSprite(ref _boxSprite, 0.5f);
+
+        /// Torso segments and feet: a gentle radius over a BoxCollider2D. Heavy
+        /// rounding here would both break the trunk into loose ovals and inset the
+        /// drawn edge from the box that actually collides — a foot has to look as
+        /// flat as the sole that stands on the clay.
+        public static Sprite TorsoSprite() => RoundedSprite(ref _torsoSprite, 0.14f);
+
+        static Sprite RoundedSprite(ref Sprite cache, float radiusFraction)
         {
-            if (_boxSprite == null)
+            if (cache == null)
             {
-                var tex = new Texture2D(4, 4, TextureFormat.RGBA32, false);
-                var px = new Color[16];
-                for (int i = 0; i < 16; i++) px[i] = Color.white;
-                tex.SetPixels(px); tex.Apply();
-                _boxSprite = Sprite.Create(tex, new Rect(0, 0, 4, 4), new Vector2(0.5f, 0.5f), 4f,
-                                           0, SpriteMeshType.FullRect);
+                const int S = 128;
+                float RADIUS = S * radiusFraction;
+                var tex = new Texture2D(S, S, TextureFormat.RGBA32, false)
+                {
+                    wrapMode = TextureWrapMode.Clamp,
+                    filterMode = FilterMode.Bilinear,
+                };
+                float half = S * 0.5f;
+                float inner = half - RADIUS;
+                for (int y = 0; y < S; y++)
+                {
+                    for (int x = 0; x < S; x++)
+                    {
+                        // Distance to the rounded-rect boundary, in pixels.
+                        float dx = Mathf.Max(Mathf.Abs(x + 0.5f - half) - inner, 0f);
+                        float dy = Mathf.Max(Mathf.Abs(y + 0.5f - half) - inner, 0f);
+                        float distance = Mathf.Sqrt(dx * dx + dy * dy);
+                        float alpha = Mathf.Clamp01((RADIUS - distance) / 1.5f);
+                        tex.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+                    }
+                }
+                tex.Apply();
+                cache = Sprite.Create(tex, new Rect(0, 0, S, S), new Vector2(0.5f, 0.5f), S,
+                                      0, SpriteMeshType.FullRect);
             }
-            return _boxSprite;
+            return cache;
         }
 
         public static Sprite CircleSprite()
@@ -177,12 +221,31 @@ namespace PoSumo
                 go.transform.SetParent(transform, false);
                 go.transform.localPosition = new Vector3(d.x * facingSign, d.y + SPAWN_CLEARANCE, 0);
 
-                var sr = go.AddComponent<SpriteRenderer>();
-                sr.sprite = d.circle ? CircleSprite() : BoxSprite();
-                sr.color = new Color(teamColor.r * d.tint, teamColor.g * d.tint, teamColor.b * d.tint, 1f);
-                sr.sortingOrder = d.sorting;
                 float w = d.w * (IsTorsoPart(d.name) ? widthScale : 1f);
                 go.transform.localScale = new Vector3(w, d.h, 1f);
+
+                // The art lives on a child scaled slightly larger than the collider,
+                // so neighbouring parts overlap and the body reads as one creature.
+                // Drawn at exact collider size, the 4-segment spine and the leg
+                // chain show a seam at every joint. Physics is untouched: only this
+                // child is oversized.
+                var art = new GameObject("Art");
+                art.transform.SetParent(go.transform, false);
+                art.transform.localScale = new Vector3(ART_OVERLAP, ART_OVERLAP, 1f);
+
+                // Limbs are capsule-shaped; the trunk and the feet stay boxy so their
+                // flat faces (chest-to-chest shoving, sole-on-clay) collide flat.
+                bool boxy = IsTorsoPart(d.name) || d.isFoot;
+
+                var sr = art.AddComponent<SpriteRenderer>();
+                sr.sprite = d.circle ? CircleSprite()
+                          : boxy ? TorsoSprite()
+                          : BoxSprite();
+                sr.color = new Color(teamColor.r * d.tint, teamColor.g * d.tint, teamColor.b * d.tint, 1f);
+                sr.sortingOrder = d.sorting;
+                // Shared lit material so the arena light rig shapes the limbs; the
+                // per-part tint stays on the renderer, which costs no extra material.
+                sr.sharedMaterial = Systems_ArenaLighting.LitSpriteMaterial();
 
                 var rb = go.AddComponent<Rigidbody2D>();
                 rb.mass = d.mass * massScale;
@@ -190,7 +253,22 @@ namespace PoSumo
                 rb.angularDamping = 0.05f;
                 rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
 
-                var col = go.AddComponent<BoxCollider2D>();
+                // Collider shape follows the drawn shape so contacts happen exactly
+                // where the art says they should. A capsule limb inside a box
+                // collider left a visible gap at the rounded tip — the leg would
+                // "kick" the opponent through empty space.
+                Collider2D col;
+                if (boxy)
+                {
+                    col = go.AddComponent<BoxCollider2D>();
+                }
+                else
+                {
+                    var capsule = go.AddComponent<CapsuleCollider2D>();
+                    capsule.size = Vector2.one;                     // scaled to the part by the transform
+                    capsule.direction = CapsuleDirection2D.Vertical;
+                    col = capsule;
+                }
                 col.sharedMaterial = d.isFoot ? _footMat : _bodyMat;
                 AllColliders.Add(col);
 

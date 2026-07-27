@@ -31,6 +31,7 @@ namespace PoSumo
         private readonly List<VisualElement> _seedSlots = new List<VisualElement>();
         private readonly List<VisualElement> _winnerSlots = new List<VisualElement>();
         private VisualElement _root;
+        private VisualElement _careerPanel;
         private VisualElement _dragGhost;
         private Label _statusLabel;
         private Button _actionButton;
@@ -71,6 +72,7 @@ namespace PoSumo
             if (_panelSettings != null) doc.panelSettings = _panelSettings;
             _root = doc.rootVisualElement;
             _root.style.flexGrow = 1;
+            Systems_SafeArea.Attach(transform, _root);
             _root.style.backgroundColor = new Color(0.05f, 0.045f, 0.05f, 1f);
             _root.style.paddingTop = 18;
             _root.style.paddingLeft = 14;
@@ -134,6 +136,8 @@ namespace PoSumo
             Round(resetButton, 10);
             _root.Add(resetButton);
 
+            BuildCareerTable();
+
             // Floating ghost that follows the pointer during a drag.
             _dragGhost = MakeChip(null, SLOT_SIZE);
             _dragGhost.style.position = Position.Absolute;
@@ -143,6 +147,107 @@ namespace PoSumo
 
             _root.RegisterCallback<PointerMoveEvent>(OnPointerMove);
             _root.RegisterCallback<PointerUpEvent>(OnPointerUp);
+        }
+
+        /// Career standings: the reason a tournament result matters beyond the
+        /// session it was played in. Collapsed by default so the bracket stays the
+        /// focus on a phone screen.
+        private void BuildCareerTable()
+        {
+            var toggle = new Button { text = "CAREER RECORD  ▾" };
+            toggle.style.height = 44;
+            toggle.style.marginTop = 12;
+            toggle.style.fontSize = 18;
+            toggle.style.unityFontStyleAndWeight = FontStyle.Bold;
+            toggle.style.color = TextDim;
+            toggle.style.backgroundColor = new Color(0.13f, 0.12f, 0.13f);
+            Round(toggle, 10);
+            _root.Add(toggle);
+
+            _careerPanel = new VisualElement();
+            _careerPanel.style.backgroundColor = PanelBg;
+            _careerPanel.style.paddingLeft = 12;
+            _careerPanel.style.paddingRight = 12;
+            _careerPanel.style.paddingTop = 8;
+            _careerPanel.style.paddingBottom = 10;
+            _careerPanel.style.marginTop = 4;
+            Round(_careerPanel, 10);
+            _careerPanel.style.display = DisplayStyle.None;
+            _root.Add(_careerPanel);
+
+            toggle.clicked += () =>
+            {
+                bool open = _careerPanel.style.display == DisplayStyle.None;
+                _careerPanel.style.display = open ? DisplayStyle.Flex : DisplayStyle.None;
+                toggle.text = open ? "CAREER RECORD  ▴" : "CAREER RECORD  ▾";
+                if (open) RefreshCareerTable();
+            };
+
+            RefreshCareerTable();
+        }
+
+        private void RefreshCareerTable()
+        {
+            if (_careerPanel == null) return;
+            _careerPanel.Clear();
+
+            var records = Systems_CareerStats.Ranked();
+            if (records.Count == 0)
+            {
+                var empty = new Label("no matches played yet");
+                empty.style.fontSize = 15;
+                empty.style.color = TextDim;
+                empty.style.unityTextAlign = TextAnchor.MiddleCenter;
+                _careerPanel.Add(empty);
+                return;
+            }
+
+            _careerPanel.Add(CareerRow("FIGHTER", "ELO", "W-L", "RDS", "TITLES", header: true));
+            for (int i = 0; i < records.Count; i++)
+            {
+                Systems_CareerStats.Record r = records[i];
+                _careerPanel.Add(CareerRow(
+                    r.fighter.ToUpperInvariant(),
+                    Mathf.RoundToInt(r.elo).ToString(),
+                    $"{r.matchWins}-{r.matchLosses}",
+                    $"{r.roundWins}-{r.roundLosses}",
+                    r.titles > 0 ? new string('★', Mathf.Min(r.titles, 5)) : "—",
+                    header: false));
+            }
+
+            var footer = new Label($"{Systems_CareerStats.MatchesPlayed} matches on record");
+            footer.style.fontSize = 13;
+            footer.style.color = TextDim;
+            footer.style.unityTextAlign = TextAnchor.MiddleCenter;
+            footer.style.marginTop = 6;
+            _careerPanel.Add(footer);
+        }
+
+        private static VisualElement CareerRow(string name, string elo, string wl, string rounds,
+                                               string titles, bool header)
+        {
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.marginTop = header ? 0 : 3;
+            Color colour = header ? TextDim : new Color(0.9f, 0.88f, 0.84f);
+            int size = header ? 13 : 16;
+            row.Add(CareerCell(name, 34, colour, size, TextAnchor.MiddleLeft));
+            row.Add(CareerCell(elo, 16, header ? TextDim : Gold, size, TextAnchor.MiddleRight));
+            row.Add(CareerCell(wl, 18, colour, size, TextAnchor.MiddleRight));
+            row.Add(CareerCell(rounds, 18, colour, size, TextAnchor.MiddleRight));
+            row.Add(CareerCell(titles, 14, header ? TextDim : Gold, size, TextAnchor.MiddleRight));
+            return row;
+        }
+
+        private static Label CareerCell(string text, int widthPercent, Color colour, int fontSize,
+                                        TextAnchor align)
+        {
+            var label = new Label(text);
+            label.style.width = Length.Percent(widthPercent);
+            label.style.fontSize = fontSize;
+            label.style.color = colour;
+            label.style.unityTextAlign = align;
+            return label;
         }
 
         private void BuildPalette()

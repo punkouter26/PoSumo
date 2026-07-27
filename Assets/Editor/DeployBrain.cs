@@ -95,6 +95,14 @@ namespace PoSumo.EditorTools
             CopyInto(source, behaviorName, agentFolder, "final export");
         }
 
+        // matt_walk02, not 01: matt_walk01 is the baseline gait Standard still uses
+        // (deployed as Standard_v01/StandardWalk.onnx). 02 is Matt's restyled walk.
+        [MenuItem("PoSumo/Deploy Matt Walk Brain")]
+        public static void DeployMattWalk()
+        {
+            DeployWalk("matt_walk02", "Matt", "Assets/Agents/Matt_v01");
+        }
+
         [MenuItem("PoSumo/Deploy Kim Walk Brain")]
         public static void DeployKimWalk()
         {

@@ -41,14 +41,15 @@ namespace PoSumo.EditorTools
             Build("Assets/Scenes/Training/SCN_TRAIN_STD.unity", "Builds/StandardEnv/StandardEnv.exe");
         }
 
-        [MenuItem("PoSumo/Build Walk School Env")]
-        public static void BuildWalk()
-        {
-            Build("Assets/Scenes/Training/SCN_TRAIN_WALK.unity", "Builds/WalkEnv/WalkEnv.exe");
-        }
-
         // Per-fighter walk schools: the gait has to be learned on the physique it
         // will run on, so a heavyweight and a lightweight each get their own.
+        // Matt's is the 1.0-baseline body, which Standard shares — both fighters
+        // run the brain this scene produces.
+        [MenuItem("PoSumo/Build Matt Walk Env")]
+        public static void BuildMattWalk()
+        {
+            Build("Assets/Scenes/Training/SCN_TRAIN_WALK_MATT.unity", "Builds/MattWalkEnv/MattWalkEnv.exe");
+        }
         [MenuItem("PoSumo/Build Kim Walk Env")]
         public static void BuildKimWalk()
         {
@@ -59,6 +60,14 @@ namespace PoSumo.EditorTools
         public static void BuildNickWalk()
         {
             Build("Assets/Scenes/Training/SCN_TRAIN_WALK_NICK.unity", "Builds/NickWalkEnv/NickWalkEnv.exe");
+        }
+
+        // Standard shares Matt's 1.0 body but not his walk shaping, so it needs its
+        // own scene: re-running Matt's would now train Matt's aggressive gait.
+        [MenuItem("PoSumo/Build Standard Walk Env")]
+        public static void BuildStandardWalk()
+        {
+            Build("Assets/Scenes/Training/SCN_TRAIN_WALK_STD.unity", "Builds/StandardWalkEnv/StandardWalkEnv.exe");
         }
 
         [MenuItem("PoSumo/Build Recover School Env")]

@@ -13,6 +13,10 @@
 #     --initialize-from=nick_sumo01 --results-dir=Training/results \
 #     --env=Builds/NickEnv/NickEnv.exe --num-envs=3 --no-graphics
 #
+# NOTE: nick_sumo01 has since been pruned — it backed no deployed brain and this
+# run superseded it. Any further Nick run initializes from nick_sumo02, which is
+# the brain currently shipping as Nick_v01/Nick.onnx.
+#
 # Continues from his own finished brain, so this is a short corrective run
 # (4M steps) rather than a fresh 12M. --initialize-from resolves by behavior
 # name and nick_sumo01 already stores weights under Nick/, so no staged init

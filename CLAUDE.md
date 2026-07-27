@@ -81,6 +81,16 @@ multiplied into a facing-local frame). Intra-biped collisions are disabled pairw
 (limbs pass through their own body by design). `massScale` / `widthScale` /
 `torqueScale` come from the character asset, so physique is data, not code.
 
+Physical fidelity, so nobody has to re-derive it: gravity is Earth's −9.81 (project
+setting *and* re-asserted at runtime), and the baseline body is **69.6 kg** at ~1.76 m —
+trust `Agent_BipedBody.TotalMass`, not prose. Segment masses track Winter's anthropometric
+fractions closely (thigh 10.1% vs 10.0, foot 1.44% vs 1.45) with the arms ~20-28% heavy.
+Knee, elbow and hip limits are anatomically correct including the no-hyperextension stops;
+ankle (±45°), the three spine joints (±25° each) and shoulder (±160°) are deliberately
+*symmetric*, so they bend backwards far past human range, and spine/shoulder/elbow torque
+caps are 2-4× human peak. The head is not a separate body — it is a compound collider on
+the Chest rigidbody with its 6 kg folded into Chest's 13 kg, so there is no neck joint.
+
 ### The brain contract (`Agent_Biped`)
 - **13 continuous actions** (`ActionCount`), always.
 - **41 observations** (legacy, decision period 5) or **44** when `extendedObservations`
@@ -101,9 +111,14 @@ multiplied into a facing-local frame). Intra-biped collisions are disabled pairw
 `Agent_CharacterDefinition` (menu: *PoSumo/Character Definition*) is one asset per
 fighter holding identity (behavior name = YAML key, colour, face sprite names), body
 build scales, brain generation (`extendedObservations`, `decisionPeriod`,
-`inferenceModel`, `walkModel`), and **every sumo reward-shaping coefficient**. Fighter
-personality (Nick = light and mobile, Kim = heavy planted anchor) lives in the asset and
-the YAML header comments, never in `Agent_Biped`. `Systems_MatchRoster`
+`inferenceModel`, `walkModel`), and **every reward-shaping coefficient for both the sumo
+and walk schools**. Fighter personality (Nick = light and mobile, Kim = heavy planted
+anchor) lives in the asset and the YAML header comments, never in `Agent_Biped`.
+
+When adding a shaping coefficient, default it to the constant the code used before, so an
+untuned character keeps training exactly what it always did — that is what makes it safe
+to add these mid-project. Episode **terminals** stay hardcoded (walk: fall −1, graduation
++3) so different characters' runs stay comparable on one reward scale. `Systems_MatchRoster`
 (`[DefaultExecutionOrder(-500)]`, must run before the agents' `Awake`) assigns the two
 characters for a scene, or defers to `Tournament_State` when a bracket is active.
 
@@ -149,12 +164,28 @@ by the bracket. `SCN_WALKVIEW` views a locomotion brain. Arena scenes are **bake
 editor pass ran `Systems_SumoArena.Build()` and saved the children, so `Awake` only
 rebinds references.
 
-Six training scenes remain, one per surviving purpose — every one either produced a
-deployed brain or is the newest template for a training mode:
-`SCN_TRAIN_MATT_AGGR`, `SCN_TRAIN_STD`, `SCN_TRAIN_NICK`, `SCN_TRAIN_KIM` (sumo),
-`SCN_TRAIN_WALK` (walk school), `SCN_TRAIN_RECOVER4` (recover school). Keep that rule when
-adding or retiring scenes — a scene that produced a shipped brain is the only way to
-reproduce it.
+Training scenes, one per surviving purpose — every one either produced a deployed brain or
+is the newest template for a training mode. Keep that rule when adding or retiring scenes:
+a scene that produced a shipped brain is the only way to reproduce it.
+
+| Scene | Purpose |
+|---|---|
+| `SCN_TRAIN_MATT_AGGR` / `SCN_TRAIN_STD` / `SCN_TRAIN_NICK` / `SCN_TRAIN_KIM` | self-play sumo, one per fighter |
+| `SCN_TRAIN_WALK_MATT` / `_STD` / `_KIM` / `_NICK` | walk school, **one per fighter** — each assigns that fighter's character asset |
+| `SCN_TRAIN_RECOVER4` | recover school |
+
+**A walk brain is per-fighter**, for two independent reasons: a gait learned at mass 1.0
+does not transfer to Kim's 1.45, *and* walk reward shaping is read from the character sheet,
+so two fighters on the same body still walk differently. Each therefore gets its own scene,
+config and run, warm-started from the baseline `matt_walk01`.
+`Agent_Biped.BeginWalkIn` borrows the character's `walkModel` for the round-opening walk-in;
+a character with no `walkModel` silently skips the walk-in rather than erroring, which is
+exactly how Kim and Nick went unnoticed without one.
+
+**Verify a scene's character assignment by reading the saved `.unity` file, not the script
+log.** A wiring pass once reported "4 walkers -> Matt" while the scene on disk still held
+`character: {fileID: 0}`, and the resulting env trained the wrong policy for 1.5M steps
+before the mismatch was spotted. Grep for `character: {fileID: 11400000` and check the guid.
 
 ### Conventions
 - Scene hierarchy rule: every environment root has exactly 7 groups
@@ -198,6 +229,21 @@ Training\venv\Scripts\mlagents-learn.exe Training/configs/<cfg>.yaml --run-id=<i
 needs the source weights staged under the new name (see the `kim_init` / `nick_init` runs).
 `network_settings` must match the trunk being initialized from exactly (512 × 3 here).
 
+**Judge a self-play fight run on ELO, not mean reward.** They can move in opposite
+directions: a re-tune once climbed to reward ~36 while its ELO fell 1198 → 1140, which
+means the policy learned to farm shaping (closing, cadence, impact) instead of winning
+bouts. Mean reward is measured against a moving opponent pool and is not comparable across
+runs; ELO is. Accept a fight run on the **shape** of the ELO curve, not a single threshold:
+a monotonic slide is regression (reject), oscillation within a point or two of the start is
+noise (fine — flat ELO against a pool that is itself retraining means the policy kept pace). A fighter with large,
+easily-farmed shaping is the one that will fail this — the fix is its character sheet's
+shaping-to-win ratio, not more training.
+
+**Changing collider shape or mass invalidates every brain**, because they were trained
+against the old dynamics. The recovery is cheap: rebuild each env, warm-start from the
+shipped checkpoint, and run a short corrective pass at a reduced learning rate (1-3M steps
+against trunks of 12-45M) rather than retraining from scratch.
+
 Restart rules: physics/observation/action changes ⇒ new run-id or `--force` (cold);
 parameter-only tweaks ⇒ `--resume`. `--force` deletes the run dir — **restart TensorBoard
 afterward** (it holds a stale handle on Windows and shows an empty run).
@@ -211,13 +257,21 @@ so the `.meta` GUID (and every reference to it) survives; `DeployBrain` does thi
 sets the character asset's `inferenceModel`. Copying a checkpoint does not require stopping
 a headless run.
 
-`Training/results` hygiene: a finished run keeps only its final `<Behavior>.onnx`, a
-resumable `checkpoint.pt`, `configuration.yaml`, `run_logs/` and its tfevents. The numbered
-per-step checkpoints are ~140 MB per run and nothing deploys from them — prune them once a
-run is deployed. Staging directories for cross-character `--initialize-from` hold no
-history and appear in TensorBoard as empty runs, so delete them after the real run starts;
-they are one `Copy-Item` away from being recreated. `Training/README.md` maps every kept
-config to the run and deployed brain it produced.
+`Training/results` **is** the TensorBoard logdir, so treat it as a curated list, not a
+dumping ground: it holds only runs that back a deployed brain (currently five). Everything
+else goes elsewhere —
+
+- prune a deployed run to its final `<Behavior>.onnx`, `checkpoint.pt`,
+  `configuration.yaml`, `run_logs/` and tfevents; the numbered per-step checkpoints are
+  ~140 MB per run and nothing deploys from them;
+- a checkpoint kept only as an `--initialize-from` source is weights, not history — park it
+  in `Training/trunks/` (gitignored, outside the logdir);
+- staging dirs must sit *inside* `results/` at launch (`--initialize-from` resolves relative
+  to `--results-dir`) but hold no history, so they show up as empty TensorBoard runs —
+  delete them once the run is stepping and re-create with one `Copy-Item`;
+- superseded runs are deleted outright.
+
+`Training/README.md` maps every kept config to the run and deployed brain it produced.
 
 ## Editor menu tools (`Assets/Editor/`, all under the **PoSumo** menu)
 
@@ -243,8 +297,16 @@ is the way to drive the editor: `scene-*`, `gameobject-*`, `script-execute`,
 - To force import/recompile after writing files, call `assets-refresh` (ForceUpdate) —
   window-focus tricks are unreliable.
 - `script-execute` calls that block the main thread >~30 s (e.g. `BuildPipeline.BuildPlayer`)
-  return an MCP retry error **while still executing** — poll `Logs/Editor.log` for the
-  `BUILD RESULT:` line.
+  return an MCP retry error **while still executing** — poll for the `BUILD RESULT:` line in
+  **`%LOCALAPPDATA%\Unity\Editor\Editor.log`**. The repo's own `Logs/Editor.log` is *not*
+  Unity's live log (it is stale, and its tail is VS Code output) — polling it waits forever.
+  `console-get-logs` is the other reliable source.
+- Those MCP retries each **re-invoke** the call, so one blocking build actually runs several
+  times back-to-back. Harmless for an idempotent build; do not use this pattern for anything
+  that appends or increments.
+- Never edit a `.cs` file while a player build is running: the recompile aborts the build
+  (`BUILD RESULT: Unknown`) and leaves `EditorUtility.scriptCompilationFailed` stuck true.
+  `CompilationPipeline.RequestScriptCompilation(CleanBuildCache)` clears the stale flag.
 - The plugin drops briefly on every domain reload (play-mode change, recompile); retry.
 - Game-view verification: `screenshot-game-view`, or `script-execute` a `Camera.main`
   RenderTexture capture to a PNG under `Temp/` and read the image.

@@ -1,0 +1,43 @@
+# Nick walk — re-tune onto the CURRENT physics.
+#
+# nick_walk01 learned its gait against box limb colliders; limbs are now
+# CapsuleCollider2D. Feet and torso are unchanged, so this is a re-tune of an
+# existing gait rather than a fresh adaptation.
+#
+#   mlagents-learn Training/configs/NickWalk02.yaml --run-id=nick_walk02 \
+#     --initialize-from=nick_walk01 --results-dir=Training/results \
+#     --env=Builds/NickWalkEnv/NickWalkEnv.exe --num-envs=2 --no-graphics --base-port 5300
+#
+# Same behavior name as its trunk, so no staging directory is needed.
+# network_settings MUST stay 512 x 3 to match nick_walk01.
+#
+# beta stays at his usual 7.0e-3: his identity is footwork, and a light frame
+# has the most to gain from re-exploring contact timing on rounded limbs.
+
+behaviors:
+  Nick:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 1.5e-4
+      beta: 7.0e-3
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:      # MUST match nick_walk01 exactly (initialize-from)
+      normalize: true
+      hidden_units: 512
+      num_layers: 3
+      vis_encode_type: simple
+    reward_signals:
+      extrinsic:
+        gamma: 0.995
+        strength: 1.0
+    keep_checkpoints: 5
+    checkpoint_interval: 200000
+    max_steps: 2000000
+    time_horizon: 500
+    summary_freq: 30000
+    threaded: true

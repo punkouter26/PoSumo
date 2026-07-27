@@ -39,6 +39,12 @@ namespace PoSumo
         public bool enableAudio = true;
         [Tooltip("Spawn Systems_FaceMood (Matt's expression follows dominance) at startup.")]
         public bool enableFaceMood = true;
+        [Tooltip("Persist results to the career record (W/L, head-to-head, Elo, titles). Turn off for throwaway test matches such as MatchTestHarness runs.")]
+        public bool recordCareerStats = true;
+        [Tooltip("Spawn Systems_ArenaLighting (2D light rig + post-processing) at startup.")]
+        public bool enableLighting = true;
+        [Tooltip("Spawn Systems_ImpactFx (dust bursts + camera shake scaled by hit strength).")]
+        public bool enableImpactFx = true;
         [Tooltip("Round-opening countdown length; physics and brains are held until it finishes.")]
         public int countdownSeconds = 3;
         [Tooltip("Camera ortho when the countdown punches in on a fighter's head.")]
@@ -86,6 +92,8 @@ namespace PoSumo
         /// Fired when a rematch resets the scores (HUD aggregates restart here).
         public event System.Action MatchReset;
         Label _scoreLabel, _banner, _clock, _countdown;
+        VisualElement _pauseCard;
+        bool _paused;
         VisualElement _scoreBlock;   // hidden while the result card is up
         Button _rematchBtn;
         VisualElement _overlay, _resultCard;
@@ -240,6 +248,24 @@ namespace PoSumo
                 SpawnFaceMood(wrestlerA);
                 SpawnFaceMood(wrestlerB);
             }
+            if (enableImpactFx && FindAnyObjectByType<Systems_ImpactFx>() == null)
+            {
+                var go = new GameObject("ImpactFx");
+                go.transform.SetParent(transform, false);
+                go.AddComponent<Systems_ImpactFx>();
+            }
+            if (enableLighting && FindAnyObjectByType<Systems_ArenaLighting>() == null)
+            {
+                var go = new GameObject("ArenaLighting");
+                go.transform.SetParent(transform, false);
+                go.AddComponent<Systems_ArenaLighting>();
+            }
+            if (recordCareerStats && FindAnyObjectByType<Systems_CareerRecorder>() == null)
+            {
+                var go = new GameObject("CareerRecorder");
+                go.transform.SetParent(transform, false);
+                go.AddComponent<Systems_CareerRecorder>();
+            }
         }
 
         void SpawnFaceMood(Agent_Biped fighter)
@@ -261,6 +287,7 @@ namespace PoSumo
             if (panelSettings != null) doc.panelSettings = panelSettings;
             var root = doc.rootVisualElement;
             root.style.flexGrow = 1;
+            Systems_SafeArea.Attach(transform, root);
 
             _overlay = new VisualElement();
             _overlay.style.position = Position.Absolute;
@@ -367,6 +394,8 @@ namespace PoSumo
             _resultScore.style.marginTop = 4;
             _resultCard.Add(_resultScore);
 
+            BuildPauseUi(root);
+
             // Big touch-friendly rematch button (mobile) — Space still works too.
             _rematchBtn = new Button(ResetMatch) { text = "REMATCH" };
             _rematchBtn.style.height = 72;
@@ -380,6 +409,93 @@ namespace PoSumo
             _rematchBtn.style.borderBottomLeftRadius = 12;
             _rematchBtn.style.borderBottomRightRadius = 12;
             _resultCard.Add(_rematchBtn);
+        }
+
+        /// Pause / quit. Before this the only exit from a match was playing it to
+        /// the end — on Android the hardware back button did nothing at all.
+        void BuildPauseUi(VisualElement root)
+        {
+            var pauseBtn = new Button(TogglePause) { text = "❚❚" };
+            pauseBtn.style.position = Position.Absolute;
+            pauseBtn.style.top = 10;
+            pauseBtn.style.left = 10;
+            pauseBtn.style.width = 60;      // >=44pt: comfortable thumb target
+            pauseBtn.style.height = 44;
+            pauseBtn.style.fontSize = 18;
+            pauseBtn.style.color = new Color(0.95f, 0.93f, 0.85f);
+            pauseBtn.style.backgroundColor = new Color(0.12f, 0.11f, 0.13f, 0.75f);
+            Round(pauseBtn, 8);
+            root.Add(pauseBtn);
+
+            _pauseCard = new VisualElement();
+            _pauseCard.style.position = Position.Absolute;
+            _pauseCard.style.top = Length.Percent(34);
+            _pauseCard.style.left = Length.Percent(14);
+            _pauseCard.style.right = Length.Percent(14);
+            _pauseCard.style.backgroundColor = new Color(0.05f, 0.045f, 0.06f, 0.96f);
+            _pauseCard.style.paddingLeft = 22; _pauseCard.style.paddingRight = 22;
+            _pauseCard.style.paddingTop = 20; _pauseCard.style.paddingBottom = 20;
+            Round(_pauseCard, 14);
+            _pauseCard.style.display = DisplayStyle.None;
+            root.Add(_pauseCard);
+
+            var title = new Label("PAUSED");
+            title.style.unityTextAlign = TextAnchor.MiddleCenter;
+            title.style.fontSize = 40;
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.color = new Color(1f, 0.85f, 0.3f);
+            _pauseCard.Add(title);
+
+            var resume = new Button(TogglePause) { text = "RESUME" };
+            StyleMenuButton(resume, new Color(1f, 0.85f, 0.3f), new Color(0.08f, 0.06f, 0.05f));
+            _pauseCard.Add(resume);
+
+            var quit = new Button(QuitToBracket) { text = "QUIT MATCH" };
+            StyleMenuButton(quit, new Color(0.22f, 0.2f, 0.21f), new Color(0.85f, 0.82f, 0.78f));
+            _pauseCard.Add(quit);
+        }
+
+        static void StyleMenuButton(Button b, Color background, Color text)
+        {
+            b.style.height = 64;
+            b.style.marginTop = 14;
+            b.style.fontSize = 26;
+            b.style.unityFontStyleAndWeight = FontStyle.Bold;
+            b.style.color = text;
+            b.style.backgroundColor = background;
+            Round(b, 12);
+        }
+
+        static void Round(VisualElement e, int radius)
+        {
+            e.style.borderTopLeftRadius = radius;
+            e.style.borderTopRightRadius = radius;
+            e.style.borderBottomLeftRadius = radius;
+            e.style.borderBottomRightRadius = radius;
+        }
+
+        void TogglePause()
+        {
+            if (_phase == Phase.MatchOver) return;   // result card owns that moment
+            _paused = !_paused;
+            _pauseCard.style.display = _paused ? DisplayStyle.Flex : DisplayStyle.None;
+            // Restore to 1 rather than to the pre-pause value: presentation slow-mo
+            // ends on a realtime timer that keeps running while paused, so the saved
+            // value would be stale.
+            Time.timeScale = _paused ? 0f : 1f;
+        }
+
+        void QuitToBracket()
+        {
+            Time.timeScale = 1f;
+            // Abandoning a bracket match leaves the tournament stopped rather than
+            // half-played, so the bracket screen offers a clean restart instead of
+            // auto-launching the match that was just walked out of.
+            if (Systems_TournamentState.Active)
+            {
+                Systems_TournamentState.Stop();
+            }
+            UnityEngine.SceneManagement.SceneManager.LoadScene("SCN_TOURNAMENT");
         }
 
         void UpdateScoreboard(bool flash)
@@ -454,7 +570,20 @@ namespace PoSumo
 
         void Update()
         {
-            if (_phase == Phase.MatchOver && SpacePressed()) ResetMatch();
+            if (_phase == Phase.MatchOver && SpacePressed()) { ResetMatch(); return; }
+            // Android maps its hardware back button onto escapeKey, so this is the
+            // system-back handler as well as the desktop shortcut. Update still runs
+            // at timeScale 0, so it can also un-pause.
+            if (BackPressed()) TogglePause();
+        }
+
+        bool BackPressed()
+        {
+#if ENABLE_INPUT_SYSTEM
+            return Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame;
+#else
+            return false;
+#endif
         }
 
         bool SpacePressed()

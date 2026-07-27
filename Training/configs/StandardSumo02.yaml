@@ -1,0 +1,53 @@
+# Standard fight — re-tune onto the CURRENT physics.
+#
+# standard_sumo01 is the deepest run on the roster (45M steps, cold) and was
+# trained entirely against box limb colliders. Limbs are now CapsuleCollider2D.
+# Feet and torso are unchanged.
+#
+#   mlagents-learn Training/configs/StandardSumo02.yaml --run-id=standard_sumo02 \
+#     --initialize-from=standard_sumo01 --results-dir=Training/results \
+#     --env=Builds/StandardEnv/StandardEnv.exe --num-envs=2 --no-graphics --base-port 5700
+#
+# Same behavior name as its trunk, so no staging directory is needed.
+# network_settings MUST stay 512 x 3 to match standard_sumo01.
+#
+# Standard is the roster's reference fighter — every other character is defined by
+# how it deviates from it, and it is the sparring partner baked into most training
+# scenes. So this one matters most: if Standard drifts, every future comparison
+# drifts with it. Hence the lowest learning rate of the four re-tunes.
+#
+# 3M corrective steps on a 45M trunk.
+
+behaviors:
+  Standard:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 8.0e-5
+      beta: 5.0e-3
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:      # MUST match standard_sumo01 exactly (initialize-from)
+      normalize: true
+      hidden_units: 512
+      num_layers: 3
+      vis_encode_type: simple
+    reward_signals:
+      extrinsic:
+        gamma: 0.997
+        strength: 1.0
+    keep_checkpoints: 5
+    checkpoint_interval: 200000
+    max_steps: 3000000
+    time_horizon: 1000
+    summary_freq: 30000
+    threaded: true
+    self_play:
+      window: 25
+      play_against_latest_model_ratio: 0.25
+      save_steps: 50000
+      swap_steps: 50000
+      team_change: 250000

@@ -15,13 +15,17 @@ MonoBehaviour:
   behaviorName: Matt
   teamColor: {r: 0.85, g: 0.25, b: 0.2, a: 1}
   headSprite: {fileID: -7686771571381700282, guid: 95006877e9fe8ff44b732eaf725260ae, type: 3}
+  faceArtFacesLeft: 0
+  faceNeutralName: 
+  faceHappyNames: []
+  faceSadNames: []
   massScale: 1
   widthScale: 1
   torqueScale: 1
   extendedObservations: 1
   decisionPeriod: 3
   inferenceModel: {fileID: 5022602860645237092, guid: 239f499b7abb2934f8d71d52682b5f23, type: 3}
-  walkModel: {fileID: 5022602860645237092, guid: 95275fda98386c84b8cbb3bb41334205, type: 3}
+  walkModel: {fileID: 5022602860645237092, guid: eacb5d3088e0e2046b4d52b206de456a, type: 3}
   uprightReward: 0.0005
   closingReward: 0.0009
   lungeBonus: 0.0016
@@ -35,3 +39,10 @@ MonoBehaviour:
   energyPenalty: 0.0003
   jerkPenalty: 0.0003
   straightLegEarnFraction: 0.3
+  walkForwardReward: 0.0075
+  walkStanceFloor: 0.3
+  walkBendReward: 0.0004
+  walkUprightReward: 0.001
+  walkCadenceReward: 0.0012
+  walkEnergyPenalty: 0.00018
+  walkStallPenalty: 0.0018

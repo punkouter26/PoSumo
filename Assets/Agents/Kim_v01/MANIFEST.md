@@ -9,11 +9,11 @@ chasing. She does not come to you.
 | Behavior name | `Kim` (must match the YAML key exactly) |
 | Character asset | `Kim_Character.asset` — source of truth for build + shaping |
 | Observations / actions | 44 / 13 (`extendedObservations = true`, decision period 3) |
-| Build | massScale 1.45, widthScale 1.30, torqueScale 1.50 (~115 kg, sumo belly) |
-| Fight brain | `Kim.onnx` ← `kim_sumo01` final export (12.0M steps) |
-| Walk brain | `Standard_v01/StandardWalk.onnx` (shared walk-in brain) |
-| Training scene / env | `SCN_TRAIN_KIM` → `Builds/KimEnv` (spars against Standard) |
-| Config | `Training/configs/KimSumo01.yaml` |
+| Build | massScale 1.45, widthScale 1.30, torqueScale 1.50 (~101 kg, sumo belly) |
+| Fight brain | `Kim.onnx` ← `kim_sumo02` final export (3.0M re-tune on the capsule-limb physics, on top of kim_sumo01's 12.0M) |
+| Walk brain | `KimWalk.onnx` ← `kim_walk02` (2.0M on capsule physics, on top of kim_walk01's 4.0M) — her own heavyweight gait |
+| Training scene / env | sumo `SCN_TRAIN_KIM` → `Builds/KimEnv` (spars against Standard); walk `SCN_TRAIN_WALK_KIM` → `Builds/KimWalkEnv` |
+| Configs | `Training/configs/KimSumo02.yaml`, `Training/configs/KimWalk02.yaml` |
 | Faces | `Assets/Resources/Kim_*.png`, named on the character asset |
 | Inference | `InferenceDevice = Burst` |
 
@@ -28,16 +28,24 @@ strongest recent opponents. `KimSumo01.yaml`'s header explains each choice.
 
 ## Retrain
 
-`kim_sumo01` was initialized from a **staged trunk**: Matt's aggressive
-`matt_sumo04` checkpoint copied under a `Kim/` folder, because
-`--initialize-from` resolves by the *new* behavior name. Re-stage it with:
+Simplest path — warm-start from her own trained brain:
+
+```powershell
+Training\venv\Scripts\mlagents-learn.exe Training/configs/KimSumo01.yaml --run-id=kim_sumo02 `
+  --initialize-from=kim_sumo01 --results-dir=Training/results `
+  --env=Builds/KimEnv/KimEnv.exe --num-envs=3 --no-graphics
+```
+
+To instead reproduce her *original* training, `kim_sumo01` was initialized from a
+**staged trunk**: Matt's aggressive `matt_sumo04` checkpoint copied under a `Kim/`
+folder, because `--initialize-from` resolves by the *new* behavior name. That
+trunk is kept at `Training/trunks/matt_sumo04` (outside the TensorBoard logdir,
+since it is weights rather than history worth viewing):
 
 ```powershell
 New-Item -ItemType Directory -Force Training/results/kim_init/Kim
-Copy-Item Training/results/matt_sumo04/Matt/checkpoint.pt Training/results/kim_init/Kim/checkpoint.pt
-Training\venv\Scripts\mlagents-learn.exe Training/configs/KimSumo01.yaml --run-id=kim_sumo02 `
-  --initialize-from=kim_init --results-dir=Training/results `
-  --env=Builds/KimEnv/KimEnv.exe --num-envs=3 --no-graphics
+Copy-Item Training/trunks/matt_sumo04/Matt/checkpoint.pt Training/results/kim_init/Kim/checkpoint.pt
+# ... then --initialize-from=kim_init, and delete kim_init once the run is stepping
 ```
 Then *PoSumo → Deploy Kim Brain*. `network_settings` must stay 512 × 3 to match
 the trunk.

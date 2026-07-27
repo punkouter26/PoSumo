@@ -31,7 +31,7 @@ MonoBehaviour:
   extendedObservations: 1
   decisionPeriod: 3
   inferenceModel: {fileID: 5022602860645237092, guid: d40789c9a1a3bdc4891f8fa0702ded5e, type: 3}
-  walkModel: {fileID: 0}
+  walkModel: {fileID: 5022602860645237092, guid: da36644fa0cf29649bd53ac8cb5f9be8, type: 3}
   uprightReward: 0.0004
   closingReward: 0.0004
   lungeBonus: 0.0008
@@ -45,3 +45,10 @@ MonoBehaviour:
   energyPenalty: 0.0006
   jerkPenalty: 0.0005
   straightLegEarnFraction: 0.15
+  walkForwardReward: 0.004
+  walkStanceFloor: 0.15
+  walkBendReward: 0.0006
+  walkUprightReward: 0.001
+  walkCadenceReward: 0.002
+  walkEnergyPenalty: 0.0003
+  walkStallPenalty: 0.0008

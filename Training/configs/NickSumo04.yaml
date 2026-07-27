@@ -1,0 +1,66 @@
+# Nick fight — CONSERVATIVE retry of the new-physics re-tune.
+#
+# nick_sumo03 failed in a specific, diagnosable way: over 3M steps its mean
+# reward climbed to ~36 while its self-play ELO fell monotonically
+# 1198 -> 1189 -> 1180 -> 1172 -> 1160 -> 1140. Reward up, ELO down means the
+# policy got better at farming shaping (closing, cadence, impact) and worse at
+# the only thing that scores — winning the bout. That is exactly the failure
+# NickSumo02.yaml's header warned about for this fighter.
+#
+# Why Nick and not the others: he has the roster's highest cadence (0.0032) and
+# lunge (0.0024 @ 1.0 m/s) rewards and straightLegEarnFraction 0.75, so his
+# shaping is both the largest and the easiest to farm without engaging. Matt,
+# Standard and Kim re-tuned cleanly at the same budget.
+#
+# Changes from NickSumo03.yaml, all in the direction of "move less":
+#   beta          7.0e-3 -> 4.0e-3   less exploration; stop wandering off-policy
+#   learning_rate 1.2e-4 -> 6.0e-5   half again; nudge, do not reshape
+#   max_steps     3M     -> 1.2M     his ELO was already falling by 400k, so a
+#                                    long run only compounds the drift
+#   latest ratio  0.25   -> 0.5      drill the strongest recent opponents, which
+#                                    punishes reward-farming that does not win
+#
+#   mlagents-learn Training/configs/NickSumo04.yaml --run-id=nick_sumo04 \
+#     --initialize-from=nick_sumo02 --results-dir=Training/results \
+#     --env=Builds/NickEnv/NickEnv.exe --num-envs=2 --no-graphics --base-port 5800
+#
+# Starts from nick_sumo02 (the SHIPPED brain), not from nick_sumo03 — inheriting
+# a regressed policy would bake the drift in.
+#
+# ACCEPTANCE: deploy only if final ELO >= its starting value. If ELO falls again,
+# the problem is his character sheet's shaping-to-win ratio, not this file, and
+# the fix is to cut cadence/lunge rewards rather than to keep retraining.
+
+behaviors:
+  Nick:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 6.0e-5
+      beta: 4.0e-3
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:      # MUST match nick_sumo02 exactly (initialize-from)
+      normalize: true
+      hidden_units: 512
+      num_layers: 3
+      vis_encode_type: simple
+    reward_signals:
+      extrinsic:
+        gamma: 0.997
+        strength: 1.0
+    keep_checkpoints: 5
+    checkpoint_interval: 200000
+    max_steps: 1200000
+    time_horizon: 1000
+    summary_freq: 30000
+    threaded: true
+    self_play:
+      window: 10
+      play_against_latest_model_ratio: 0.5
+      save_steps: 50000
+      swap_steps: 50000
+      team_change: 250000

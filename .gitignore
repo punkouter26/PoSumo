@@ -23,6 +23,9 @@
 # Training run outputs (checkpoints/TensorBoard; deployed models live in Assets/Agents/)
 /Training/results/
 
+# Trunk checkpoints kept only as --initialize-from sources (outside the TB logdir)
+/Training/trunks/
+
 # OS noise
 Thumbs.db
 .DS_Store
