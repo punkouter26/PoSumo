@@ -56,6 +56,15 @@ namespace PoSumo
         /// goes limp (used between rounds and after the match).
         [HideInInspector] public bool actionsEnabled = true;
 
+        /// Scales every motor command. The referee ramps this from a fraction back
+        /// up to 1 over the first moment of a round: released from a dead stop the
+        /// fight brain fires a full-power lunge on frame one and throws itself over,
+        /// because it learned to act on a body that was already moving. Easing the
+        /// first commands in lets the body take its own weight first.
+        /// Observations and reward are untouched — only the torque that reaches the
+        /// joints is scaled.
+        [System.NonSerialized] public float actionScale = 1f;
+
         [Tooltip("ML-Agents behavior name; must exactly match the YAML config key.")]
         public string behaviorName = "Matt";
         public const int ObservationCount = 41; // 5 body + 26 joints + 4 feet + 4 opponent + 2 edges
@@ -198,7 +207,12 @@ namespace PoSumo
             mode = Mode.Recover;              // walk-brain observation layout (virtual target)
             arenaCenterX = targetX;
             suppressEpisodeControl = true;
-            bp.Model = walkModel;
+            // SetModel, not `bp.Model = ...`: the policy is built once at Awake and
+            // cached, so assigning the field alone leaves the FIGHT brain driving
+            // the walk-in. That is what made both fighters collapse within half a
+            // second of a round opening — the fight policy was being fed a target
+            // 6.8 m away, far outside anything it ever trained on.
+            SetModel(behaviorName, walkModel, InferenceDevice.Burst);
         }
 
         public void EndWalkIn()
@@ -207,8 +221,12 @@ namespace PoSumo
             mode = Mode.Sumo;
             arenaCenterX = _savedCenterX;
             suppressEpisodeControl = false;
-            var bp = GetComponent<BehaviorParameters>();
-            if (_fightModel != null) bp.Model = _fightModel;
+            // Same reason as BeginWalkIn: the handoff back to the fight brain only
+            // takes effect through SetModel.
+            if (_fightModel != null)
+            {
+                SetModel(behaviorName, _fightModel, InferenceDevice.Burst);
+            }
         }
 
         /// NaN/Inf sanitization guard for every value submitted to the model.
@@ -326,7 +344,7 @@ namespace PoSumo
             float energy = 0f, jerk = 0f;
             for (int j = 0; j < ActionCount; j++)
             {
-                _b.ApplyMotor(j, a[j]);
+                _b.ApplyMotor(j, a[j] * actionScale);
                 float clamped = Mathf.Clamp(a[j], -1f, 1f);
                 LastActions[j] = clamped;
                 energy += Mathf.Abs(clamped);

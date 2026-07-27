@@ -15,7 +15,7 @@ namespace PoSumo
     /// dims the arena and waits for Space to rematch. UI Toolkit only.
     public class Systems_GameMatchManager : MonoBehaviour
     {
-        enum Phase { Fighting, RoundEnded, Grace, MatchOver }
+        enum Phase { Fighting, RoundEnded, Grace, WalkIn, MatchOver }
 
         public Agent_Biped wrestlerA;           // teamId 0
         public Agent_Biped wrestlerB;           // teamId 1
@@ -51,6 +51,22 @@ namespace PoSumo
         public float countdownHeadOrtho = 0.85f;
         [Tooltip("Half the gap between the fighters' neutral stand-off positions during the countdown.")]
         public float neutralGapHalf = 0.9f;
+
+        [Header("Walk-in intro")]
+        [Tooltip("Rounds open with both fighters walking in on their locomotion brain, then the mat contracts and the countdown runs.")]
+        public bool enableWalkIn = true;
+        [Tooltip("Platform half-width during the walk-in. The mat contracts back to ringHalfWidth before the fight, so the FIGHTING ring is unchanged and the fight brains never see a size they were not trained on.")]
+        public float walkInHalfWidth = 4f;
+        [Tooltip("Half the gap the fighters start from. 3.0 against a 1.2 stand-off = 1.8 m of walking each, about two strides at the measured 1.4 m/s.")]
+        public float walkInStartGapHalf = 3f;
+        [Tooltip("Distance from its mark at which a fighter counts as arrived.")]
+        public float walkInArriveTolerance = 0.3f;
+        [Tooltip("Hard cap on the walk-in. Only a backstop: the walk takes ~1.3 s, so this should never be reached unless a fighter stumbles.")]
+        public float walkInTimeout = 2.5f;
+        [Tooltip("Seconds over which the fight brains ramp from openingActionScale back to full power once the round opens. Stops the round starting with an all-out lunge from a dead stop.")]
+        public float minSettleSeconds = 1f;
+        [Tooltip("Motor authority the fight brains get on the first frame of a round, ramped to 1 over minSettleSeconds. Low = the fighters visibly settle before committing.")]
+        [Range(0.05f, 1f)] public float openingActionScale = 0.3f;
         [Tooltip("Settle a timed-out round on position instead of calling it a draw. Without this nothing breaks a stalemate, so cagey matchups draw forever.")]
         public bool timeoutDecidesOnPosition = true;
         [Tooltip("Centre-distance difference (m) below which a timeout is still a genuine draw.")]
@@ -66,7 +82,24 @@ namespace PoSumo
         float _countdownLeft;
         int _lastCountdownDigit = -1;
         Phase _phase = Phase.Fighting;
+        float _walkInLeft;
+        float _savedGroundWidth;
+        float _braceStarted = -999f;
+        float _releaseTime = -1f;
+        bool _walkBrainHolding;
+        bool _parkedA, _parkedB;
+        Systems_SumoArena _arena;
         Systems_CameraFollow _camFollow;
+
+        /// The walk-in only runs if BOTH fighters actually have a locomotion brain;
+        /// Agent_Biped.BeginWalkIn is a silent no-op without one, which would strand
+        /// them at the far ends until the timeout.
+        bool WalkBrainsReady()
+        {
+            return wrestlerA != null && wrestlerB != null
+                && wrestlerA.character != null && wrestlerB.character != null
+                && wrestlerA.character.walkModel != null && wrestlerB.character.walkModel != null;
+        }
         // Cached in Start: the foot check runs every FixedUpdate, so no
         // GetComponent in the hot path.
         Agent_BipedBody _bodyA, _bodyB;
@@ -134,19 +167,31 @@ namespace PoSumo
             wrestlerA.arenaCenterX = transform.position.x;
             wrestlerB.arenaCenterX = transform.position.x;
 
-            // Size the dohyo to the configured ring once at startup. This is a
-            // STATIC width, not the old stall-breaker: the platform never moves
-            // again during a round. Baked scenes ship a 5.5 m-wide platform, so
-            // without this the physical edge ignores ringHalfWidth entirely.
-            var arena = FindAnyObjectByType<Systems_SumoArena>();
-            if (arena != null) arena.SetPlatformHalfWidth(ringHalfWidth);
+            // Size the dohyo to the configured ring at startup. The platform is
+            // resized once more per round — wide for the walk-in, back to
+            // ringHalfWidth before the fight — but it never moves DURING a round,
+            // so the fighting ring is always the size the brains trained on.
+            // Baked scenes ship a 5.5 m-wide platform, so without this the
+            // physical edge would ignore ringHalfWidth entirely.
+            _arena = FindAnyObjectByType<Systems_SumoArena>();
+            if (_arena != null) _arena.SetPlatformHalfWidth(ringHalfWidth);
 
             _camFollow = FindAnyObjectByType<Systems_CameraFollow>();
             BuildUi();
             UpdateScoreboard(false);
             SpawnCompanionSystems();
-            FreezeForCountdown();
-            StartCountdown();
+
+            // The very first round gets the same opening as every later one.
+            if (enableWalkIn && WalkBrainsReady())
+            {
+                _phase = Phase.WalkIn;
+                BeginWalkInPhase();
+            }
+            else
+            {
+                HoldUpright();
+                StartCountdown();
+            }
         }
 
         /// Identity is adopted in Awake, not Start: the fight HUD reads nameA/
@@ -186,7 +231,121 @@ namespace PoSumo
 
         /// Round opening: both fighters hold a neutral standing pose at the
         /// stand-off gap, physics off, until the countdown releases them.
-        void FreezeForCountdown()
+
+        /// Opens the round: widen the mat, stand both fighters at the far ends and
+        /// hand them to their locomotion brains to walk to the stand-off marks.
+        ///
+        /// The widening is temporary and purely for the intro — EndWalkInPhase
+        /// contracts the platform back to ringHalfWidth before anyone fights, so
+        /// the fighting ring is exactly the size the fight brains trained on.
+        void BeginWalkInPhase()
+        {
+            if (_arena != null)
+            {
+                // SetPlatformHalfWidth clamps to groundWidth * 0.5, so widening the
+                // mat past its configured span needs groundWidth raised first or the
+                // request is silently capped and the fighters spawn off the edge.
+                _savedGroundWidth = _arena.groundWidth;
+                _arena.groundWidth = Mathf.Max(_savedGroundWidth, walkInHalfWidth * 2f + 0.8f);
+                _arena.SetPlatformHalfWidth(walkInHalfWidth);
+            }
+            _parkedA = _parkedB = false;
+            float centre = transform.position.x;
+
+            // Order matters. Swap the brain FIRST, then EndEpisode so
+            // OnEpisodeBegin resets pose, contact sensors and action history under
+            // the policy that is about to drive, and only then place the body.
+            // Handing the walk brain a body still carrying the fight brain's
+            // leftover state is what made the fighters collapse on the first stride.
+            wrestlerA.BeginWalkIn(centre - neutralGapHalf);
+            wrestlerB.BeginWalkIn(centre + neutralGapHalf);
+            wrestlerA.EndEpisode();
+            wrestlerB.EndEpisode();
+
+            PoseForWalkIn(wrestlerA, -walkInStartGapHalf);
+            PoseForWalkIn(wrestlerB, +walkInStartGapHalf);
+            wrestlerA.actionScale = 1f;
+            wrestlerB.actionScale = 1f;
+            _walkInLeft = walkInTimeout;
+        }
+
+        /// Places a fighter at the far end, upright and simulating, ready to walk.
+        /// Unlike PoseNeutral this leaves physics and motors ON — the walk brain
+        /// needs a live body to drive.
+        void PoseForWalkIn(Agent_Biped w, float offsetX)
+        {
+            if (w == null) return;
+            var p = w.transform.position;
+            w.transform.position = new Vector3(transform.position.x + offsetX, p.y, p.z);
+            var body = w.GetComponent<Agent_BipedBody>();
+            if (body != null)
+            {
+                body.ResetPose();
+                for (int partIndex = 0; partIndex < body.Parts.Length; partIndex++)
+                {
+                    body.Parts[partIndex].simulated = true;
+                }
+            }
+            w.actionsEnabled = true;
+        }
+
+        /// Parks each fighter the instant IT reaches its own mark, and reports when
+        /// both are parked.
+        ///
+        /// The walk brain does not stop: it is trained to reach a target and have
+        /// the episode end there, so with episode control suppressed it strides
+        /// straight past. Waiting for both to be near their marks at the same
+        /// moment therefore never fires — the first arrival has already overshot
+        /// by the time the second gets there.
+        bool TickWalkInArrivals()
+        {
+            float centre = transform.position.x;
+            ParkIfArrived(wrestlerA, centre - neutralGapHalf, ref _parkedA);
+            ParkIfArrived(wrestlerB, centre + neutralGapHalf, ref _parkedB);
+            return _parkedA && _parkedB;
+        }
+
+        void ParkIfArrived(Agent_Biped w, float mark, ref bool parked)
+        {
+            if (parked || w == null) return;
+            // Park on arrival OR on overshoot — a fighter that has passed its mark
+            // is only getting further away.
+            float toMark = (mark - w.TorsoX) * (w.TorsoX < mark ? 1f : -1f);
+            bool reached = Mathf.Abs(w.TorsoX - mark) <= walkInArriveTolerance;
+            bool overshot = (w == wrestlerA && w.TorsoX > mark) || (w == wrestlerB && w.TorsoX < mark);
+            if (!reached && !overshot) return;
+
+            w.EndWalkIn();                       // hand the body back off the walk brain
+            PoseNeutral(w, mark - transform.position.x);   // snap to the mark, physics off
+            parked = true;
+        }
+
+        /// Hands both fighters back to their fight brains and shrinks the mat to
+        /// the real ring before the countdown starts.
+        /// Shrinks the intro mat back to the real fighting ring.
+        void ContractMat()
+        {
+            if (_arena == null) return;
+            _arena.SetPlatformHalfWidth(ringHalfWidth);
+            if (_savedGroundWidth > 0f) _arena.groundWidth = _savedGroundWidth;
+        }
+
+        /// Hands both bodies from the locomotion brain back to the fight brain.
+        void EndWalkInPhase()
+        {
+            wrestlerA.EndWalkIn();
+            wrestlerB.EndWalkIn();
+            _walkBrainHolding = false;
+        }
+
+        /// Parks both fighters at the stand-off with physics OFF.
+        ///
+        /// Note this genuinely freezes them rather than "bracing" them with zeroed
+        /// motors: a ragdoll whose joints are all braked is a stiff mannequin, and
+        /// a stiff mannequin still topples like an inverted pendulum. Staying
+        /// upright needs active balance, which only a policy provides — that is
+        /// what the walk-brain hold below is for.
+        void HoldUpright()
         {
             PoseNeutral(wrestlerA, -neutralGapHalf);
             PoseNeutral(wrestlerB, +neutralGapHalf);
@@ -194,6 +353,7 @@ namespace PoSumo
 
         void PoseNeutral(Agent_Biped w, float offsetX)
         {
+            if (w == null) return;
             var p = w.transform.position;
             w.transform.position = new Vector3(transform.position.x + offsetX, p.y, p.z);
             var body = w.GetComponent<Agent_BipedBody>();
@@ -206,11 +366,45 @@ namespace PoSumo
             w.actionsEnabled = false;
         }
 
+
         /// Countdown hit zero: physics back on, fight brains live.
         void BeginSimulation()
         {
+            // When the walk brain held them through the countdown they are already
+            // simulating and balanced; all that changes here is which policy owns
+            // the body. Unfreeze still runs for the no-walk-brain fallback path.
+            if (_walkBrainHolding)
+            {
+                EndWalkInPhase();
+            }
             Unfreeze(wrestlerA);
             Unfreeze(wrestlerB);
+
+            // Ease the fight brains in. Released at full power from a dead stop they
+            // fire a maximum-effort lunge on the first frame and throw themselves
+            // over — measured: both released perfectly upright (1.00) and one was
+            // face-down within half a second.
+            _releaseTime = Time.time;
+            wrestlerA.actionScale = openingActionScale;
+            wrestlerB.actionScale = openingActionScale;
+        }
+
+        /// Ramps motor authority back to full over minSettleSeconds after the round
+        /// opens, so the fighters take their own weight before they can commit.
+        void TickActionRamp()
+        {
+            if (_releaseTime < 0f) return;
+            float t = (Time.time - _releaseTime) / Mathf.Max(0.01f, minSettleSeconds);
+            if (t >= 1f)
+            {
+                wrestlerA.actionScale = 1f;
+                wrestlerB.actionScale = 1f;
+                _releaseTime = -1f;
+                return;
+            }
+            float s = Mathf.Lerp(openingActionScale, 1f, t);
+            wrestlerA.actionScale = s;
+            wrestlerB.actionScale = s;
         }
 
         static void Unfreeze(Agent_Biped w)
@@ -598,6 +792,10 @@ namespace PoSumo
         void FixedUpdate()
         {
             if (wrestlerA == null || wrestlerB == null) return;
+            // A physics step can land before Start() has built the UI and set the
+            // opening phase. Scoring a round in that window dereferences UI that
+            // does not exist yet, so nothing runs until the match is actually set up.
+            if (_clock == null) return;
 
             switch (_phase)
             {
@@ -611,7 +809,7 @@ namespace PoSumo
                     {
                         wrestlerA.EndEpisode();   // resets poses via OnEpisodeBegin
                         wrestlerB.EndEpisode();
-                        FreezeForCountdown();
+                        HoldUpright();
                         _downA = _downB = 0f;
                         _banner.style.display = DisplayStyle.None;
                         _phase = Phase.Grace;
@@ -621,10 +819,44 @@ namespace PoSumo
 
                 case Phase.Grace:
                     // Fighters are frozen in the stand-off; brief beat before
-                    // the countdown starts ticking.
+                    // the walk-in (or, with it disabled, the countdown).
                     _phaseLeft -= Time.fixedDeltaTime;
                     if (_phaseLeft <= 0f)
                     {
+                        if (enableWalkIn && WalkBrainsReady())
+                        {
+                            _phase = Phase.WalkIn;
+                            BeginWalkInPhase();
+                            return;
+                        }
+                        _phase = Phase.Fighting;
+                        _elapsed = 0f;
+                        _downA = _downB = 0f;
+                        StartCountdown();
+                        RoundStarted?.Invoke();
+                    }
+                    return;
+
+                case Phase.WalkIn:
+                    // Locomotion brains drive both fighters to their marks. No
+                    // scoring, no clock — Agent_Biped.suppressEpisodeControl keeps
+                    // the walk policy from ending episodes while it owns the body.
+                    _walkInLeft -= Time.fixedDeltaTime;
+                    if (TickWalkInArrivals() || _walkInLeft <= 0f)
+                    {
+                        // Contract the mat, but leave the LOCOMOTION brain driving
+                        // through the countdown. It actively balances, so the
+                        // fighters stand on their marks under their own control
+                        // instead of being frozen — and the fight brain then
+                        // inherits a settled, upright, already-simulating body
+                        // rather than one that snaps from kinematic to dynamic and
+                        // flops. BeginSimulation performs the handoff at FIGHT!.
+                        // Anyone still walking when the timeout hit gets parked too,
+                        // so the countdown always starts from both marks.
+                        HoldUpright();
+                        EndWalkInPhase();
+                        ContractMat();
+                        _braceStarted = Time.time;
                         _phase = Phase.Fighting;
                         _elapsed = 0f;
                         _downA = _downB = 0f;
@@ -640,8 +872,13 @@ namespace PoSumo
             {
                 TickCountdown();
                 if (_countdownLeft > 0f) return;
+                // Both fighters have been standing braced through the countdown.
+                // Hold the release until they have had at least minSettleSeconds
+                // of settled, upright physics, so a shortened countdown can never
+                // hand the fight brain an unsettled body that flops immediately.
                 BeginSimulation();
             }
+            TickActionRamp();
 
             _elapsed += Time.fixedDeltaTime;
             UpdateClock();
@@ -837,7 +1074,7 @@ namespace PoSumo
             if (_scoreBlock != null) _scoreBlock.style.display = DisplayStyle.Flex;
             wrestlerA.EndEpisode();
             wrestlerB.EndEpisode();
-            FreezeForCountdown();
+            HoldUpright();
             _downA = _downB = 0f;
             _phase = Phase.Grace;
             _phaseLeft = graceSeconds;

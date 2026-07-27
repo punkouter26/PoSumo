@@ -1985,9 +1985,19 @@ MonoBehaviour:
   enablePresentation: 1
   enableAudio: 1
   enableFaceMood: 1
+  recordCareerStats: 1
+  enableLighting: 1
+  enableImpactFx: 1
   countdownSeconds: 3
   countdownHeadOrtho: 0.85
-  neutralGapHalf: 0.7
+  neutralGapHalf: 1.2
+  enableWalkIn: 0
+  walkInHalfWidth: 3.6
+  walkInStartGapHalf: 3
+  walkInArriveTolerance: 0.3
+  walkInTimeout: 2.5
+  minSettleSeconds: 1
+  openingActionScale: 0.3
   timeoutDecidesOnPosition: 1
   timeoutDeadHeat: 0.15
   limpBeforeAnnounce: 1.2
