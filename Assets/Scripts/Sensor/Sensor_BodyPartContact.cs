@@ -4,24 +4,24 @@ namespace PoSumo
 {
     /// Reports ground contact of non-foot body parts to the owning agent.
     /// "Ground" here means any static collider (the arena floor).
-    public class Sensor_BodyPartContact : MonoBehaviour
+    public sealed class Sensor_BodyPartContact : MonoBehaviour
     {
-        Agent_Biped _agent;
-        int _touching;
+        private Agent_Biped _agent;
+        private int _touching;
 
-        void Start() { _agent = GetComponentInParent<Agent_Biped>(); }
+        private void Start() { _agent = GetComponentInParent<Agent_Biped>(); }
 
-        static bool IsStatic(Collision2D c) =>
+        private static bool IsStatic(Collision2D c) =>
             c.rigidbody == null || c.rigidbody.bodyType == RigidbodyType2D.Static;
 
-        void OnCollisionEnter2D(Collision2D c)
+        private void OnCollisionEnter2D(Collision2D c)
         {
             if (!IsStatic(c)) return;
             _touching++;
             if (_agent != null) _agent.NonFootGroundContacts++;
         }
 
-        void OnCollisionExit2D(Collision2D c)
+        private void OnCollisionExit2D(Collision2D c)
         {
             if (!IsStatic(c)) return;
             if (_touching > 0)

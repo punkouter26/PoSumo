@@ -5,7 +5,7 @@ namespace PoSumo
     /// Broadcasts every collision of a biped body part (feet included) so
     /// audio/FX systems can react to impact strength without polling physics.
     /// Attached at runtime by Agent_BipedBody.Build().
-    public class Sensor_Impact : MonoBehaviour
+    public sealed class Sensor_Impact : MonoBehaviour
     {
         /// (reporter, collision). Subscribers must unsubscribe in OnDisable —
         /// this is a static event and outlives scene loads.
@@ -14,9 +14,9 @@ namespace PoSumo
         [System.NonSerialized] public Agent_BipedBody owner;
         [System.NonSerialized] public bool isFoot;
 
-        Agent_Biped _ownerAgent;
+        private Agent_Biped _ownerAgent;
 
-        void OnCollisionEnter2D(Collision2D c)
+        private void OnCollisionEnter2D(Collision2D c)
         {
             AnyImpact?.Invoke(this, c);
 

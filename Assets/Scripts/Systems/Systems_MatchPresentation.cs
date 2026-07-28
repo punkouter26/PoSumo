@@ -5,7 +5,7 @@ namespace PoSumo
     /// Broadcast dressing for round finishes: hit-stun slow motion on the
     /// deciding fall and a camera punch-in on the loser. Spawned at runtime by
     /// Systems_GameMatchManager; subscribes to its round events.
-    public class Systems_MatchPresentation : MonoBehaviour
+    public sealed class Systems_MatchPresentation : MonoBehaviour
     {
         public float slowMoScale = 0.35f;
         public float slowMoRealSeconds = 1.1f;
@@ -30,16 +30,16 @@ namespace PoSumo
         [Tooltip("Seconds the wide establishing shot of the whole arena is held after the pull-back.")]
         public float matchEndWideSeconds = 6f;
 
-        Systems_GameMatchManager _manager;
-        Systems_CameraFollow _camFollow;
-        Systems_MatchAudio _audio;
+        private Systems_GameMatchManager _manager;
+        private Systems_CameraFollow _camFollow;
+        private Systems_MatchAudio _audio;
 
-        bool _slowMoActive;
-        float _slowMoEndReal;
-        bool _widePending;
-        float _wideAtReal;
+        private bool _slowMoActive;
+        private float _slowMoEndReal;
+        private bool _widePending;
+        private float _wideAtReal;
 
-        void Start()
+        private void Start()
         {
             _manager = FindAnyObjectByType<Systems_GameMatchManager>();
             _camFollow = FindAnyObjectByType<Systems_CameraFollow>();
@@ -59,7 +59,7 @@ namespace PoSumo
         /// Both timings are REALTIME, matching the slow-motion timer and the UI
         /// scheduler, so the beat plays at the same pace whatever Time.timeScale
         /// the finish left behind.
-        void OnMatchEnded(Agent_Biped winner)
+        private void OnMatchEnded(Agent_Biped winner)
         {
             if (_camFollow == null || _manager == null) return;
 
@@ -83,7 +83,7 @@ namespace PoSumo
         /// harder and longer slow motion than a normal finish, and the camera drives
         /// into the head that just got hit. The referee is untouched — the round is
         /// still won by pushing the limp body out.
-        void OnKnockout(Agent_BipedBody victim, Vector3 point)
+        private void OnKnockout(Agent_BipedBody victim, Vector3 point)
         {
             if (victim == null) return;
 
@@ -104,7 +104,7 @@ namespace PoSumo
             }
         }
 
-        void OnDisable()
+        private void OnDisable()
         {
             Time.timeScale = 1f;
             if (_manager != null)
@@ -120,7 +120,7 @@ namespace PoSumo
         /// Shio-maki: each wrestler throws purifying salt across the dohyo before
         /// the bout. Costs two particle bursts and is the most recognisable thing
         /// sumo does.
-        void OnRoundStarted()
+        private void OnRoundStarted()
         {
             // A rematch cancels the post-match camera beat: without this the wide
             // shot could still be pending or live when the next bout opens.
@@ -132,7 +132,7 @@ namespace PoSumo
             ThrowSalt(_manager.wrestlerB);
         }
 
-        void ThrowSalt(Agent_Biped fighter)
+        private void ThrowSalt(Agent_Biped fighter)
         {
             if (fighter == null || fighter.Torso == null) return;
             var body = fighter.GetComponent<Agent_BipedBody>();
@@ -145,7 +145,7 @@ namespace PoSumo
             }
         }
 
-        void OnRoundEnded(Agent_Biped winner, Agent_Biped loser)
+        private void OnRoundEnded(Agent_Biped winner, Agent_Biped loser)
         {
             if (loser == null) return; // draws get no dramatics
 
@@ -169,7 +169,7 @@ namespace PoSumo
             }
         }
 
-        void Update()
+        private void Update()
         {
             if (_slowMoActive && Time.realtimeSinceStartup >= _slowMoEndReal)
             {

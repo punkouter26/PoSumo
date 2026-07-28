@@ -25,7 +25,7 @@ namespace PoSumo
     /// motion that makes every finish feel expensive.
     ///
     /// Spawned at runtime by Systems_GameMatchManager.
-    public class Systems_MatchAudio : MonoBehaviour
+    public sealed class Systems_MatchAudio : MonoBehaviour
     {
         public float masterVolume = 1f;
 
@@ -58,51 +58,51 @@ namespace PoSumo
         [Tooltip("Reverb wetness. This is a big wooden hall, not a studio.")]
         public float reverbLevel = -1200f;
 
-        const string AUDIO_PATH = "Audio/";
-        const int VOICE_COUNT = 10;
-        const int CROWD_VOICE_COUNT = 3;
+        private const string AUDIO_PATH = "Audio/";
+        private const int VOICE_COUNT = 10;
+        private const int CROWD_VOICE_COUNT = 3;
 
         // Slow-mo filtering. 22 kHz is effectively open; 900 Hz is underwater.
-        const float LPF_OPEN = 22000f;
-        const float LPF_SLOWMO = 900f;
+        private const float LPF_OPEN = 22000f;
+        private const float LPF_SLOWMO = 900f;
 
         // Impact layers, three variants each.
-        AudioClip[] _thudLow, _thudMid, _thudDust, _scuffs, _taikos, _grunts, _breaths;
-        AudioClip _strain, _murmur, _gong, _ooh, _gasp, _cheer, _applause, _salt;
+        private AudioClip[] _thudLow, _thudMid, _thudDust, _scuffs, _taikos, _grunts, _breaths;
+        private AudioClip _strain, _murmur, _gong, _ooh, _gasp, _cheer, _applause, _salt;
 
-        AudioSource[] _voices;
-        AudioSource[] _crowdVoices;
-        AudioSource _murmurSource;
-        AudioLowPassFilter _sfxLowPass;
-        AudioLowPassFilter _crowdLowPass;
-        int _nextVoice;
-        int _nextCrowdVoice;
-        int _thudVariant;
+        private AudioSource[] _voices;
+        private AudioSource[] _crowdVoices;
+        private AudioSource _murmurSource;
+        private AudioLowPassFilter _sfxLowPass;
+        private AudioLowPassFilter _crowdLowPass;
+        private int _nextVoice;
+        private int _nextCrowdVoice;
+        private int _thudVariant;
 
-        Systems_GameMatchManager _manager;
-        Agent_Biped _wrestlerA, _wrestlerB;
+        private Systems_GameMatchManager _manager;
+        private Agent_Biped _wrestlerA, _wrestlerB;
 
-        float _nextThudTime;
-        float _nextGruntTime;
-        float _nextBreathTime;
-        float _nextStrainTime;
-        float _nextOohTime;
-        float _nextGaspTime;
-        float _lockUpSince = -1f;
-        float _murmurPitch = 1f;
-        float _tension;
-        float _anticipation;
-        float _duckUntil;
-        float _duckAmount;
-        readonly Dictionary<Agent_BipedBody, float> _nextScuffTime = new Dictionary<Agent_BipedBody, float>();
+        private float _nextThudTime;
+        private float _nextGruntTime;
+        private float _nextBreathTime;
+        private float _nextStrainTime;
+        private float _nextOohTime;
+        private float _nextGaspTime;
+        private float _lockUpSince = -1f;
+        private float _murmurPitch = 1f;
+        private float _tension;
+        private float _anticipation;
+        private float _duckUntil;
+        private float _duckAmount;
+        private readonly Dictionary<Agent_BipedBody, float> _nextScuffTime = new Dictionary<Agent_BipedBody, float>();
 
-        void Awake()
+        private void Awake()
         {
             LoadClips();
             BuildBuses();
         }
 
-        void LoadClips()
+        private void LoadClips()
         {
             _thudLow = LoadSet("SFX_ThudLow", 3);
             _thudMid = LoadSet("SFX_ThudMid", 3);
@@ -140,12 +140,12 @@ namespace PoSumo
         }
 
         /// Loads Name A..(A+count-1), skipping any that are missing.
-        static AudioClip[] LoadSet(string prefix, int count)
+        private static AudioClip[] LoadSet(string prefix, int count)
         {
             var found = new List<AudioClip>(count);
-            for (int i = 0; i < count; i++)
+            for (int countIndex = 0; countIndex < count; countIndex++)
             {
-                AudioClip clip = Resources.Load<AudioClip>(AUDIO_PATH + prefix + (char)('A' + i));
+                AudioClip clip = Resources.Load<AudioClip>(AUDIO_PATH + prefix + (char)('A' + countIndex));
                 if (clip != null)
                 {
                     found.Add(clip);
@@ -154,7 +154,7 @@ namespace PoSumo
             return found.ToArray();
         }
 
-        void BuildBuses()
+        private void BuildBuses()
         {
             // SFX bus: everything the bodies do. The filters live on this
             // GameObject and therefore apply to all its sources at once, which is
@@ -162,9 +162,9 @@ namespace PoSumo
             var sfxBus = new GameObject("Bus_SFX");
             sfxBus.transform.SetParent(transform, false);
             _voices = new AudioSource[VOICE_COUNT];
-            for (int i = 0; i < VOICE_COUNT; i++)
+            for (int voiceIndex = 0; voiceIndex < VOICE_COUNT; voiceIndex++)
             {
-                _voices[i] = NewSource(sfxBus);
+                _voices[voiceIndex] = NewSource(sfxBus);
             }
             _sfxLowPass = sfxBus.AddComponent<AudioLowPassFilter>();
             _sfxLowPass.cutoffFrequency = LPF_OPEN;
@@ -175,9 +175,9 @@ namespace PoSumo
             var crowdBus = new GameObject("Bus_Crowd");
             crowdBus.transform.SetParent(transform, false);
             _crowdVoices = new AudioSource[CROWD_VOICE_COUNT];
-            for (int i = 0; i < CROWD_VOICE_COUNT; i++)
+            for (int crowdVoiceIndex = 0; crowdVoiceIndex < CROWD_VOICE_COUNT; crowdVoiceIndex++)
             {
-                _crowdVoices[i] = NewSource(crowdBus);
+                _crowdVoices[crowdVoiceIndex] = NewSource(crowdBus);
             }
             _murmurSource = NewSource(crowdBus);
             _murmurSource.loop = true;
@@ -185,7 +185,7 @@ namespace PoSumo
             _crowdLowPass.cutoffFrequency = LPF_OPEN;
         }
 
-        static AudioSource NewSource(GameObject host)
+        private static AudioSource NewSource(GameObject host)
         {
             var source = host.AddComponent<AudioSource>();
             source.playOnAwake = false;
@@ -197,7 +197,7 @@ namespace PoSumo
             return source;
         }
 
-        void AddReverb(GameObject host)
+        private void AddReverb(GameObject host)
         {
             var reverb = host.AddComponent<AudioReverbFilter>();
             reverb.reverbPreset = AudioReverbPreset.Off;   // required before manual values take
@@ -215,7 +215,7 @@ namespace PoSumo
             reverb.hfReference = 5000f;
         }
 
-        void Start()
+        private void Start()
         {
             _manager = FindAnyObjectByType<Systems_GameMatchManager>();
             if (_manager != null)
@@ -240,9 +240,9 @@ namespace PoSumo
             _nextBreathTime = Time.time + breathInterval;
         }
 
-        void OnEnable() { Sensor_Impact.AnyImpact += OnImpact; }
+        private void OnEnable() { Sensor_Impact.AnyImpact += OnImpact; }
 
-        void OnDisable()
+        private void OnDisable()
         {
             Sensor_Impact.AnyImpact -= OnImpact;
             if (_manager != null)
@@ -256,14 +256,14 @@ namespace PoSumo
 
         // ------------------------------------------------------------- events
 
-        void OnRoundStarted()
+        private void OnRoundStarted()
         {
             PlayTaiko();
             _anticipation = 0f;
             _nextBreathTime = Time.time + breathInterval;
         }
 
-        void OnRoundEnded(Agent_Biped winner, Agent_Biped loser)
+        private void OnRoundEnded(Agent_Biped winner, Agent_Biped loser)
         {
             // Applause between rounds, and the bed drops into anticipation for the
             // next one.
@@ -271,7 +271,7 @@ namespace PoSumo
             _anticipation = 1f;
         }
 
-        void OnMatchEnded(Agent_Biped winner)
+        private void OnMatchEnded(Agent_Biped winner)
         {
             Play(_gong, 1f, 1f, 0f);
             // The gong owns this moment: duck the crowd under it, then let the
@@ -280,14 +280,14 @@ namespace PoSumo
             PlayCrowd(_cheer, 0.95f, 1f);
         }
 
-        void OnMatchReset()
+        private void OnMatchReset()
         {
             _anticipation = 0f;
             _tension = 0f;
             PlayCrowd(_applause, 0.4f, 1.05f);
         }
 
-        void PlayTaiko()
+        private void PlayTaiko()
         {
             if (_taikos.Length == 0)
             {
@@ -312,10 +312,10 @@ namespace PoSumo
 
         // ------------------------------------------------------------ impacts
 
-        static bool IsStatic(Collision2D c) =>
+        private static bool IsStatic(Collision2D c) =>
             c.rigidbody == null || c.rigidbody.bodyType == RigidbodyType2D.Static;
 
-        void OnImpact(Sensor_Impact sensor, Collision2D c)
+        private void OnImpact(Sensor_Impact sensor, Collision2D c)
         {
             float speed = c.relativeVelocity.magnitude;
             float now = Time.unscaledTime;
@@ -365,7 +365,7 @@ namespace PoSumo
         /// The three-layer impact. `t` decides both the gains and the relative
         /// balance: a light contact is nearly all slap and dust with no body under
         /// it, a heavy one is dominated by mass.
-        void PlayLayeredThud(float speed, float pitchScale, float pan, float slapScale, float dustScale)
+        private void PlayLayeredThud(float speed, float pitchScale, float pan, float slapScale, float dustScale)
         {
             float t = Mathf.Clamp01((speed - thudMinSpeed) / Mathf.Max(0.01f, thudFullSpeed - thudMinSpeed));
             _thudVariant = (_thudVariant + 1) % 3;
@@ -381,7 +381,7 @@ namespace PoSumo
                      Random.Range(0.9f, 1.15f), pan);
         }
 
-        void PlayScuff(float volume, float pan)
+        private void PlayScuff(float volume, float pan)
         {
             PlayFrom(_scuffs, Random.Range(0, Mathf.Max(1, _scuffs.Length)), volume,
                      Random.Range(0.85f, 1.15f), pan);
@@ -389,7 +389,7 @@ namespace PoSumo
 
         // ------------------------------------------------------------- voices
 
-        void MaybeGrunt(Agent_BipedBody body, float speed, float pan)
+        private void MaybeGrunt(Agent_BipedBody body, float speed, float pan)
         {
             if (_grunts.Length == 0 || speed < gruntThreshold || Time.unscaledTime < _nextGruntTime)
             {
@@ -404,7 +404,7 @@ namespace PoSumo
                      pan);
         }
 
-        void UpdateVoices()
+        private void UpdateVoices()
         {
             if (_manager == null || !_manager.RoundActive)
             {
@@ -452,7 +452,7 @@ namespace PoSumo
 
         // -------------------------------------------------------------- crowd
 
-        void UpdateCrowd()
+        private void UpdateCrowd()
         {
             float dt = Time.unscaledDeltaTime;
             // Tension decays steadily; impacts push it back up in OnImpact.
@@ -487,7 +487,7 @@ namespace PoSumo
         /// 0 when both fighters are mid-ring, approaching 1 as either nears the
         /// edge — the single best proxy this game has for "something is about to
         /// happen".
-        float EdgeTension()
+        private float EdgeTension()
         {
             if (_manager == null || _wrestlerA == null || _wrestlerB == null)
             {
@@ -507,7 +507,7 @@ namespace PoSumo
 
         // --------------------------------------------------------------- mix
 
-        void Update()
+        private void Update()
         {
             UpdateVoices();
             UpdateCrowd();
@@ -517,7 +517,7 @@ namespace PoSumo
         /// Slow motion drops the low-pass and the pitch. This is the cheapest and
         /// most effective trick available: Systems_MatchPresentation already owns
         /// Time.timeScale, so all this has to do is follow it.
-        void UpdateFilters()
+        private void UpdateFilters()
         {
             float scale = Mathf.Clamp01(Time.timeScale);
             float dt = Time.unscaledDeltaTime;
@@ -545,7 +545,7 @@ namespace PoSumo
             }
         }
 
-        float DuckFactor()
+        private float DuckFactor()
         {
             if (Time.unscaledTime >= _duckUntil)
             {
@@ -560,13 +560,13 @@ namespace PoSumo
         /// World x to stereo pan. Relative to the arena centre rather than the
         /// camera, so a hit on the left of the ring stays on the left even as the
         /// follow camera tracks across it.
-        float Pan(float worldX)
+        private float Pan(float worldX)
         {
             float centerX = _manager != null ? _manager.transform.position.x : 0f;
             return Mathf.Clamp((worldX - centerX) / Mathf.Max(0.01f, panWidth), -1f, 1f) * 0.75f;
         }
 
-        void PlayFrom(AudioClip[] set, int index, float volume, float pitch, float pan)
+        private void PlayFrom(AudioClip[] set, int index, float volume, float pitch, float pan)
         {
             if (set == null || set.Length == 0)
             {
@@ -575,7 +575,7 @@ namespace PoSumo
             Play(set[index % set.Length], volume, pitch, pan);
         }
 
-        void Play(AudioClip clip, float volume, float pitch, float pan)
+        private void Play(AudioClip clip, float volume, float pitch, float pan)
         {
             if (clip == null) return;
             var src = _voices[_nextVoice];
@@ -585,7 +585,7 @@ namespace PoSumo
             src.PlayOneShot(clip, volume * masterVolume);
         }
 
-        void PlayCrowd(AudioClip clip, float volume, float pitch)
+        private void PlayCrowd(AudioClip clip, float volume, float pitch)
         {
             if (clip == null) return;
             var src = _crowdVoices[_nextCrowdVoice];

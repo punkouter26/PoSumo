@@ -28,7 +28,7 @@ namespace PoSumo
         [Tooltip("Extra fade time when a layer is coming down, so exits are gentler than entrances.")]
         public float releaseMultiplier = 1.6f;
 
-        const string AUDIO_PATH = "Audio/";
+        private const string AUDIO_PATH = "Audio/";
 
         private sealed class Layer
         {

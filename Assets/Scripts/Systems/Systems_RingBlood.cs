@@ -70,9 +70,9 @@ namespace PoSumo
 
             // Replay everything spilled earlier in this tournament onto the new
             // arena, the same way Systems_BodyDamage replays a fighter's bruises.
-            for (int i = 0; i < Store.Count; i++)
+            for (int storeIndex = 0; storeIndex < Store.Count; storeIndex++)
             {
-                Paint(Store[i]);
+                Paint(Store[storeIndex]);
             }
         }
 
@@ -102,16 +102,16 @@ namespace PoSumo
                     return;
                 }
                 var hitPart = other.GetComponentInParent<Rigidbody2D>();
-                for (int i = 0; i < count; i++)
+                for (int countIndex = 0; countIndex < count; countIndex++)
                 {
-                    damage.SplashAt(_events[i].intersection, hitPart);
+                    damage.SplashAt(_events[countIndex].intersection, hitPart);
                 }
                 return;
             }
 
-            for (int i = 0; i < count; i++)
+            for (int countIndex = 0; countIndex < count; countIndex++)
             {
-                Vector3 local = _arena.InverseTransformPoint(_events[i].intersection);
+                Vector3 local = _arena.InverseTransformPoint(_events[countIndex].intersection);
                 if (local.y < minLocalY)
                 {
                     continue;   // missed the dohyo entirely
@@ -180,11 +180,11 @@ namespace PoSumo
             };
             var centre = new Vector2(S * 0.5f, S * 0.5f);
             float radius = S * 0.5f;
-            for (int y = 0; y < S; y++)
+            for (int rowIndex = 0; rowIndex < S; rowIndex++)
             {
-                for (int x = 0; x < S; x++)
+                for (int columnIndex = 0; columnIndex < S; columnIndex++)
                 {
-                    Vector2 d = new Vector2(x + 0.5f, y + 0.5f) - centre;
+                    Vector2 d = new Vector2(columnIndex + 0.5f, rowIndex + 0.5f) - centre;
                     float angle = Mathf.Atan2(d.y, d.x);
                     // Irregular edge: three overlapping lobes at different rates.
                     float wobble = 1f
@@ -193,7 +193,7 @@ namespace PoSumo
                                    + 0.08f * Mathf.Sin(angle * 11f + 0.7f);
                     float dist = d.magnitude / (radius * wobble);
                     float a = Mathf.Clamp01(1f - dist);
-                    tex.SetPixel(x, y, new Color(1f, 1f, 1f, a * a));
+                    tex.SetPixel(columnIndex, rowIndex, new Color(1f, 1f, 1f, a * a));
                 }
             }
             tex.Apply();

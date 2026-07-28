@@ -120,7 +120,7 @@ namespace PoSumo
             {
                 return;
             }
-            for (int i = 0; i < count; i++)
+            for (int countIndex = 0; countIndex < count; countIndex++)
             {
                 var emitParams = MakeParams(position, 0.05f);
                 emitParams.velocity = new Vector3(
@@ -143,7 +143,7 @@ namespace PoSumo
                 return;
             }
             Vector2 unit = direction.sqrMagnitude > 0.0001f ? direction.normalized : Vector2.up;
-            for (int i = 0; i < count; i++)
+            for (int countIndex = 0; countIndex < count; countIndex++)
             {
                 var emitParams = MakeParams(position, 0.05f);
                 // Cone around the impact direction, biased upward so it arcs.
@@ -201,13 +201,13 @@ namespace PoSumo
             };
             var center = new Vector2(S * 0.5f, S * 0.5f);
             float radius = S * 0.5f;
-            for (int y = 0; y < S; y++)
+            for (int rowIndex = 0; rowIndex < S; rowIndex++)
             {
-                for (int x = 0; x < S; x++)
+                for (int columnIndex = 0; columnIndex < S; columnIndex++)
                 {
-                    float d = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), center) / radius;
+                    float d = Vector2.Distance(new Vector2(columnIndex + 0.5f, rowIndex + 0.5f), center) / radius;
                     float a = Mathf.Clamp01(1f - d);
-                    _puffTexture.SetPixel(x, y, new Color(1f, 1f, 1f, a * a));
+                    _puffTexture.SetPixel(columnIndex, rowIndex, new Color(1f, 1f, 1f, a * a));
                 }
             }
             _puffTexture.Apply();

@@ -44,10 +44,10 @@ namespace PoSumo
     /// own it.
     public sealed class Systems_HudRoot : MonoBehaviour
     {
-        UIDocument _document;
-        VisualElement _backdrop;
-        VisualElement _centre;
-        VisualElement _modal;
+        private UIDocument _document;
+        private VisualElement _backdrop;
+        private VisualElement _centre;
+        private VisualElement _modal;
 
         /// Fixed-height row across the top: pause, scorebug, stats toggle.
         public VisualElement TopBarLeft { get; private set; }
@@ -84,7 +84,7 @@ namespace PoSumo
         /// Built from Ensure rather than Awake: AddComponent runs Awake before the
         /// caller can hand over its PanelSettings, and a UIDocument built without
         /// one renders nothing at all.
-        void Build(PanelSettings settings)
+        private void Build(PanelSettings settings)
         {
             _document = gameObject.AddComponent<UIDocument>();
             if (settings != null)
@@ -148,7 +148,7 @@ namespace PoSumo
             root.Add(_modal);
         }
 
-        VisualElement BuildTopBar()
+        private VisualElement BuildTopBar()
         {
             VisualElement bar = Systems_UiKit.Row(Align.FlexStart).NoPick();
             bar.style.flexShrink = 0;
@@ -190,9 +190,9 @@ namespace PoSumo
         /// round banner can never be on screen together.
         public void ShowCentre(VisualElement element)
         {
-            for (int i = 0; i < _centre.childCount; i++)
+            for (int childIndex = 0; childIndex < _centre.childCount; childIndex++)
             {
-                _centre[i].style.display = _centre[i] == element
+                _centre[childIndex].style.display = _centre[childIndex] == element
                     ? DisplayStyle.Flex
                     : DisplayStyle.None;
             }
@@ -218,9 +218,9 @@ namespace PoSumo
         /// Shows one dialog, hides the others, and raises the dim backdrop.
         public void ShowModal(VisualElement element)
         {
-            for (int i = 0; i < _modal.childCount; i++)
+            for (int childIndex = 0; childIndex < _modal.childCount; childIndex++)
             {
-                _modal[i].style.display = _modal[i] == element
+                _modal[childIndex].style.display = _modal[childIndex] == element
                     ? DisplayStyle.Flex
                     : DisplayStyle.None;
             }
@@ -230,9 +230,9 @@ namespace PoSumo
         /// Hides every dialog and drops the backdrop.
         public void HideModal()
         {
-            for (int i = 0; i < _modal.childCount; i++)
+            for (int childIndex = 0; childIndex < _modal.childCount; childIndex++)
             {
-                _modal[i].style.display = DisplayStyle.None;
+                _modal[childIndex].style.display = DisplayStyle.None;
             }
             _backdrop.style.display = DisplayStyle.None;
         }

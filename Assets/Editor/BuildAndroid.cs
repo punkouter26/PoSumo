@@ -10,8 +10,8 @@ namespace PoSumo.EditorTools
     /// result is reported through the "BUILD RESULT:" line in Logs/Editor.log.
     public static class BuildAndroid
     {
-        const string OUTPUT_PATH = "Builds/Android/PoSumo.apk";
-        const string APP_ID = "com.punkouter26.posumo";
+        private const string OUTPUT_PATH = "Builds/Android/PoSumo.apk";
+        private const string APP_ID = "com.punkouter26.posumo";
 
         [MenuItem("PoSumo/Build Android APK")]
         public static void Build()

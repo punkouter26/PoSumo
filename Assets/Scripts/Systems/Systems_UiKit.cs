@@ -192,7 +192,7 @@ namespace PoSumo
             return button;
         }
 
-        static void StyleButton(Button button, Color background, Color text, int height, int fontSize)
+        private static void StyleButton(Button button, Color background, Color text, int height, int fontSize)
         {
             button.style.height = Mathf.Max(TOUCH_MIN, height);
             button.style.fontSize = fontSize;

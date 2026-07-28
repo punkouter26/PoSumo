@@ -173,10 +173,10 @@ namespace PoSumo
             p.strokeColor = latest >= 50f ? _colorA : _colorB;
             p.lineWidth = 2f;
             p.BeginPath();
-            for (int i = 0; i < _count; i++)
+            for (int countIndex = 0; countIndex < _count; countIndex++)
             {
-                Vector2 point = PointAt(i, start, step, mid, r);
-                if (i == 0) p.MoveTo(point); else p.LineTo(point);
+                Vector2 point = PointAt(countIndex, start, step, mid, r);
+                if (countIndex == 0) p.MoveTo(point); else p.LineTo(point);
             }
             p.Stroke();
         }
@@ -195,9 +195,9 @@ namespace PoSumo
             p.fillColor = new Color(colour.r, colour.g, colour.b, 0.4f);
             p.BeginPath();
             p.MoveTo(new Vector2(0f, mid));
-            for (int i = 0; i < _count; i++)
+            for (int countIndex = 0; countIndex < _count; countIndex++)
             {
-                Vector2 point = PointAt(i, start, step, mid, r);
+                Vector2 point = PointAt(countIndex, start, step, mid, r);
                 // Clamp to this fighter's half so the two fills never overlap.
                 point.y = aboveForA ? Mathf.Min(point.y, mid) : Mathf.Max(point.y, mid);
                 p.LineTo(point);

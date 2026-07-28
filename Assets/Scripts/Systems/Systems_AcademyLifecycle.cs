@@ -9,7 +9,7 @@ namespace PoSumo
     public static class Systems_AcademyLifecycle
     {
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-        static void Init()
+        private static void Init()
         {
             Application.runInBackground = true;
             Physics2D.gravity = new Vector2(0f, -9.81f);
@@ -24,7 +24,7 @@ namespace PoSumo
             Application.quitting += DisposeAcademy;
         }
 
-        static void DisposeAcademy()
+        private static void DisposeAcademy()
         {
             if (Academy.IsInitialized)
             {

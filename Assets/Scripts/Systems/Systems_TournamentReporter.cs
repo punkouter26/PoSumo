@@ -10,7 +10,7 @@ namespace PoSumo
     /// Spawned at runtime by Systems_MatchRoster when Systems_TournamentState.Active, so
     /// SCN_SUMO stays usable as a standalone exhibition scene with nothing to
     /// disable.
-    public class Systems_TournamentReporter : MonoBehaviour
+    public sealed class Systems_TournamentReporter : MonoBehaviour
     {
         [Tooltip("Bracket scene to return to when the match is decided.")]
         public string bracketScene = "SCN_TOURNAMENT";
@@ -19,10 +19,10 @@ namespace PoSumo
         [Tooltip("Fallback when the match manager has no GameTuning asset assigned. 2 = best of three.")]
         public int roundsToWinMatchFallback = 2;
 
-        Systems_GameMatchManager _manager;
-        bool _returning;
+        private Systems_GameMatchManager _manager;
+        private bool _returning;
 
-        void Start()
+        private void Start()
         {
             _manager = FindAnyObjectByType<Systems_GameMatchManager>();
             if (_manager == null) return;
@@ -38,12 +38,12 @@ namespace PoSumo
             _manager.MatchEnded += OnMatchEnded;
         }
 
-        void OnDisable()
+        private void OnDisable()
         {
             if (_manager != null) _manager.MatchEnded -= OnMatchEnded;
         }
 
-        void OnMatchEnded(Agent_Biped winner)
+        private void OnMatchEnded(Agent_Biped winner)
         {
             if (_returning || winner == null) return;
             _returning = true;
@@ -66,7 +66,7 @@ namespace PoSumo
             Invoke(nameof(ReturnToBracket), resultPause + announceDelay);
         }
 
-        void ReturnToBracket()
+        private void ReturnToBracket()
         {
             SceneManager.LoadScene(bracketScene);
         }

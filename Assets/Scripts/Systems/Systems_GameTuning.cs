@@ -6,7 +6,7 @@ namespace PoSumo
     /// copy from this asset at startup when it is assigned, so numbers live in
     /// one place instead of being scattered across serialized scene values.
     [CreateAssetMenu(fileName = "GameTuning", menuName = "PoSumo/Game Tuning")]
-    public class Systems_GameTuning : ScriptableObject
+    public sealed class Systems_GameTuning : ScriptableObject
     {
         [Header("Camera")]
         public float minOrtho = 1.9f;

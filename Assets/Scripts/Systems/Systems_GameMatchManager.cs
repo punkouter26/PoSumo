@@ -14,9 +14,9 @@ namespace PoSumo
     /// point for the opponent; first to pointsToWin takes the match. Match end
     /// dims the arena and waits for the REMATCH button, a pointer press or Space.
     /// UI Toolkit only.
-    public class Systems_GameMatchManager : MonoBehaviour
+    public sealed class Systems_GameMatchManager : MonoBehaviour
     {
-        enum Phase { Fighting, RoundEnded, Grace, WalkIn, MatchOver }
+        private enum Phase { Fighting, RoundEnded, Grace, WalkIn, MatchOver }
 
         public Agent_Biped wrestlerA;           // teamId 0
         public Agent_Biped wrestlerB;           // teamId 1
@@ -60,11 +60,11 @@ namespace PoSumo
 
         // Resolved from `tuning` in Start; the defaults here are the fallback when
         // no tuning asset is assigned.
-        bool enablePresentation = true, enableAudio = true, enableFaceMood = true;
-        bool enableVoice = true, enableLighting = true, enableImpactFx = true;
-        bool enablePostFx = true, enableAtmosphere = true, enableMusic = true;
-        bool enableBodyDamage = true;
-        bool enableMomentumGraph = true;
+        private bool enablePresentation = true, enableAudio = true, enableFaceMood = true;
+        private bool enableVoice = true, enableLighting = true, enableImpactFx = true;
+        private bool enablePostFx = true, enableAtmosphere = true, enableMusic = true;
+        private bool enableBodyDamage = true;
+        private bool enableMomentumGraph = true;
         [Tooltip("Round-opening countdown length; physics and brains are held until it finishes.")]
         public int countdownSeconds = 3;
         [Tooltip("Camera ortho when the countdown punches in on a fighter's head.")]
@@ -96,31 +96,31 @@ namespace PoSumo
         [Tooltip("A foot dropping below this height (mat top is y=0) counts as stepping off the mat — an instant loss, sumo's stepping-out rule.")]
         public float footOffMatY = -0.06f;
 
-        int _scoreA, _scoreB;
-        int _koA, _koB;                 // head knockouts SUFFERED, this match
-        float _elapsed, _phaseLeft, _downA, _downB;
-        int _lastShownSeconds = -1;
-        float _countdownLeft;
-        int _lastCountdownDigit = -1;
-        Phase _phase = Phase.Fighting;
-        float _walkInLeft;
-        float _savedGroundWidth;
-        float _braceStarted = -999f;
-        float _releaseTime = -1f;
-        bool _walkBrainHolding;
+        private int _scoreA, _scoreB;
+        private int _koA, _koB;                 // head knockouts SUFFERED, this match
+        private float _elapsed, _phaseLeft, _downA, _downB;
+        private int _lastShownSeconds = -1;
+        private float _countdownLeft;
+        private int _lastCountdownDigit = -1;
+        private Phase _phase = Phase.Fighting;
+        private float _walkInLeft;
+        private float _savedGroundWidth;
+        private float _braceStarted = -999f;
+        private float _releaseTime = -1f;
+        private bool _walkBrainHolding;
         /// The long-mat walk-in is a MATCH ceremony, not a round one: it plays
         /// once when the match opens and later rounds go straight to the
         /// countdown from the stand-off. Cleared by ResetMatch so a rematch — and
         /// every fresh bracket match, which loads the scene again — gets its own.
-        bool _walkInPlayed;
-        bool _parkedA, _parkedB;
-        Systems_SumoArena _arena;
-        Systems_CameraFollow _camFollow;
+        private bool _walkInPlayed;
+        private bool _parkedA, _parkedB;
+        private Systems_SumoArena _arena;
+        private Systems_CameraFollow _camFollow;
 
         /// The walk-in only runs if BOTH fighters actually have a locomotion brain;
         /// Agent_Biped.BeginWalkIn is a silent no-op without one, which would strand
         /// them at the far ends until the timeout.
-        bool WalkBrainsReady()
+        private bool WalkBrainsReady()
         {
             return wrestlerA != null && wrestlerB != null
                 && wrestlerA.character != null && wrestlerB.character != null
@@ -128,7 +128,7 @@ namespace PoSumo
         }
         // Cached in Start: the foot check runs every FixedUpdate, so no
         // GetComponent in the hot path.
-        Agent_BipedBody _bodyA, _bodyB;
+        private Agent_BipedBody _bodyA, _bodyB;
 
         // Read-only stats for HUDs.
         public int ScoreA => _scoreA;
@@ -173,14 +173,14 @@ namespace PoSumo
         public event System.Action<Agent_Biped> MatchEnded;
         /// Fired when a rematch resets the scores (HUD aggregates restart here).
         public event System.Action MatchReset;
-        Systems_HudRoot _hud;
-        Label _scoreDigits, _banner, _clock, _countdown;
-        Label _resultTitle, _resultScore;
-        VisualElement _pauseCard, _resultCard;
-        VisualElement _scoreBug;   // hidden while the result card is up
-        bool _paused;
+        private Systems_HudRoot _hud;
+        private Label _scoreDigits, _banner, _clock, _countdown;
+        private Label _resultTitle, _resultScore;
+        private VisualElement _pauseCard, _resultCard;
+        private VisualElement _scoreBug;   // hidden while the result card is up
+        private bool _paused;
 
-        void Start()
+        private void Start()
         {
             if (tuning != null)
             {
@@ -266,7 +266,7 @@ namespace PoSumo
         /// colorA from here during its own Start, and Start-order between two
         /// components is undefined — resolving late showed a stale name on the
         /// stat panel while the scoreboard was already correct.
-        void Awake()
+        private void Awake()
         {
             ResolveWrestlers();
             AdoptCharacterIdentity();
@@ -274,11 +274,11 @@ namespace PoSumo
 
         // Systems_BodyDamage.Knockout is a static event: a missed unsubscribe
         // keeps a finished scene's referee counting knockouts in the next one.
-        void OnEnable() => Systems_BodyDamage.Knockout += OnKnockout;
+        private void OnEnable() => Systems_BodyDamage.Knockout += OnKnockout;
 
-        void OnDisable() => Systems_BodyDamage.Knockout -= OnKnockout;
+        private void OnDisable() => Systems_BodyDamage.Knockout -= OnKnockout;
 
-        void ResolveWrestlers()
+        private void ResolveWrestlers()
         {
             if (wrestlerA != null && wrestlerB != null) return;
             foreach (var a in FindObjectsByType<Agent_Biped>())
@@ -289,7 +289,7 @@ namespace PoSumo
 
         /// Scoreboard name and colour follow whichever characters are actually
         /// fighting, so swapping the roster needs no further scene edits.
-        void AdoptCharacterIdentity()
+        private void AdoptCharacterIdentity()
         {
             if (wrestlerA.character != null)
             {
@@ -312,7 +312,7 @@ namespace PoSumo
         /// The widening is temporary and purely for the intro — EndWalkInPhase
         /// contracts the platform back to ringHalfWidth before anyone fights, so
         /// the fighting ring is exactly the size the fight brains trained on.
-        void BeginWalkInPhase()
+        private void BeginWalkInPhase()
         {
             _walkInPlayed = true;
             // Pull the camera out for the ceremony. At normal framing the start
@@ -357,7 +357,7 @@ namespace PoSumo
         /// Places a fighter at the far end, upright and simulating, ready to walk.
         /// Unlike PoseNeutral this leaves physics and motors ON — the walk brain
         /// needs a live body to drive.
-        void PoseForWalkIn(Agent_Biped w, float offsetX)
+        private void PoseForWalkIn(Agent_Biped w, float offsetX)
         {
             if (w == null) return;
             var p = w.transform.position;
@@ -382,7 +382,7 @@ namespace PoSumo
         /// straight past. Waiting for both to be near their marks at the same
         /// moment therefore never fires — the first arrival has already overshot
         /// by the time the second gets there.
-        bool TickWalkInArrivals()
+        private bool TickWalkInArrivals()
         {
             float centre = transform.position.x;
             ParkIfArrived(wrestlerA, centre - neutralGapHalf, ref _parkedA);
@@ -390,7 +390,7 @@ namespace PoSumo
             return _parkedA && _parkedB;
         }
 
-        void ParkIfArrived(Agent_Biped w, float mark, ref bool parked)
+        private void ParkIfArrived(Agent_Biped w, float mark, ref bool parked)
         {
             if (parked || w == null) return;
             // Park on arrival OR on overshoot — a fighter that has passed its mark
@@ -408,7 +408,7 @@ namespace PoSumo
         /// Hands both fighters back to their fight brains and shrinks the mat to
         /// the real ring before the countdown starts.
         /// Shrinks the intro mat back to the real fighting ring.
-        void ContractMat()
+        private void ContractMat()
         {
             if (_arena == null) return;
             _arena.SetPlatformHalfWidth(ringHalfWidth);
@@ -416,7 +416,7 @@ namespace PoSumo
         }
 
         /// Hands both bodies from the locomotion brain back to the fight brain.
-        void EndWalkInPhase()
+        private void EndWalkInPhase()
         {
             wrestlerA.EndWalkIn();
             wrestlerB.EndWalkIn();
@@ -430,13 +430,13 @@ namespace PoSumo
         /// a stiff mannequin still topples like an inverted pendulum. Staying
         /// upright needs active balance, which only a policy provides — that is
         /// what the walk-brain hold below is for.
-        void HoldUpright()
+        private void HoldUpright()
         {
             PoseNeutral(wrestlerA, -neutralGapHalf);
             PoseNeutral(wrestlerB, +neutralGapHalf);
         }
 
-        void PoseNeutral(Agent_Biped w, float offsetX)
+        private void PoseNeutral(Agent_Biped w, float offsetX)
         {
             if (w == null) return;
             var p = w.transform.position;
@@ -453,7 +453,7 @@ namespace PoSumo
 
 
         /// Countdown hit zero: physics back on, fight brains live.
-        void BeginSimulation()
+        private void BeginSimulation()
         {
             // When the walk brain held them through the countdown they are already
             // simulating and balanced; all that changes here is which policy owns
@@ -476,7 +476,7 @@ namespace PoSumo
 
         /// Ramps motor authority back to full over minSettleSeconds after the round
         /// opens, so the fighters take their own weight before they can commit.
-        void TickActionRamp()
+        private void TickActionRamp()
         {
             if (_releaseTime < 0f) return;
             float t = (Time.time - _releaseTime) / Mathf.Max(0.01f, minSettleSeconds);
@@ -492,7 +492,7 @@ namespace PoSumo
             wrestlerB.actionScale = s;
         }
 
-        static void Unfreeze(Agent_Biped w)
+        private static void Unfreeze(Agent_Biped w)
         {
             var body = w.GetComponent<Agent_BipedBody>();
             if (body != null)
@@ -507,7 +507,7 @@ namespace PoSumo
 
         /// Presentation, audio and face-mood are runtime-spawned children so
         /// scenes stay manager-only and older scenes pick them up automatically.
-        void SpawnCompanionSystems()
+        private void SpawnCompanionSystems()
         {
             if (enablePresentation && FindAnyObjectByType<Systems_MatchPresentation>() == null)
             {
@@ -589,7 +589,7 @@ namespace PoSumo
             }
         }
 
-        void SpawnBodyDamage(Agent_Biped fighter)
+        private void SpawnBodyDamage(Agent_Biped fighter)
         {
             if (fighter == null) return;
             var body = fighter.GetComponent<Agent_BipedBody>();
@@ -602,7 +602,7 @@ namespace PoSumo
         /// One voice per fighter. Systems_FighterVoice disables itself when that
         /// fighter has no recorded clips in Resources, so this is safe to call for
         /// everyone — today only Matt has a voice.
-        void SpawnVoice(Agent_Biped fighter, float pitchScale)
+        private void SpawnVoice(Agent_Biped fighter, float pitchScale)
         {
             if (fighter == null) return;
             var go = new GameObject($"Voice_{fighter.behaviorName}");
@@ -612,7 +612,7 @@ namespace PoSumo
             voice.pitchScale = pitchScale;
         }
 
-        void SpawnFaceMood(Agent_Biped fighter)
+        private void SpawnFaceMood(Agent_Biped fighter)
         {
             if (fighter == null) return;
             var body = fighter.GetComponent<Agent_BipedBody>();
@@ -623,9 +623,9 @@ namespace PoSumo
             mood.fighterBehaviorName = fighter.behaviorName;
         }
 
-        static string Hex(Color c) => ColorUtility.ToHtmlStringRGB(c);
+        private static string Hex(Color c) => ColorUtility.ToHtmlStringRGB(c);
 
-        void BuildUi()
+        private void BuildUi()
         {
             _hud = Systems_HudRoot.Ensure(transform, panelSettings);
             BuildTopBar();
@@ -643,7 +643,7 @@ namespace PoSumo
         /// score over the arena rather than clear of it; the clock stacked under
         /// it; the pause chip at `top:10 left:10`; the stats chip at
         /// `top:10 right:10` from a different file and a different UIDocument.
-        void BuildTopBar()
+        private void BuildTopBar()
         {
             // No on-screen pause chip. Pause itself is NOT gone — TogglePause is
             // still bound to escapeKey in Update, which is what Android maps its
@@ -693,7 +693,7 @@ namespace PoSumo
             _hud.TopBarCentre.Add(_clock);
         }
 
-        static Label NamePlate(string fighterName, Color teamColor)
+        private static Label NamePlate(string fighterName, Color teamColor)
         {
             Label plate = Systems_UiKit.Text(fighterName, Systems_UiKit.FONT_BODY, teamColor, true);
             plate.style.unityTextAlign = TextAnchor.MiddleCenter;
@@ -704,7 +704,7 @@ namespace PoSumo
         /// by the layout instead of at hand-tuned percentages (49% and 36%), and
         /// the HUD root shows only one member of this layer at a time, so the
         /// 112pt digit can no longer land on top of a banner.
-        void BuildCallouts()
+        private void BuildCallouts()
         {
             _banner = Systems_UiKit.Text("", Systems_UiKit.FONT_HERO, Systems_UiKit.Gold, true);
             _banner.style.unityTextAlign = TextAnchor.MiddleCenter;
@@ -719,7 +719,7 @@ namespace PoSumo
         }
 
         /// Match-over: one centred results card owns the moment.
-        void BuildResultCard()
+        private void BuildResultCard()
         {
             _resultCard = Systems_UiKit.Card(Systems_UiKit.Ink, Systems_UiKit.RADIUS_LG);
             _resultCard.style.width = Length.Percent(100);
@@ -752,7 +752,7 @@ namespace PoSumo
 
         /// Pause / quit. Before this the only exit from a match was playing it to
         /// the end — on Android the hardware back button did nothing at all.
-        void BuildPauseUi()
+        private void BuildPauseUi()
         {
             _pauseCard = Systems_UiKit.Card(Systems_UiKit.Ink, Systems_UiKit.RADIUS_LG);
             _pauseCard.style.width = Length.Percent(100);
@@ -774,7 +774,7 @@ namespace PoSumo
             _hud.AddModal(_pauseCard);
         }
 
-        void TogglePause()
+        private void TogglePause()
         {
             if (_phase == Phase.MatchOver) return;   // result card owns that moment
             _paused = !_paused;
@@ -785,7 +785,7 @@ namespace PoSumo
             Time.timeScale = _paused ? 0f : 1f;
         }
 
-        void QuitToBracket()
+        private void QuitToBracket()
         {
             Time.timeScale = 1f;
             // Abandoning a bracket match leaves the tournament stopped rather than
@@ -801,7 +801,7 @@ namespace PoSumo
         /// The names are static for the life of the match and are drawn as their
         /// own coloured labels in the scorebug, so only the digits are rewritten
         /// here — no per-round rich-text string to rebuild.
-        void UpdateScoreboard(bool flash)
+        private void UpdateScoreboard(bool flash)
         {
             if (_scoreDigits == null) return;
             _scoreDigits.text = $"{_scoreA} : {_scoreB}";
@@ -814,7 +814,7 @@ namespace PoSumo
             }
         }
 
-        void StartCountdown()
+        private void StartCountdown()
         {
             _countdownLeft = countdownSeconds;
             _lastCountdownDigit = -1;
@@ -823,7 +823,7 @@ namespace PoSumo
         /// 3-2-1 over the walk-in: the camera punches in on one fighter's head
         /// per digit (A on the first, B on the second), then releases back to
         /// the wide two-shot on the final digit so the engage reads clearly.
-        void TickCountdown()
+        private void TickCountdown()
         {
             _countdownLeft -= Time.fixedDeltaTime;
             if (_countdownLeft <= 0f)
@@ -848,7 +848,7 @@ namespace PoSumo
             PunchOnHead(fighter);
         }
 
-        void PunchOnHead(Agent_Biped fighter)
+        private void PunchOnHead(Agent_Biped fighter)
         {
             if (_camFollow == null || fighter == null) return;
             var body = fighter.GetComponent<Agent_BipedBody>();
@@ -858,12 +858,12 @@ namespace PoSumo
             _camFollow.PunchIn(focus, countdownHeadOrtho, 1.05f);
         }
 
-        void HideCountdown()
+        private void HideCountdown()
         {
             _hud.HideCentre(_countdown);
         }
 
-        void UpdateClock()
+        private void UpdateClock()
         {
             int remaining = Mathf.Max(0, Mathf.CeilToInt(roundTimeoutSeconds - _elapsed));
             if (remaining != _lastShownSeconds)
@@ -874,7 +874,7 @@ namespace PoSumo
             }
         }
 
-        void Update()
+        private void Update()
         {
             if (_phase == Phase.MatchOver && ContinuePressed()) { ResetMatch(); return; }
             // Android maps its hardware back button onto escapeKey, so this is the
@@ -883,7 +883,7 @@ namespace PoSumo
             if (BackPressed()) TogglePause();
         }
 
-        bool BackPressed()
+        private bool BackPressed()
         {
 #if ENABLE_INPUT_SYSTEM
             return Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame;
@@ -898,7 +898,7 @@ namespace PoSumo
         /// so Keyboard.current is null and the check could never return true — an
         /// Android player reaching the result card was stuck on it with no way out.
         /// Any pointer press (touch or mouse) now works, with space kept for desktop.
-        bool ContinuePressed()
+        private bool ContinuePressed()
         {
 #if ENABLE_INPUT_SYSTEM
             if (Pointer.current != null && Pointer.current.press.wasPressedThisFrame)
@@ -911,7 +911,7 @@ namespace PoSumo
 #endif
         }
 
-        void FixedUpdate()
+        private void FixedUpdate()
         {
             if (wrestlerA == null || wrestlerB == null) return;
             // A physics step can land before Start() has built the UI and set the
@@ -1039,7 +1039,7 @@ namespace PoSumo
         /// a timeout is settled the way a real bout goes to the judges — whoever
         /// held nearer the centre pushed the other toward the edge and takes the
         /// round. Only a near dead heat is still a draw.
-        void DecideOnTimeout()
+        private void DecideOnTimeout()
         {
             if (!timeoutDecidesOnPosition)
             {
@@ -1069,7 +1069,7 @@ namespace PoSumo
 
         /// Cut a fighter's motors so it flops lifelessly off the edge instead of
         /// holding a rigid pose on the way down.
-        static void GoLimp(Agent_Biped fighter)
+        private static void GoLimp(Agent_Biped fighter)
         {
             fighter.actionsEnabled = false;
             var body = fighter.GetComponent<Agent_BipedBody>();
@@ -1083,7 +1083,7 @@ namespace PoSumo
         ///
         /// The torso/fallY test is kept as a backstop for a body that leaves the
         /// mat without a foot leading — thrown clear, or landing head-first.
-        bool OutOfRing(Agent_Biped w, Agent_BipedBody body)
+        private bool OutOfRing(Agent_Biped w, Agent_BipedBody body)
         {
             if (body != null)
             {
@@ -1102,7 +1102,7 @@ namespace PoSumo
             return w.Torso.position.y < fallY;
         }
 
-        void EndRound(Agent_Biped roundWinner, string drawText, string winText = null)
+        private void EndRound(Agent_Biped roundWinner, string drawText, string winText = null)
         {
             LongestRound = Mathf.Max(LongestRound, _elapsed);
             if (roundWinner == wrestlerA) _scoreA++;
@@ -1189,7 +1189,7 @@ namespace PoSumo
         /// referees are kept in step on the losing conditions a policy has to
         /// learn; this is not one of them. It can only end a MATCH, never a
         /// training episode, so no brain can meet a rule it never trained against.
-        void OnKnockout(Agent_BipedBody victim, Vector3 point)
+        private void OnKnockout(Agent_BipedBody victim, Vector3 point)
         {
             if (victim == null || knockoutsToLoseMatch <= 0) return;
             // _hud null means Start has not built the UI yet; MatchOver means the
@@ -1211,7 +1211,7 @@ namespace PoSumo
 
         /// Stops the match on the deciding knockout. The KO'd fighter loses no
         /// matter what the round score says — that is the whole point of the rule.
-        void EndMatchByKnockout(Agent_Biped loser)
+        private void EndMatchByKnockout(Agent_Biped loser)
         {
             Agent_Biped winner = loser == wrestlerA ? wrestlerB : wrestlerA;
             bool aWon = winner == wrestlerA;
@@ -1248,13 +1248,13 @@ namespace PoSumo
             MatchEnded?.Invoke(winner);
         }
 
-        static bool IsLimp(Agent_Biped fighter)
+        private static bool IsLimp(Agent_Biped fighter)
         {
             var body = fighter.GetComponent<Agent_BipedBody>();
             return body != null && body.IsLimp;
         }
 
-        static void HideAfter(VisualElement element, long delayMs)
+        private static void HideAfter(VisualElement element, long delayMs)
         {
             if (element == null) return;
             if (delayMs <= 0L) { element.style.display = DisplayStyle.None; return; }
@@ -1269,14 +1269,14 @@ namespace PoSumo
         /// card is up that reads as the game still running behind a dialog, so
         /// everything halts on the same frame the card appears — not when the
         /// match was decided, because the ragdoll flop in between is the point.
-        void RevealResultCard()
+        private void RevealResultCard()
         {
             FreezeFighter(wrestlerA);
             FreezeFighter(wrestlerB);
             _hud.ShowModal(_resultCard);
         }
 
-        void ShowResultCardAfter(long delayMs)
+        private void ShowResultCardAfter(long delayMs)
         {
             if (delayMs <= 0L)
             {
@@ -1290,7 +1290,7 @@ namespace PoSumo
         /// physics stopped, so the pose under the result card holds still.
         /// ResetMatch's EndEpisode -> HoldUpright -> round opening puts them back
         /// to simulating, so nothing has to undo this explicitly.
-        static void FreezeFighter(Agent_Biped fighter)
+        private static void FreezeFighter(Agent_Biped fighter)
         {
             if (fighter == null) return;
             fighter.actionsEnabled = false;
@@ -1309,7 +1309,7 @@ namespace PoSumo
         /// Raise a dialog now, or after a delay so the ragdoll lands first.
         /// Routing through the HUD root means the dim backdrop and the mutual
         /// exclusion with any other dialog come along automatically.
-        void ShowModalAfter(VisualElement element, long delayMs)
+        private void ShowModalAfter(VisualElement element, long delayMs)
         {
             if (delayMs <= 0L)
             {
@@ -1320,7 +1320,7 @@ namespace PoSumo
         }
 
         /// Same, for a callout drawn over the arena rather than a dialog.
-        void ShowCentreAfter(VisualElement element, long delayMs)
+        private void ShowCentreAfter(VisualElement element, long delayMs)
         {
             if (delayMs <= 0L)
             {
@@ -1330,9 +1330,9 @@ namespace PoSumo
             element.schedule.Execute(() => _hud.ShowCentre(element)).StartingIn(delayMs);
         }
 
-        static string WrapName(string n, Color c) => $"<color=#{Hex(c)}>{n}</color>";
+        private static string WrapName(string n, Color c) => $"<color=#{Hex(c)}>{n}</color>";
 
-        void ResetMatch()
+        private void ResetMatch()
         {
             _scoreA = _scoreB = 0;
             _koA = _koB = 0;

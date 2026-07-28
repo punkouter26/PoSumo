@@ -13,7 +13,7 @@ namespace PoSumo
     /// That single cue is what tells the eye a fighter is planted or airborne.
     ///
     /// Spawned by Agent_BipedBody at build time.
-    public class Systems_BlobShadow : MonoBehaviour
+    public sealed class Systems_BlobShadow : MonoBehaviour
     {
         public Rigidbody2D target;                 // pelvis rigidbody
         [Tooltip("Optional. When set, each foot also gets its own contact patch.")]
@@ -32,24 +32,24 @@ namespace PoSumo
         [Tooltip("Height (m) at which a foot patch has fully faded out.")]
         public float footFadeHeight = 0.45f;
 
-        SpriteRenderer _renderer;
-        SpriteRenderer[] _footRenderers;
-        Rigidbody2D[] _feet;
-        static Sprite _softDisc;
+        private SpriteRenderer _renderer;
+        private SpriteRenderer[] _footRenderers;
+        private Rigidbody2D[] _feet;
+        private static Sprite _softDisc;
 
-        static Sprite SoftDisc()
+        private static Sprite SoftDisc()
         {
             if (_softDisc != null) return _softDisc;
             const int S = 128;
             var tex = new Texture2D(S, S, TextureFormat.RGBA32, false);
             float r = S / 2f - 1f;
-            for (int y = 0; y < S; y++)
+            for (int rowIndex = 0; rowIndex < S; rowIndex++)
             {
-                for (int x = 0; x < S; x++)
+                for (int columnIndex = 0; columnIndex < S; columnIndex++)
                 {
-                    float d = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), new Vector2(S / 2f, S / 2f));
+                    float d = Vector2.Distance(new Vector2(columnIndex + 0.5f, rowIndex + 0.5f), new Vector2(S / 2f, S / 2f));
                     float a = Mathf.Clamp01(1f - d / r);
-                    tex.SetPixel(x, y, new Color(1f, 1f, 1f, a * a));
+                    tex.SetPixel(columnIndex, rowIndex, new Color(1f, 1f, 1f, a * a));
                 }
             }
             tex.Apply();
@@ -58,14 +58,14 @@ namespace PoSumo
             return _softDisc;
         }
 
-        void Awake()
+        private void Awake()
         {
             _renderer = gameObject.AddComponent<SpriteRenderer>();
             _renderer.sprite = SoftDisc();
             _renderer.sortingOrder = -1; // above the clay, under every body part
         }
 
-        void Start()
+        private void Start()
         {
             if (body == null)
             {
@@ -85,10 +85,10 @@ namespace PoSumo
             }
         }
 
-        float GroundAt(float x) =>
+        private float GroundAt(float x) =>
             Mathf.Abs(x - arenaCenterX) <= platformHalfWidth ? platformY : floorY;
 
-        void LateUpdate()
+        private void LateUpdate()
         {
             if (target == null) return;
 
@@ -110,7 +110,7 @@ namespace PoSumo
             UpdateFeet();
         }
 
-        void UpdateFeet()
+        private void UpdateFeet()
         {
             if (_footRenderers == null)
             {

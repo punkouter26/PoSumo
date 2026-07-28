@@ -215,9 +215,9 @@ namespace PoSumo
             }
             if (hitPart != null && body.Parts != null)
             {
-                for (int i = 0; i < body.Parts.Length; i++)
+                for (int partIndex = 0; partIndex < body.Parts.Length; partIndex++)
                 {
-                    if (body.Parts[i] == hitPart) return i;
+                    if (body.Parts[partIndex] == hitPart) return partIndex;
                 }
             }
             return -1;
@@ -261,9 +261,9 @@ namespace PoSumo
             Active[body] = this;
 
             // Replay everything this fighter has taken so far this tournament.
-            for (int i = 0; i < _marks.Count; i++)
+            for (int markIndex = 0; markIndex < _marks.Count; markIndex++)
             {
-                Paint(_marks[i]);
+                Paint(_marks[markIndex]);
             }
 
             // A limb lost in an earlier bout is still gone. Applied SILENTLY —
@@ -386,7 +386,7 @@ namespace PoSumo
             // blow drawn wider, so only the first mark scores. Otherwise one KO
             // would add ~3.4 to the head and redline it in a single hit.
             AddMark(point, -1, 1f, blood: true);
-            for (int i = 0; i < 4; i++)
+            for (int index = 0; index < 4; index++)
             {
                 Vector3 offset = point + (Vector3)(Random.insideUnitCircle * 0.12f);
                 AddMark(offset, -1, Random.Range(0.4f, 0.8f), blood: true, countsAsDamage: false);
@@ -440,11 +440,11 @@ namespace PoSumo
             {
                 return -1;
             }
-            for (int i = 0; i < body.Parts.Length; i++)
+            for (int partIndex = 0; partIndex < body.Parts.Length; partIndex++)
             {
-                if (body.Parts[i] != null && body.Parts[i].transform == partTransform)
+                if (body.Parts[partIndex] != null && body.Parts[partIndex].transform == partTransform)
                 {
-                    return i;
+                    return partIndex;
                 }
             }
             return -1;
@@ -653,11 +653,11 @@ namespace PoSumo
             };
             var centre = new Vector2(S * 0.5f, S * 0.5f);
             float radius = S * 0.5f;
-            for (int y = 0; y < S; y++)
+            for (int rowIndex = 0; rowIndex < S; rowIndex++)
             {
-                for (int x = 0; x < S; x++)
+                for (int columnIndex = 0; columnIndex < S; columnIndex++)
                 {
-                    var p = new Vector2(x + 0.5f, y + 0.5f);
+                    var p = new Vector2(columnIndex + 0.5f, rowIndex + 0.5f);
                     Vector2 d = p - centre;
                     float angle = Mathf.Atan2(d.y, d.x);
                     // Wobble the radius so the outline is irregular.
@@ -665,7 +665,7 @@ namespace PoSumo
                     float dist = d.magnitude / (radius * wobble);
                     float a = Mathf.Clamp01(1f - dist);
                     // Squared falloff: dense core, soft edge.
-                    tex.SetPixel(x, y, new Color(1f, 1f, 1f, a * a));
+                    tex.SetPixel(columnIndex, rowIndex, new Color(1f, 1f, 1f, a * a));
                 }
             }
             tex.Apply();

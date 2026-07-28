@@ -1,0 +1,20 @@
+{
+    "name": "PoSumo.Editor",
+    "rootNamespace": "PoSumo",
+    "references": [
+        "PoSumo.Runtime",
+        "Unity.ML-Agents",
+        "Unity.InferenceEngine"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

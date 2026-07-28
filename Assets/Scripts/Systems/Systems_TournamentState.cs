@@ -26,10 +26,10 @@ namespace PoSumo
         /// every play session, before the first scene loads, which is exactly the
         /// hook needed to clear it — relying on the domain reload does not work.
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ClearOnPlaySessionStart() => ResetAll();
+        private static void ClearOnPlaySessionStart() => ResetAll();
 
-        static readonly Agent_CharacterDefinition[] _seeds = new Agent_CharacterDefinition[SEED_COUNT];
-        static readonly Agent_CharacterDefinition[] _winners = new Agent_CharacterDefinition[MATCH_COUNT];
+        private static readonly Agent_CharacterDefinition[] _seeds = new Agent_CharacterDefinition[SEED_COUNT];
+        private static readonly Agent_CharacterDefinition[] _winners = new Agent_CharacterDefinition[MATCH_COUNT];
 
         /// True while a tournament is being played; SCN_SUMO checks this to know
         /// it should use the bracket's pairing rather than its own roster.
@@ -120,10 +120,10 @@ namespace PoSumo
             // not call Random during load order, and a salt keeps reshuffles
             // reproducible if the user wants the same draw again.
             var rng = new System.Random(shuffleSalt);
-            for (int i = SEED_COUNT - 1; i > 0; i--)
+            for (int index = SEED_COUNT - 1; index > 0; index--)
             {
-                int j = rng.Next(i + 1);
-                (_seeds[i], _seeds[j]) = (_seeds[j], _seeds[i]);
+                int j = rng.Next(index + 1);
+                (_seeds[index], _seeds[j]) = (_seeds[j], _seeds[index]);
             }
         }
 

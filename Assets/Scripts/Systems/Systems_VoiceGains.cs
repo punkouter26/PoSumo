@@ -53,9 +53,9 @@ namespace PoSumo
         {
             _lookup.Clear();
             int count = Mathf.Min(_clipNames.Count, _gains.Count);
-            for (int i = 0; i < count; i++)
+            for (int countIndex = 0; countIndex < count; countIndex++)
             {
-                _lookup[_clipNames[i]] = _gains[i];
+                _lookup[_clipNames[countIndex]] = _gains[countIndex];
             }
         }
     }

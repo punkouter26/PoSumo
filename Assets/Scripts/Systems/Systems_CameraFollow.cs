@@ -6,7 +6,7 @@ namespace PoSumo
     /// of both wrestlers and zooms as tight as possible while keeping both in
     /// frame (plus margin). Attach to the camera.
     [RequireComponent(typeof(Camera))]
-    public class Systems_CameraFollow : MonoBehaviour
+    public sealed class Systems_CameraFollow : MonoBehaviour
     {
         // Pulled back 30% from the original 1.9 / 3.5 / 0.95: the tighter framing
         // read as a close-up on two bodies rather than a bout on a dohyo, and the
@@ -42,16 +42,16 @@ namespace PoSumo
         public float ringMargin = 0.9f;
         public Systems_GameTuning tuning;
 
-        Camera _cam;
-        Agent_Biped _a, _b;
-        Systems_GameMatchManager _manager;
+        private Camera _cam;
+        private Agent_Biped _a, _b;
+        private Systems_GameMatchManager _manager;
 
         // Temporary punch-in override (slow-mo finishes): blend toward a focus
         // transform at a tighter ortho until the realtime deadline passes.
-        Transform _focus;
-        float _focusOrtho;
-        float _focusUntil;
-        float _wideUntil;
+        private Transform _focus;
+        private float _focusOrtho;
+        private float _focusUntil;
+        private float _wideUntil;
 
         /// Blend the camera toward `focus` at `ortho` for `realSeconds` of
         /// unscaled time. Used by the match presentation on round-deciding falls.
@@ -82,7 +82,7 @@ namespace PoSumo
             _wideUntil = 0f;
         }
 
-        void Awake()
+        private void Awake()
         {
             _cam = GetComponent<Camera>();
             if (tuning != null)
@@ -96,7 +96,7 @@ namespace PoSumo
             }
         }
 
-        void LateUpdate()
+        private void LateUpdate()
         {
             if (_a == null || _b == null)
             {

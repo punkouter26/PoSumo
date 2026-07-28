@@ -4,12 +4,12 @@ namespace PoSumo
 {
     /// Minimal viewing-scene camera rig: tracks a target's x position only,
     /// keeping height and rotation fixed. Used by SCN_WALKVIEW.
-    public class Systems_FollowX : MonoBehaviour
+    public sealed class Systems_FollowX : MonoBehaviour
     {
         public Transform target;
         public float smoothing = 5f;
 
-        void LateUpdate()
+        private void LateUpdate()
         {
             if (target == null)
             {

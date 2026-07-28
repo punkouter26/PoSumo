@@ -25,7 +25,7 @@ namespace PoSumo
     /// not a subtraction.
     ///
     /// UI Toolkit only, drawn into the shared Systems_HudRoot.
-    public class Systems_FightHud : MonoBehaviour
+    public sealed class Systems_FightHud : MonoBehaviour
     {
         public Systems_GameMatchManager manager;
         public PanelSettings panelSettings;
@@ -33,32 +33,32 @@ namespace PoSumo
         // no `startVisible` to serialize, no chip to press and no state to get
         // out of sync with the scene.
 
-        const float AVG_PUSH_MAX = 500f;    // bar scale for contact-averaged push
-        const float SHOVE_FORCE_N = 400f;   // momentum transfer that counts as a shove
-        const float SHOVE_COOLDOWN = 0.5f;  // seconds between countable shoves
-        const float TOUCH_DIST = 1.2f;      // torso distance treated as "in contact"
-        const float KD_REARM_SECONDS = 0.5f; // must stay up this long before next KD counts
+        private const float AVG_PUSH_MAX = 500f;    // bar scale for contact-averaged push
+        private const float SHOVE_FORCE_N = 400f;   // momentum transfer that counts as a shove
+        private const float SHOVE_COOLDOWN = 0.5f;  // seconds between countable shoves
+        private const float TOUCH_DIST = 1.2f;      // torso distance treated as "in contact"
+        private const float KD_REARM_SECONDS = 0.5f; // must stay up this long before next KD counts
 
         // The table's three columns. The middle column carries the metric name, so
         // the two value columns sit directly under their fighter's name plate.
-        const int SIDE_PERCENT = 27;
-        const int LABEL_PERCENT = 46;
+        private const int SIDE_PERCENT = 27;
+        private const int LABEL_PERCENT = 46;
 
         /// One metric, shown as [fighter A's value] METRIC [fighter B's value].
-        sealed class ComparePair
+        private sealed class ComparePair
         {
             public Label a, b;
         }
 
         /// One metric drawn as a centre-out tug-of-war bar.
-        sealed class BarPair
+        private sealed class BarPair
         {
             public VisualElement fillA, fillB;
             public Label valueA, valueB;
         }
 
         /// Whole-match accumulators for one wrestler.
-        class Agg
+        private class Agg
         {
             public float sumSpd, sumLean, sumEdge, sumBal, sumWork, sumPush, bestPush;
             public int territorySamples, touchSamples, shoves, kdDealt, kdSuffered;
@@ -75,21 +75,21 @@ namespace PoSumo
             }
         }
 
-        readonly Agg _aggA = new Agg();
-        readonly Agg _aggB = new Agg();
-        int _samples;
-        float _sumClash;
-        int _clashRounds;
-        bool _clashThisRound;
+        private readonly Agg _aggA = new Agg();
+        private readonly Agg _aggB = new Agg();
+        private int _samples;
+        private float _sumClash;
+        private int _clashRounds;
+        private bool _clashThisRound;
 
-        Systems_HudRoot _hud;
-        VisualElement _card;
-        ComparePair _dominance, _territory, _knockdowns, _shoves, _work;
-        BarPair _balance, _push;
-        Label _footer;
+        private Systems_HudRoot _hud;
+        private VisualElement _card;
+        private ComparePair _dominance, _territory, _knockdowns, _shoves, _work;
+        private BarPair _balance, _push;
+        private Label _footer;
 
-        Vector2 _prevVelA, _prevVelB;
-        Agent_BipedBody _bodyA, _bodyB;
+        private Vector2 _prevVelA, _prevVelB;
+        private Agent_BipedBody _bodyA, _bodyB;
 
         /// Live pairwise-normalized dominance (0-100, the pair sums to 100).
         /// Consumed by Systems_FaceMood, Systems_FighterVoice and
@@ -97,7 +97,7 @@ namespace PoSumo
         public float DominanceA { get; private set; } = 50f;
         public float DominanceB { get; private set; } = 50f;
 
-        void Start()
+        private void Start()
         {
             if (manager == null) manager = FindAnyObjectByType<Systems_GameMatchManager>();
             manager.MatchReset += ResetAggregates;
@@ -105,7 +105,7 @@ namespace PoSumo
             BuildUi();
         }
 
-        void OnDisable()
+        private void OnDisable()
         {
             if (manager != null)
             {
@@ -114,7 +114,7 @@ namespace PoSumo
             }
         }
 
-        void ResetAggregates()
+        private void ResetAggregates()
         {
             _aggA.Reset();
             _aggB.Reset();
@@ -124,11 +124,11 @@ namespace PoSumo
             _clashThisRound = false;
         }
 
-        void OnRoundStarted() { _clashThisRound = false; }
+        private void OnRoundStarted() { _clashThisRound = false; }
 
         // ---- Build ---------------------------------------------------------
 
-        void BuildUi()
+        private void BuildUi()
         {
             // Own PanelSettings if the scene assigned one, otherwise the match
             // manager's — whichever component's Start runs first builds the root,
@@ -169,7 +169,7 @@ namespace PoSumo
             _hud.Dock.Insert(0, _card);
         }
 
-        void BuildHeader()
+        private void BuildHeader()
         {
             VisualElement header = Systems_UiKit.Row();
             header.style.marginBottom = Systems_UiKit.SPACE_1;
@@ -192,7 +192,7 @@ namespace PoSumo
             _card.Add(header);
         }
 
-        ComparePair CompareRow(string label, int valueSize)
+        private ComparePair CompareRow(string label, int valueSize)
         {
             VisualElement row = Systems_UiKit.Row();
             row.style.height = valueSize + 10;
@@ -217,7 +217,7 @@ namespace PoSumo
         /// Percentage widths, not the old fixed `minWidth: 96`. The panel resolves
         /// narrower than its 720pt reference on tall phones, and a fixed value
         /// plus a caption overflowed the row there.
-        static Label SideValue(int fontSize, TextAnchor align)
+        private static Label SideValue(int fontSize, TextAnchor align)
         {
             Label value = Systems_UiKit.Text("—", fontSize, Systems_UiKit.TextHi, true);
             value.style.width = Length.Percent(SIDE_PERCENT);
@@ -227,7 +227,7 @@ namespace PoSumo
 
         /// A caption row plus one track that fills outward from the centre: A's
         /// share grows leftward in A's colour, B's rightward in B's.
-        BarPair MirrorBarRow(string label)
+        private BarPair MirrorBarRow(string label)
         {
             var pair = new BarPair();
 
@@ -264,7 +264,7 @@ namespace PoSumo
             return pair;
         }
 
-        static VisualElement HalfFill(VisualElement track, Justify grow, Color colour)
+        private static VisualElement HalfFill(VisualElement track, Justify grow, Color colour)
         {
             VisualElement half = Systems_UiKit.Row();
             half.style.width = Length.Percent(50);
@@ -287,7 +287,7 @@ namespace PoSumo
 
         // ---- Sampling ------------------------------------------------------
 
-        void FixedUpdate()
+        private void FixedUpdate()
         {
             var a = manager != null ? manager.wrestlerA : null;
             var b = manager != null ? manager.wrestlerB : null;
@@ -332,7 +332,7 @@ namespace PoSumo
             _prevVelA = velA; _prevVelB = velB;
         }
 
-        void SampleFighter(Agg agg, Agent_Biped w, Agent_BipedBody body, Vector2 vel,
+        private void SampleFighter(Agg agg, Agent_Biped w, Agent_BipedBody body, Vector2 vel,
                            float centerX, float midX, bool touching, float push, float now)
         {
             agg.sumSpd += vel.magnitude;
@@ -341,7 +341,7 @@ namespace PoSumo
             agg.sumBal += Mathf.Clamp01(Vector2.Dot(body.Chest.transform.up, Vector2.up));
 
             float work = 0f;
-            for (int j = 0; j < Agent_Biped.ActionCount; j++) work += Mathf.Abs(w.LastActions[j]);
+            for (int actionIndex = 0; actionIndex < Agent_Biped.ActionCount; actionIndex++) work += Mathf.Abs(w.LastActions[actionIndex]);
             agg.sumWork += work / Agent_Biped.ActionCount;
 
             // Field position: the fight's midpoint sits on the opponent's half
@@ -361,7 +361,7 @@ namespace PoSumo
             }
         }
 
-        void TrackKnockdown(Agg faller, Agg opponent, bool isDown, float now)
+        private void TrackKnockdown(Agg faller, Agg opponent, bool isDown, float now)
         {
             if (isDown)
             {
@@ -381,7 +381,7 @@ namespace PoSumo
 
         /// Unnormalized dominance blend; both fighters' values are scaled to
         /// sum to 100 at display time.
-        static float RawDominance(Agg self, Agg other, int samples)
+        private static float RawDominance(Agg self, Agg other, int samples)
         {
             float n = Mathf.Max(1, samples);
             float territory = self.territorySamples / n;
@@ -393,7 +393,7 @@ namespace PoSumo
 
         // ---- Display -------------------------------------------------------
 
-        void Update()
+        private void Update()
         {
             if (manager == null || manager.wrestlerA == null) return;
 
@@ -419,14 +419,14 @@ namespace PoSumo
         // fourteen swatches. Head/torso/arm/arm/leg/leg is the most detail that
         // still reads at a glance.
 
-        VisualElement[] _mannA, _mannB;
+        private VisualElement[] _mannA, _mannB;
 
-        static readonly Color DamageGreen = new Color(0.36f, 0.78f, 0.40f);
-        static readonly Color DamageAmber = new Color(0.94f, 0.72f, 0.22f);
-        static readonly Color DamageRed = new Color(0.88f, 0.22f, 0.18f);
-        static readonly Color DamageGone = new Color(0.20f, 0.20f, 0.24f, 0.45f);
+        private static readonly Color DamageGreen = new Color(0.36f, 0.78f, 0.40f);
+        private static readonly Color DamageAmber = new Color(0.94f, 0.72f, 0.22f);
+        private static readonly Color DamageRed = new Color(0.88f, 0.22f, 0.18f);
+        private static readonly Color DamageGone = new Color(0.20f, 0.20f, 0.24f, 0.45f);
 
-        void BuildDamageRow()
+        private void BuildDamageRow()
         {
             VisualElement row = Systems_UiKit.Row();
             row.style.alignItems = Align.Center;
@@ -457,7 +457,7 @@ namespace PoSumo
 
         /// Indices match Systems_BodyDamage.Region: Head, Torso, ArmNear, ArmFar,
         /// LegNear, LegFar.
-        VisualElement[] BuildMannequin(out VisualElement figure)
+        private VisualElement[] BuildMannequin(out VisualElement figure)
         {
             const float W = 56f, H = 78f;
             figure = new VisualElement().NoPick();
@@ -474,7 +474,7 @@ namespace PoSumo
             return parts;
         }
 
-        static VisualElement Piece(VisualElement parent, float left, float top,
+        private static VisualElement Piece(VisualElement parent, float left, float top,
                                    float w, float h, int radius)
         {
             var piece = new VisualElement().NoPick();
@@ -489,7 +489,7 @@ namespace PoSumo
             return piece;
         }
 
-        void PaintMannequin(VisualElement[] parts, Agent_Biped fighter)
+        private void PaintMannequin(VisualElement[] parts, Agent_Biped fighter)
         {
             if (parts == null || fighter == null) return;
             var body = fighter.GetComponent<Agent_BipedBody>();
@@ -513,7 +513,7 @@ namespace PoSumo
             }
         }
 
-        void UpdateTable()
+        private void UpdateTable()
         {
             float n = Mathf.Max(1, _samples);
 
@@ -546,14 +546,14 @@ namespace PoSumo
                            $" · LONGEST RD {manager.LongestRound:F0}s";
         }
 
-        static Color DominanceColour(float dominance)
+        private static Color DominanceColour(float dominance)
         {
             if (dominance >= 55f) return Systems_UiKit.Good;
             if (dominance <= 45f) return Systems_UiKit.Bad;
             return Systems_UiKit.TextHi;
         }
 
-        static void SetBar(BarPair bar, float valueA, float valueB, float scale, string format)
+        private static void SetBar(BarPair bar, float valueA, float valueB, float scale, string format)
         {
             bar.fillA.style.width = Length.Percent(Mathf.Clamp01(valueA / scale) * 100f);
             bar.fillB.style.width = Length.Percent(Mathf.Clamp01(valueB / scale) * 100f);

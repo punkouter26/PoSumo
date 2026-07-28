@@ -97,9 +97,9 @@ namespace PoSumo
         {
             SpriteRenderer[] renderers = _arena.GetComponentsInChildren<SpriteRenderer>(true);
 
-            for (int i = 0; i < renderers.Length; i++)
+            for (int rendererIndex = 0; rendererIndex < renderers.Length; rendererIndex++)
             {
-                SpriteRenderer renderer = renderers[i];
+                SpriteRenderer renderer = renderers[rendererIndex];
                 Transform target = renderer.transform;
 
                 if (swayCrowd && IsCrowd(target.name))
@@ -165,9 +165,9 @@ namespace PoSumo
             // arena centre, not by absolute position, so it is stable whatever the
             // arena's world coordinates are.
             float cameraOffset = _camera.transform.position.x - _arenaCenterX;
-            for (int i = 0; i < _layers.Count; i++)
+            for (int layerIndex = 0; layerIndex < _layers.Count; layerIndex++)
             {
-                ParallaxLayer layer = _layers[i];
+                ParallaxLayer layer = _layers[layerIndex];
                 if (layer.transform == null)
                 {
                     continue;
@@ -180,9 +180,9 @@ namespace PoSumo
             if (swayCrowd)
             {
                 float t = Time.time * swayHz * Mathf.PI * 2f;
-                for (int i = 0; i < _sway.Count; i++)
+                for (int swayIndex = 0; swayIndex < _sway.Count; swayIndex++)
                 {
-                    SwayTarget target = _sway[i];
+                    SwayTarget target = _sway[swayIndex];
                     if (target.transform == null)
                     {
                         continue;
@@ -216,17 +216,17 @@ namespace PoSumo
                 filterMode = FilterMode.Bilinear,
                 name = "PoSumo_LightShaft",
             };
-            for (int y = 0; y < H; y++)
+            for (int rowIndex = 0; rowIndex < H; rowIndex++)
             {
                 // v = 1 at the top of the sprite.
-                float v = (y + 0.5f) / H;
+                float v = (rowIndex + 0.5f) / H;
                 float vertical = Mathf.Pow(v, 1.6f);
-                for (int x = 0; x < W; x++)
+                for (int columnIndex = 0; columnIndex < W; columnIndex++)
                 {
-                    float u = (x + 0.5f) / W * 2f - 1f;
+                    float u = (columnIndex + 0.5f) / W * 2f - 1f;
                     float horizontal = Mathf.Cos(Mathf.Clamp(u, -1f, 1f) * Mathf.PI * 0.5f);
                     horizontal *= horizontal;
-                    texture.SetPixel(x, y, new Color(1f, 1f, 1f, vertical * horizontal));
+                    texture.SetPixel(columnIndex, rowIndex, new Color(1f, 1f, 1f, vertical * horizontal));
                 }
             }
             texture.Apply();
@@ -244,12 +244,12 @@ namespace PoSumo
             root.transform.SetParent(transform, false);
             root.transform.position = new Vector3(_arenaCenterX, 0f, 0f);
 
-            for (int i = 0; i < shaftCount; i++)
+            for (int shaftIndex = 0; shaftIndex < shaftCount; shaftIndex++)
             {
-                float t = shaftCount == 1 ? 0.5f : i / (float)(shaftCount - 1);
+                float t = shaftCount == 1 ? 0.5f : shaftIndex / (float)(shaftCount - 1);
                 float x = Mathf.Lerp(-shaftSpread, shaftSpread, t);
 
-                var go = new GameObject($"Shaft{i}");
+                var go = new GameObject($"Shaft{shaftIndex}");
                 go.transform.SetParent(root.transform, false);
                 go.transform.localPosition = new Vector3(x, shaftTopY, 0f);
                 // Fan outward from the key light, so the beams converge at the roof
@@ -274,16 +274,16 @@ namespace PoSumo
                 return;
             }
             float t = Time.time * shaftShimmerHz * Mathf.PI * 2f;
-            for (int i = 0; i < _shafts.Count; i++)
+            for (int shaftIndex = 0; shaftIndex < _shafts.Count; shaftIndex++)
             {
-                SpriteRenderer renderer = _shafts[i];
+                SpriteRenderer renderer = _shafts[shaftIndex];
                 if (renderer == null)
                 {
                     continue;
                 }
                 // Each beam breathes on its own phase; dust drifting through a real
                 // shaft never makes them all brighten together.
-                float shimmer = 0.72f + 0.28f * Mathf.Sin(t + i * 1.9f);
+                float shimmer = 0.72f + 0.28f * Mathf.Sin(t + shaftIndex * 1.9f);
                 Color colour = renderer.color;
                 colour.a = shaftOpacity * shimmer;
                 renderer.color = colour;

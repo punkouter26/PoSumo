@@ -16,7 +16,7 @@ namespace PoSumo
     /// Assets/Art/Generated), so every piece can be inspected and moved in the
     /// editor. At runtime Awake() only rebinds references when children
     /// already exist; an empty arena object still builds itself as before.
-    public class Systems_SumoArena : MonoBehaviour
+    public sealed class Systems_SumoArena : MonoBehaviour
     {
         /// Visual + physics preset for the dohyo top surface.
         public enum SurfaceStyle { Clay = 0, Ice = 1, Sticky = 2 }
@@ -37,12 +37,12 @@ namespace PoSumo
         public float surfaceFriction = 0.9f;
 
         // Tawara bales, kept so width changes reposition them: (transform, side, index).
-        struct TawaraRef { public Transform t; public int side; public int index; }
-        readonly List<TawaraRef> _tawara = new List<TawaraRef>();
-        Transform _platform, _surface, _baseLip;
-        float _currentHalf = -1f;
+        private struct TawaraRef { public Transform t; public int side; public int index; }
+        private readonly List<TawaraRef> _tawara = new List<TawaraRef>();
+        private Transform _platform, _surface, _baseLip;
+        private float _currentHalf = -1f;
 
-        static readonly Dictionary<string, Sprite> RuntimeSprites = new Dictionary<string, Sprite>();
+        private static readonly Dictionary<string, Sprite> RuntimeSprites = new Dictionary<string, Sprite>();
 
         /// Physically resizes the dohyo to the given half-width: platform
         /// visuals AND collider change together, and the tawara ride the
@@ -63,9 +63,9 @@ namespace PoSumo
                 _baseLip.localScale = new Vector3(width + 0.7f, 0.16f, 1f);
 
             float tawaraHalf = half - 0.3f; // bales stay on the clay, at the edge
-            for (int i = 0; i < _tawara.Count; i++)
+            for (int tawaraIndex = 0; tawaraIndex < _tawara.Count; tawaraIndex++)
             {
-                var r = _tawara[i];
+                var r = _tawara[tawaraIndex];
                 var p = r.t.localPosition;
                 r.t.localPosition = new Vector3(r.side * (tawaraHalf - r.index * 0.24f), p.y, p.z);
             }
@@ -76,7 +76,7 @@ namespace PoSumo
         // and referenced as a real asset, so baked scenes survive reload.
         // Play mode (unbaked fallback): generated in memory and cached.
 
-        static Sprite SourceSprite(string name, float ppu, bool repeat, Vector2 pivot, System.Func<Texture2D> gen)
+        private static Sprite SourceSprite(string name, float ppu, bool repeat, Vector2 pivot, System.Func<Texture2D> gen)
         {
 #if UNITY_EDITOR
             if (!Application.isPlaying)
@@ -112,7 +112,7 @@ namespace PoSumo
             return sprite;
         }
 
-        static PhysicsMaterial2D SourcePhysMat(string name, float friction, float bounciness)
+        private static PhysicsMaterial2D SourcePhysMat(string name, float friction, float bounciness)
         {
 #if UNITY_EDITOR
             if (!Application.isPlaying)
@@ -141,82 +141,82 @@ namespace PoSumo
             if (col != null && col.sharedMaterial != null) col.sharedMaterial.friction = friction;
         }
 
-        static Sprite Box() => SourceSprite("Box", 4f, false, new Vector2(0.5f, 0.5f), () =>
+        private static Sprite Box() => SourceSprite("Box", 4f, false, new Vector2(0.5f, 0.5f), () =>
         {
             var tex = new Texture2D(4, 4, TextureFormat.RGBA32, false);
             var px = new Color[16];
-            for (int i = 0; i < 16; i++) px[i] = Color.white;
+            for (int index = 0; index < 16; index++) px[index] = Color.white;
             tex.SetPixels(px);
             tex.Apply();
             return tex;
         });
 
-        static Sprite Circle() => SourceSprite("Circle", 64f, false, new Vector2(0.5f, 0.5f), () =>
+        private static Sprite Circle() => SourceSprite("Circle", 64f, false, new Vector2(0.5f, 0.5f), () =>
         {
             const int S = 64;
             var tex = new Texture2D(S, S, TextureFormat.RGBA32, false);
             float r = S / 2f - 1f;
-            for (int y = 0; y < S; y++)
-                for (int x = 0; x < S; x++)
+            for (int rowIndex = 0; rowIndex < S; rowIndex++)
+                for (int columnIndex = 0; columnIndex < S; columnIndex++)
                 {
-                    float d = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), new Vector2(S / 2f, S / 2f));
-                    tex.SetPixel(x, y, d <= r ? Color.white : Color.clear);
+                    float d = Vector2.Distance(new Vector2(columnIndex + 0.5f, rowIndex + 0.5f), new Vector2(S / 2f, S / 2f));
+                    tex.SetPixel(columnIndex, rowIndex, d <= r ? Color.white : Color.clear);
                 }
             tex.Apply();
             return tex;
         });
 
-        Sprite NoiseSprite(Color baseColor, float amount) =>
+        private Sprite NoiseSprite(Color baseColor, float amount) =>
             SourceSprite($"Noise_{style}", 256f, true, new Vector2(0.5f, 0.5f), () =>
         {
             const int S = 256;
             var tex = new Texture2D(S, S, TextureFormat.RGBA32, false);
-            for (int y = 0; y < S; y++)
-                for (int x = 0; x < S; x++)
+            for (int rowIndex = 0; rowIndex < S; rowIndex++)
+                for (int columnIndex = 0; columnIndex < S; columnIndex++)
                 {
-                    float n = Mathf.PerlinNoise(x * 0.11f, y * 0.11f)
-                            + 0.5f * Mathf.PerlinNoise(x * 0.31f, y * 0.31f);
+                    float n = Mathf.PerlinNoise(columnIndex * 0.11f, rowIndex * 0.11f)
+                            + 0.5f * Mathf.PerlinNoise(columnIndex * 0.31f, rowIndex * 0.31f);
                     float v = 1f + (n / 1.5f - 0.5f) * 2f * amount;
-                    tex.SetPixel(x, y, new Color(baseColor.r * v, baseColor.g * v, baseColor.b * v, 1f));
+                    tex.SetPixel(columnIndex, rowIndex, new Color(baseColor.r * v, baseColor.g * v, baseColor.b * v, 1f));
                 }
             tex.Apply();
             return tex;
         });
 
-        static Sprite GradientSprite(Color top, Color bottom) =>
+        private static Sprite GradientSprite(Color top, Color bottom) =>
             SourceSprite("WallGradient", 128f, false, new Vector2(0.5f, 0.5f), () =>
         {
             const int S = 128;
             var tex = new Texture2D(4, S, TextureFormat.RGBA32, false);
-            for (int y = 0; y < S; y++)
+            for (int rowIndex = 0; rowIndex < S; rowIndex++)
             {
-                var c = Color.Lerp(bottom, top, (float)y / (S - 1));
-                for (int x = 0; x < 4; x++) tex.SetPixel(x, y, c);
+                var c = Color.Lerp(bottom, top, (float)rowIndex / (S - 1));
+                for (int columnIndex = 0; columnIndex < 4; columnIndex++) tex.SetPixel(columnIndex, rowIndex, c);
             }
             tex.Apply();
             return tex;
         });
 
-        static Sprite ConeSprite() =>
+        private static Sprite ConeSprite() =>
             SourceSprite("SpotCone", 128f, false, new Vector2(0.5f, 0f), () =>
         {
             const int S = 128;
             var tex = new Texture2D(S, S, TextureFormat.RGBA32, false);
-            for (int y = 0; y < S; y++)
-                for (int x = 0; x < S; x++)
+            for (int rowIndex = 0; rowIndex < S; rowIndex++)
+                for (int columnIndex = 0; columnIndex < S; columnIndex++)
                 {
                     // Triangle widening toward the bottom, soft edges, fades upward.
-                    float ny = (float)y / (S - 1);              // 0 bottom, 1 top
+                    float ny = (float)rowIndex / (S - 1);              // 0 bottom, 1 top
                     float halfW = Mathf.Lerp(0.5f, 0.06f, ny);  // wide at bottom
-                    float dx = Mathf.Abs((float)x / (S - 1) - 0.5f);
+                    float dx = Mathf.Abs((float)columnIndex / (S - 1) - 0.5f);
                     float a = dx < halfW ? (1f - dx / halfW) * (1f - ny) : 0f;
-                    tex.SetPixel(x, y, new Color(1f, 0.95f, 0.8f, a * 0.16f));
+                    tex.SetPixel(columnIndex, rowIndex, new Color(1f, 0.95f, 0.8f, a * 0.16f));
                 }
             tex.Apply();
             return tex;
         });
 
-        Sprite GridSprite() =>
+        private Sprite GridSprite() =>
             SourceSprite(deluxe ? "Grid_Deluxe" : "Grid_Plain", 100f, true, new Vector2(0.5f, 0.5f), () =>
         {
             const int PX = 500;
@@ -224,18 +224,18 @@ namespace PoSumo
             var bg = deluxe ? new Color(0f, 0f, 0f, 0f) : new Color(0.17f, 0.13f, 0.12f, 1f);
             var thin = deluxe ? new Color(0.62f, 0.54f, 0.45f, 0.38f) : new Color(0.24f, 0.19f, 0.17f, 1f);
             var heavy = deluxe ? new Color(0.75f, 0.65f, 0.52f, 0.55f) : new Color(0.36f, 0.29f, 0.25f, 1f);
-            for (int y = 0; y < PX; y++)
-                for (int x = 0; x < PX; x++)
+            for (int rowIndex = 0; rowIndex < PX; rowIndex++)
+                for (int columnIndex = 0; columnIndex < PX; columnIndex++)
                 {
-                    bool heavyLine = x < 3 || y < 3 || x >= PX - 3 || y >= PX - 3;
-                    bool thinLine = (x % 100) < 2 || (y % 100) < 2;
-                    tex.SetPixel(x, y, heavyLine ? heavy : (thinLine ? thin : bg));
+                    bool heavyLine = columnIndex < 3 || rowIndex < 3 || columnIndex >= PX - 3 || rowIndex >= PX - 3;
+                    bool thinLine = (columnIndex % 100) < 2 || (rowIndex % 100) < 2;
+                    tex.SetPixel(columnIndex, rowIndex, heavyLine ? heavy : (thinLine ? thin : bg));
                 }
             tex.Apply();
             return tex;
         });
 
-        void Awake()
+        private void Awake()
         {
             // Baked scene: the children already exist in the editor — only
             // rebind the references SetVisualRing needs.
@@ -257,7 +257,7 @@ namespace PoSumo
         /// wrestlers' body materials and the light shafts both got overwritten, and
         /// each needed an exception carved out. Scoped to this subtree, the arena
         /// owns its own look and nothing else has to defend against it.
-        void ApplyLitMaterial()
+        private void ApplyLitMaterial()
         {
             Material lit = Systems_ArenaLighting.LitSpriteMaterial();
             if (lit == null)
@@ -265,13 +265,13 @@ namespace PoSumo
                 return;
             }
             var renderers = GetComponentsInChildren<SpriteRenderer>(true);
-            for (int i = 0; i < renderers.Length; i++)
+            for (int rendererIndex = 0; rendererIndex < renderers.Length; rendererIndex++)
             {
-                renderers[i].sharedMaterial = lit;
+                renderers[rendererIndex].sharedMaterial = lit;
             }
         }
 
-        void RebindBaked()
+        private void RebindBaked()
         {
             _tawara.Clear();
             _currentHalf = groundWidth * 0.5f;
@@ -408,11 +408,11 @@ namespace PoSumo
                 new Color(0.28f, 0.25f, 0.18f)
             };
             int gallerySeats = Mathf.FloorToInt(floorWidth / 0.6f);
-            for (int i = 0; i < gallerySeats; i++)
+            for (int gallerySeatIndex = 0; gallerySeatIndex < gallerySeats; gallerySeatIndex++)
             {
-                float gx = -floorWidth * 0.5f + 0.4f + i * 0.6f;
-                float jitter = ((i * 13) % 5) * 0.025f;
-                var c = galleryKimono[(i * 7) % galleryKimono.Length];
+                float gx = -floorWidth * 0.5f + 0.4f + gallerySeatIndex * 0.6f;
+                float jitter = ((gallerySeatIndex * 13) % 5) * 0.025f;
+                var c = galleryKimono[(gallerySeatIndex * 7) % galleryKimono.Length];
 
                 var gbody = new GameObject("GallerySpectator");
                 gbody.transform.SetParent(transform, false);
@@ -483,10 +483,10 @@ namespace PoSumo
                         stsr.color = new Color(0.2f, 0.15f, 0.13f);
                         stsr.sortingOrder = -8;
                     }
-                    for (int i = 0; i < seats; i++)
+                    for (int seatIndex = 0; seatIndex < seats; seatIndex++)
                     {
-                        float px = s * (startX + i * 0.55f);
-                        int idx = (s + 1) * 7 + row * 13 + i * 5;
+                        float px = s * (startX + seatIndex * 0.55f);
+                        int idx = (s + 1) * 7 + row * 13 + seatIndex * 5;
                         var c = kimono[idx % kimono.Length];
                         if (row == 1) c *= 0.75f;
 
@@ -528,9 +528,9 @@ namespace PoSumo
                 }
 
                 // Lantern row under the roof.
-                for (int i = 0; i < 5; i++)
+                for (int index = 0; index < 5; index++)
                 {
-                    float lx = Mathf.Lerp(-(half + 1.2f), half + 1.2f, i / 4f);
+                    float lx = Mathf.Lerp(-(half + 1.2f), half + 1.2f, index / 4f);
                     var halo = new GameObject("LanternHalo");
                     halo.transform.SetParent(transform, false);
                     halo.transform.localPosition = new Vector3(lx, 5.55f, 0f);
@@ -555,16 +555,16 @@ namespace PoSumo
                     new Color(0.55f, 0.16f, 0.14f), new Color(0.16f, 0.3f, 0.45f),
                     new Color(0.5f, 0.38f, 0.12f), new Color(0.2f, 0.38f, 0.24f)
                 };
-                for (int i = 0; i < 4; i++)
+                for (int index = 0; index < 4; index++)
                 {
-                    float bx = Mathf.Lerp(-(half + 4.2f), half + 4.2f, i / 3f);
+                    float bx = Mathf.Lerp(-(half + 4.2f), half + 4.2f, index / 3f);
                     var banner = new GameObject("Banner");
                     banner.transform.SetParent(transform, false);
                     banner.transform.localPosition = new Vector3(bx, 3.6f, 0f);
                     banner.transform.localScale = new Vector3(0.55f, 1.5f, 1f);
                     var bsr3 = banner.AddComponent<SpriteRenderer>();
                     bsr3.sprite = Box();
-                    bsr3.color = bannerCols[i % bannerCols.Length];
+                    bsr3.color = bannerCols[index % bannerCols.Length];
                     bsr3.sortingOrder = -9;
                     var motif = new GameObject("Motif");
                     motif.transform.SetParent(banner.transform, false);
@@ -579,9 +579,9 @@ namespace PoSumo
                 // Distant back-row crowd silhouettes on both sides.
                 for (int s = -1; s <= 1; s += 2)
                 {
-                    for (int i = 0; i < 8; i++)
+                    for (int index = 0; index < 8; index++)
                     {
-                        float px = s * (half + 0.7f + i * 0.42f);
+                        float px = s * (half + 0.7f + index * 0.42f);
                         var sil = new GameObject("CrowdSilhouette");
                         sil.transform.SetParent(transform, false);
                         sil.transform.localPosition = new Vector3(px, -platformDrop + 0.62f, 0f);
@@ -616,16 +616,16 @@ namespace PoSumo
                 new Color(0.12f, 0.12f, 0.12f), new Color(0.2f, 0.5f, 0.28f),
                 new Color(0.75f, 0.2f, 0.16f), new Color(0.92f, 0.9f, 0.85f)
             };
-            for (int i = 0; i < 4; i++)
+            for (int index = 0; index < 4; index++)
             {
-                float fx = Mathf.Lerp(-(half + 1.4f), half + 1.4f, i / 3f);
-                var tassel = new GameObject("Fusa" + i);
+                float fx = Mathf.Lerp(-(half + 1.4f), half + 1.4f, index / 3f);
+                var tassel = new GameObject("Fusa" + index);
                 tassel.transform.SetParent(transform, false);
                 tassel.transform.localPosition = new Vector3(fx, 5.9f, 0f);
                 tassel.transform.localScale = new Vector3(0.12f, 0.5f, 1f);
                 var tsr = tassel.AddComponent<SpriteRenderer>();
                 tsr.sprite = Box();
-                tsr.color = fusa[i];
+                tsr.color = fusa[index];
                 tsr.sortingOrder = -5;
             }
         }

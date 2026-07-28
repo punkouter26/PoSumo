@@ -110,11 +110,11 @@ namespace PoSumo
             {
                 return null;
             }
-            for (int i = 0; i < _data.records.Count; i++)
+            for (int recordIndex = 0; recordIndex < _data.records.Count; recordIndex++)
             {
-                if (_data.records[i].fighter == fighter)
+                if (_data.records[recordIndex].fighter == fighter)
                 {
-                    return _data.records[i];
+                    return _data.records[recordIndex];
                 }
             }
             var fresh = new Record { fighter = fighter };

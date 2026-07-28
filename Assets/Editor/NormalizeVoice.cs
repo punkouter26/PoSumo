@@ -71,11 +71,11 @@ namespace PoSumo.EditorTools
 
                 double sumSquares = 0.0;
                 float peak = 0f;
-                for (int i = 0; i < data.Length; i++)
+                for (int dataIndex = 0; dataIndex < data.Length; dataIndex++)
                 {
-                    float magnitude = Mathf.Abs(data[i]);
+                    float magnitude = Mathf.Abs(data[dataIndex]);
                     if (magnitude > peak) peak = magnitude;
-                    sumSquares += (double)data[i] * data[i];
+                    sumSquares += (double)data[dataIndex] * data[dataIndex];
                 }
                 if (data.Length == 0 || peak <= 1e-6f)
                 {

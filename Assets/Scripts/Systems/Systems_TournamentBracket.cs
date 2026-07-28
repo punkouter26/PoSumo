@@ -12,7 +12,7 @@ namespace PoSumo
     ///
     /// UI Toolkit, built in code — same approach as the fight HUD, so there is no
     /// UXML/USS asset to keep in sync.
-    public class Systems_TournamentBracket : MonoBehaviour
+    public sealed class Systems_TournamentBracket : MonoBehaviour
     {
         [Tooltip("Characters available as entrants. With 4, each appears twice in the 8-slot bracket.")]
         [SerializeField] private Agent_CharacterDefinition[] _roster;
@@ -264,9 +264,9 @@ namespace PoSumo
             // A rule under the header does the separating that the old layout
             // asked a colour difference and a size difference to do at 14pt.
             _careerPanel.Add(Systems_UiKit.Divider(Systems_UiKit.SPACE_1));
-            for (int i = 0; i < records.Count; i++)
+            for (int recordIndex = 0; recordIndex < records.Count; recordIndex++)
             {
-                Systems_CareerStats.Record r = records[i];
+                Systems_CareerStats.Record r = records[recordIndex];
                 _careerPanel.Add(CareerRow(
                     r.fighter.ToUpperInvariant(),
                     Mathf.RoundToInt(r.elo).ToString(),
@@ -556,11 +556,11 @@ namespace PoSumo
 
         private int SeedSlotUnder(Vector2 position)
         {
-            for (int i = 0; i < _seedSlots.Count; i++)
+            for (int seedSlotIndex = 0; seedSlotIndex < _seedSlots.Count; seedSlotIndex++)
             {
-                if (_seedSlots[i].worldBound.Contains(position))
+                if (_seedSlots[seedSlotIndex].worldBound.Contains(position))
                 {
-                    return (int)_seedSlots[i].userData;
+                    return (int)_seedSlots[seedSlotIndex].userData;
                 }
             }
             return -1;
@@ -570,15 +570,15 @@ namespace PoSumo
 
         private void Refresh()
         {
-            for (int i = 0; i < _seedSlots.Count; i++)
+            for (int seedSlotIndex = 0; seedSlotIndex < _seedSlots.Count; seedSlotIndex++)
             {
-                int seedIndex = (int)_seedSlots[i].userData;
-                ApplyChip(_seedSlots[i], Systems_TournamentState.GetSeed(seedIndex));
+                int seedIndex = (int)_seedSlots[seedSlotIndex].userData;
+                ApplyChip(_seedSlots[seedSlotIndex], Systems_TournamentState.GetSeed(seedIndex));
             }
-            for (int i = 0; i < _winnerSlots.Count; i++)
+            for (int winnerSlotIndex = 0; winnerSlotIndex < _winnerSlots.Count; winnerSlotIndex++)
             {
-                int matchIndex = (int)_winnerSlots[i].userData;
-                ApplyChip(_winnerSlots[i], Systems_TournamentState.GetWinner(matchIndex));
+                int matchIndex = (int)_winnerSlots[winnerSlotIndex].userData;
+                ApplyChip(_winnerSlots[winnerSlotIndex], Systems_TournamentState.GetWinner(matchIndex));
             }
 
             // The seeding controls only exist while seeding is possible. Left up,

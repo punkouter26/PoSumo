@@ -223,16 +223,16 @@ namespace PoSumo
                 filterMode = FilterMode.Bilinear,
                 name = "PoSumo_CylinderNormal",
             };
-            for (int x = 0; x < S; x++)
+            for (int columnIndex = 0; columnIndex < S; columnIndex++)
             {
                 // -1..1 across the sprite, then the unit-circle height gives z.
-                float u = (x + 0.5f) / S * 2f - 1f;
+                float u = (columnIndex + 0.5f) / S * 2f - 1f;
                 float nx = u * 0.85f;                      // 0.85: soften the extremes
                 float nz = Mathf.Sqrt(Mathf.Max(0.0001f, 1f - nx * nx));
                 var encoded = new Color(nx * 0.5f + 0.5f, 0.5f, nz * 0.5f + 0.5f, 1f);
-                for (int y = 0; y < S; y++)
+                for (int rowIndex = 0; rowIndex < S; rowIndex++)
                 {
-                    _normalMap.SetPixel(x, y, encoded);
+                    _normalMap.SetPixel(columnIndex, rowIndex, encoded);
                 }
             }
             _normalMap.Apply();

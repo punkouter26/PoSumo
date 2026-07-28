@@ -115,23 +115,23 @@ namespace PoSumo.EditorTools
             float startHz = 125f + variant * 9f;
             float endHz = 44f + variant * 3f;
             double phase = 0;
-            for (int i = 0; i < buffer.Length; i++)
+            for (int bufferIndex = 0; bufferIndex < buffer.Length; bufferIndex++)
             {
-                float t = i / (float)SAMPLE_RATE;
+                float t = bufferIndex / (float)SAMPLE_RATE;
                 // Pitch drop is exponential: a struck mass loses pitch fast, then
                 // settles. Linear here reads as a synth sweep, not a body.
                 float hz = Mathf.Lerp(endHz, startHz, Mathf.Exp(-t * 26f));
                 phase += 2.0 * Math.PI * hz / SAMPLE_RATE;
                 float env = Mathf.Exp(-t * 11f) * (1f - Mathf.Exp(-t * 900f));
-                buffer[i] = (float)Math.Sin(phase) * env;
+                buffer[bufferIndex] = (float)Math.Sin(phase) * env;
             }
             // A touch of very low noise for the "give" of soft tissue.
             var lp = Biquad.LowPass(180f, 0.7f, SAMPLE_RATE);
-            for (int i = 0; i < buffer.Length; i++)
+            for (int bufferIndex = 0; bufferIndex < buffer.Length; bufferIndex++)
             {
-                float t = i / (float)SAMPLE_RATE;
+                float t = bufferIndex / (float)SAMPLE_RATE;
                 float n = lp.Process((float)(rng.NextDouble() * 2 - 1));
-                buffer[i] += n * Mathf.Exp(-t * 30f) * 0.5f;
+                buffer[bufferIndex] += n * Mathf.Exp(-t * 30f) * 0.5f;
             }
             return Normalize(buffer, 0.92f);
         }
@@ -144,13 +144,13 @@ namespace PoSumo.EditorTools
             float[] buffer = New(0.24f);
             var bp = Biquad.BandPass(620f + variant * 130f, 1.1f, SAMPLE_RATE);
             var lp = Biquad.LowPass(3200f, 0.6f, SAMPLE_RATE);
-            for (int i = 0; i < buffer.Length; i++)
+            for (int bufferIndex = 0; bufferIndex < buffer.Length; bufferIndex++)
             {
-                float t = i / (float)SAMPLE_RATE;
+                float t = bufferIndex / (float)SAMPLE_RATE;
                 float n = (float)(rng.NextDouble() * 2 - 1);
                 float s = lp.Process(bp.Process(n));
                 float env = Mathf.Exp(-t * 42f) * (1f - Mathf.Exp(-t * 2600f));
-                buffer[i] = s * env;
+                buffer[bufferIndex] = s * env;
             }
             return Normalize(buffer, 0.85f);
         }
@@ -162,12 +162,12 @@ namespace PoSumo.EditorTools
             var rng = new System.Random(3000 + variant);
             float[] buffer = New(0.42f);
             var hp = Biquad.HighPass(2100f + variant * 260f, 0.7f, SAMPLE_RATE);
-            for (int i = 0; i < buffer.Length; i++)
+            for (int bufferIndex = 0; bufferIndex < buffer.Length; bufferIndex++)
             {
-                float t = i / (float)SAMPLE_RATE;
+                float t = bufferIndex / (float)SAMPLE_RATE;
                 float n = hp.Process((float)(rng.NextDouble() * 2 - 1));
                 float env = Mathf.Exp(-t * 7.5f) * (1f - Mathf.Exp(-t * 120f));
-                buffer[i] = n * env;
+                buffer[bufferIndex] = n * env;
             }
             return Normalize(buffer, 0.55f);
         }
@@ -178,13 +178,13 @@ namespace PoSumo.EditorTools
             var rng = new System.Random(4000 + variant);
             float[] buffer = New(0.22f);
             var bp = Biquad.BandPass(1500f + variant * 320f, 0.8f, SAMPLE_RATE);
-            for (int i = 0; i < buffer.Length; i++)
+            for (int bufferIndex = 0; bufferIndex < buffer.Length; bufferIndex++)
             {
-                float t = i / (float)SAMPLE_RATE;
+                float t = bufferIndex / (float)SAMPLE_RATE;
                 float n = bp.Process((float)(rng.NextDouble() * 2 - 1));
                 // Swells then cuts: a scuff is a movement, not a strike.
                 float env = Mathf.Sin(Mathf.Clamp01(t / 0.2f) * Mathf.PI);
-                buffer[i] = n * env;
+                buffer[bufferIndex] = n * env;
             }
             return Normalize(buffer, 0.6f);
         }
@@ -217,9 +217,9 @@ namespace PoSumo.EditorTools
             var breathBp = Biquad.BandPass(1700f, 0.8f, SAMPLE_RATE);
 
             double phase = 0;
-            for (int i = 0; i < buffer.Length; i++)
+            for (int bufferIndex = 0; bufferIndex < buffer.Length; bufferIndex++)
             {
-                float t = i / (float)SAMPLE_RATE;
+                float t = bufferIndex / (float)SAMPLE_RATE;
                 float progress = t / length;
                 // Pitch sags through the grunt — the sound of running out of air.
                 float hz = f0 * (1f + 0.16f * Mathf.Exp(-progress * 6f) - 0.1f * progress);
@@ -234,7 +234,7 @@ namespace PoSumo.EditorTools
                 float breath = breathBp.Process((float)(rng.NextDouble() * 2 - 1)) * 0.25f;
 
                 float env = Mathf.Min(1f, progress / 0.09f) * Mathf.Exp(-progress * 3.1f);
-                buffer[i] = (voiced + breath) * env;
+                buffer[bufferIndex] = (voiced + breath) * env;
             }
             return Normalize(buffer, 0.8f);
         }
@@ -246,12 +246,12 @@ namespace PoSumo.EditorTools
             float length = 0.5f + variant * 0.12f;
             float[] buffer = New(length);
             var bp = Biquad.BandPass(variant == 0 ? 760f : 520f, 0.55f, SAMPLE_RATE);
-            for (int i = 0; i < buffer.Length; i++)
+            for (int bufferIndex = 0; bufferIndex < buffer.Length; bufferIndex++)
             {
-                float progress = i / (float)buffer.Length;
+                float progress = bufferIndex / (float)buffer.Length;
                 float n = bp.Process((float)(rng.NextDouble() * 2 - 1));
                 float env = Mathf.Sin(progress * Mathf.PI);
-                buffer[i] = n * env * env;
+                buffer[bufferIndex] = n * env * env;
             }
             return Normalize(buffer, 0.42f);
         }
@@ -265,9 +265,9 @@ namespace PoSumo.EditorTools
             var r1 = Biquad.BandPass(420f, 8f, SAMPLE_RATE);
             var r2 = Biquad.BandPass(1250f, 10f, SAMPLE_RATE);
             double phase = 0;
-            for (int i = 0; i < buffer.Length; i++)
+            for (int bufferIndex = 0; bufferIndex < buffer.Length; bufferIndex++)
             {
-                float progress = i / (float)buffer.Length;
+                float progress = bufferIndex / (float)buffer.Length;
                 float hz = 96f + 14f * progress;      // rises as the effort mounts
                 phase += hz / SAMPLE_RATE;
                 if (phase >= 1.0) phase -= 1.0;
@@ -275,7 +275,7 @@ namespace PoSumo.EditorTools
                 float voiced = r1.Process(source) + r2.Process(source) * 0.45f;
                 float jitter = (float)(rng.NextDouble() * 2 - 1) * 0.06f;
                 float env = Mathf.Min(1f, progress / 0.15f) * Mathf.Min(1f, (1f - progress) / 0.25f);
-                buffer[i] = (voiced + jitter) * env;
+                buffer[bufferIndex] = (voiced + jitter) * env;
             }
             return Normalize(buffer, 0.62f);
         }
@@ -297,9 +297,9 @@ namespace PoSumo.EditorTools
                 Biquad.BandPass(2600f, 0.8f, SAMPLE_RATE),
             };
             var rumble = Biquad.LowPass(140f, 0.7f, SAMPLE_RATE);
-            for (int i = 0; i < buffer.Length; i++)
+            for (int bufferIndex = 0; bufferIndex < buffer.Length; bufferIndex++)
             {
-                float t = i / (float)SAMPLE_RATE;
+                float t = bufferIndex / (float)SAMPLE_RATE;
                 float n = (float)(rng.NextDouble() * 2 - 1);
                 float s = 0f;
                 for (int v = 0; v < voices.Length; v++)
@@ -310,7 +310,7 @@ namespace PoSumo.EditorTools
                     s += voices[v].Process(n) * lfo * (1f - v * 0.16f);
                 }
                 s += rumble.Process(n) * 0.6f;
-                buffer[i] = s;
+                buffer[bufferIndex] = s;
             }
             return Normalize(LoopWrap(buffer, 0.35f), 0.5f);
         }
@@ -333,9 +333,9 @@ namespace PoSumo.EditorTools
             }
             var f1 = Biquad.BandPass(480f, 6f, SAMPLE_RATE);
             var f2 = Biquad.BandPass(900f, 7f, SAMPLE_RATE);
-            for (int i = 0; i < buffer.Length; i++)
+            for (int bufferIndex = 0; bufferIndex < buffer.Length; bufferIndex++)
             {
-                float progress = i / (float)buffer.Length;
+                float progress = bufferIndex / (float)buffer.Length;
                 float bend = 1f + 0.11f * Mathf.Sin(progress * Mathf.PI);
                 float source = 0f;
                 for (int v = 0; v < VOICES; v++)
@@ -347,7 +347,7 @@ namespace PoSumo.EditorTools
                 source /= VOICES;
                 float shaped = f1.Process(source) + f2.Process(source) * 0.6f;
                 float env = Mathf.Min(1f, progress / 0.18f) * Mathf.Min(1f, (1f - progress) / 0.4f);
-                buffer[i] = shaped * env;
+                buffer[bufferIndex] = shaped * env;
             }
             return Normalize(buffer, 0.7f);
         }
@@ -358,13 +358,13 @@ namespace PoSumo.EditorTools
             var rng = new System.Random(7200);
             float[] buffer = New(0.55f);
             var bp = Biquad.BandPass(1150f, 0.7f, SAMPLE_RATE);
-            for (int i = 0; i < buffer.Length; i++)
+            for (int bufferIndex = 0; bufferIndex < buffer.Length; bufferIndex++)
             {
-                float progress = i / (float)buffer.Length;
+                float progress = bufferIndex / (float)buffer.Length;
                 float n = bp.Process((float)(rng.NextDouble() * 2 - 1));
                 // Fast in, slow out: the shape of a gasp.
                 float env = Mathf.Min(1f, progress / 0.05f) * Mathf.Exp(-progress * 4.5f);
-                buffer[i] = n * env;
+                buffer[bufferIndex] = n * env;
             }
             return Normalize(buffer, 0.65f);
         }
@@ -385,9 +385,9 @@ namespace PoSumo.EditorTools
             }
             var shout = Biquad.BandPass(950f, 2.2f, SAMPLE_RATE);
             var air = Biquad.BandPass(3000f, 0.6f, SAMPLE_RATE);
-            for (int i = 0; i < buffer.Length; i++)
+            for (int bufferIndex = 0; bufferIndex < buffer.Length; bufferIndex++)
             {
-                float progress = i / (float)buffer.Length;
+                float progress = bufferIndex / (float)buffer.Length;
                 float source = 0f;
                 for (int v = 0; v < VOICES; v++)
                 {
@@ -400,7 +400,7 @@ namespace PoSumo.EditorTools
                 float s = shout.Process(source) * 0.9f + air.Process(n) * 0.55f;
                 // Swell in fast, decay long — a roar peaks early and dies slowly.
                 float env = Mathf.Min(1f, progress / 0.07f) * Mathf.Exp(-progress * 2.2f);
-                buffer[i] = s * env;
+                buffer[bufferIndex] = s * env;
             }
             return Normalize(buffer, 0.85f);
         }
@@ -420,16 +420,16 @@ namespace PoSumo.EditorTools
                 int start = (int)(at * SAMPLE_RATE);
                 float gain = 0.25f + (float)rng.NextDouble() * 0.75f;
                 int clapLength = (int)(0.02f * SAMPLE_RATE);
-                for (int i = 0; i < clapLength && start + i < buffer.Length; i++)
+                for (int clapIndex = 0; clapIndex < clapLength && start + clapIndex < buffer.Length; clapIndex++)
                 {
-                    float t = i / (float)SAMPLE_RATE;
-                    buffer[start + i] += (float)(rng.NextDouble() * 2 - 1)
+                    float t = clapIndex / (float)SAMPLE_RATE;
+                    buffer[start + clapIndex] += (float)(rng.NextDouble() * 2 - 1)
                                        * Mathf.Exp(-t * 260f) * gain;
                 }
             }
-            for (int i = 0; i < buffer.Length; i++)
+            for (int bufferIndex = 0; bufferIndex < buffer.Length; bufferIndex++)
             {
-                buffer[i] = bp.Process(buffer[i]);
+                buffer[bufferIndex] = bp.Process(buffer[bufferIndex]);
             }
             return Normalize(LoopWrap(buffer, 0.3f), 0.6f);
         }
@@ -445,9 +445,9 @@ namespace PoSumo.EditorTools
             float body = 78f + variant * 6f;
             double p1 = 0, p2 = 0;
             var stick = Biquad.BandPass(3400f, 0.8f, SAMPLE_RATE);
-            for (int i = 0; i < buffer.Length; i++)
+            for (int bufferIndex = 0; bufferIndex < buffer.Length; bufferIndex++)
             {
-                float t = i / (float)SAMPLE_RATE;
+                float t = bufferIndex / (float)SAMPLE_RATE;
                 float bendHz = body * (1f + 0.35f * Mathf.Exp(-t * 30f));
                 p1 += 2.0 * Math.PI * bendHz / SAMPLE_RATE;
                 // A drum head's second mode is inharmonic — 1.59x for a circular
@@ -457,7 +457,7 @@ namespace PoSumo.EditorTools
                 float low = (float)Math.Sin(p1) * Mathf.Exp(-t * 5.5f);
                 float mid = (float)Math.Sin(p2) * Mathf.Exp(-t * 13f) * 0.4f;
                 float hit = stick.Process((float)(rng.NextDouble() * 2 - 1)) * Mathf.Exp(-t * 130f) * 0.5f;
-                buffer[i] = (low + mid + hit) * (1f - Mathf.Exp(-t * 3000f));
+                buffer[bufferIndex] = (low + mid + hit) * (1f - Mathf.Exp(-t * 3000f));
             }
             return Normalize(buffer, 0.95f);
         }
@@ -477,21 +477,21 @@ namespace PoSumo.EditorTools
                 float hz = fundamental * partials[p] * (1f + (p % 2 == 0 ? 0.004f : -0.005f));
                 float decay = 1.1f + p * 0.42f;
                 double phase = 0;
-                for (int i = 0; i < buffer.Length; i++)
+                for (int bufferIndex = 0; bufferIndex < buffer.Length; bufferIndex++)
                 {
-                    float t = i / (float)SAMPLE_RATE;
+                    float t = bufferIndex / (float)SAMPLE_RATE;
                     phase += 2.0 * Math.PI * hz / SAMPLE_RATE;
-                    buffer[i] += (float)Math.Sin(phase) * gains[p] * Mathf.Exp(-t * decay);
+                    buffer[bufferIndex] += (float)Math.Sin(phase) * gains[p] * Mathf.Exp(-t * decay);
                 }
             }
             // Strike transient.
             var rng = new System.Random(8500);
             var bp = Biquad.BandPass(2200f, 0.7f, SAMPLE_RATE);
-            for (int i = 0; i < buffer.Length; i++)
+            for (int bufferIndex = 0; bufferIndex < buffer.Length; bufferIndex++)
             {
-                float t = i / (float)SAMPLE_RATE;
-                buffer[i] += bp.Process((float)(rng.NextDouble() * 2 - 1)) * Mathf.Exp(-t * 40f) * 0.5f;
-                buffer[i] *= 1f - Mathf.Exp(-t * 2000f);
+                float t = bufferIndex / (float)SAMPLE_RATE;
+                buffer[bufferIndex] += bp.Process((float)(rng.NextDouble() * 2 - 1)) * Mathf.Exp(-t * 40f) * 0.5f;
+                buffer[bufferIndex] *= 1f - Mathf.Exp(-t * 2000f);
             }
             return Normalize(buffer, 0.95f);
         }
@@ -511,15 +511,15 @@ namespace PoSumo.EditorTools
                 int start = (int)(at * SAMPLE_RATE);
                 int grainLength = (int)(0.006f * SAMPLE_RATE);
                 float gain = 0.3f + (float)rng.NextDouble() * 0.7f;
-                for (int i = 0; i < grainLength && start + i < buffer.Length; i++)
+                for (int grainIndex = 0; grainIndex < grainLength && start + grainIndex < buffer.Length; grainIndex++)
                 {
-                    float t = i / (float)SAMPLE_RATE;
-                    buffer[start + i] += (float)(rng.NextDouble() * 2 - 1) * Mathf.Exp(-t * 700f) * gain;
+                    float t = grainIndex / (float)SAMPLE_RATE;
+                    buffer[start + grainIndex] += (float)(rng.NextDouble() * 2 - 1) * Mathf.Exp(-t * 700f) * gain;
                 }
             }
-            for (int i = 0; i < buffer.Length; i++)
+            for (int bufferIndex = 0; bufferIndex < buffer.Length; bufferIndex++)
             {
-                buffer[i] = hp.Process(buffer[i]);
+                buffer[bufferIndex] = hp.Process(buffer[bufferIndex]);
             }
             return Normalize(buffer, 0.5f);
         }
@@ -536,25 +536,25 @@ namespace PoSumo.EditorTools
             // major nor minor, which keeps it from sounding like a cue.
             float[] tones = { 110f, 165f, 220f };
             float[] gains = { 1f, 0.5f, 0.28f };
-            for (int n = 0; n < tones.Length; n++)
+            for (int toneIndex = 0; toneIndex < tones.Length; toneIndex++)
             {
                 double phase = 0;
-                for (int i = 0; i < buffer.Length; i++)
+                for (int bufferIndex = 0; bufferIndex < buffer.Length; bufferIndex++)
                 {
-                    float t = i / (float)SAMPLE_RATE;
+                    float t = bufferIndex / (float)SAMPLE_RATE;
                     // Slow vibrato at an irrational rate per voice so the drone
                     // never lands back in phase across the loop.
-                    float hz = tones[n] * (1f + 0.0025f * Mathf.Sin(t * (0.7f + n * 0.31f) * Mathf.PI * 2f));
+                    float hz = tones[toneIndex] * (1f + 0.0025f * Mathf.Sin(t * (0.7f + toneIndex * 0.31f) * Mathf.PI * 2f));
                     phase += 2.0 * Math.PI * hz / SAMPLE_RATE;
-                    buffer[i] += (float)Math.Sin(phase) * gains[n] * 0.32f;
+                    buffer[bufferIndex] += (float)Math.Sin(phase) * gains[toneIndex] * 0.32f;
                 }
             }
             var air = Biquad.BandPass(1500f, 0.5f, SAMPLE_RATE);
-            for (int i = 0; i < buffer.Length; i++)
+            for (int bufferIndex = 0; bufferIndex < buffer.Length; bufferIndex++)
             {
-                float t = i / (float)SAMPLE_RATE;
+                float t = bufferIndex / (float)SAMPLE_RATE;
                 float breath = 0.55f + 0.45f * Mathf.Sin(t * 0.25f * Mathf.PI * 2f);
-                buffer[i] += air.Process((float)(rng.NextDouble() * 2 - 1)) * 0.14f * breath;
+                buffer[bufferIndex] += air.Process((float)(rng.NextDouble() * 2 - 1)) * 0.14f * breath;
             }
             return Normalize(LoopWrap(buffer, 0.5f), 0.55f);
         }
@@ -608,22 +608,22 @@ namespace PoSumo.EditorTools
             // tension; nothing else has to do any work.
             float[] tones = { 880f, 932.33f, 1318.5f };
             var rng = new System.Random(9500);
-            for (int n = 0; n < tones.Length; n++)
+            for (int toneIndex = 0; toneIndex < tones.Length; toneIndex++)
             {
                 double phase = 0;
-                float tremoloHz = 5.5f + n * 1.3f;
-                for (int i = 0; i < buffer.Length; i++)
+                float tremoloHz = 5.5f + toneIndex * 1.3f;
+                for (int bufferIndex = 0; bufferIndex < buffer.Length; bufferIndex++)
                 {
-                    float t = i / (float)SAMPLE_RATE;
-                    phase += 2.0 * Math.PI * tones[n] / SAMPLE_RATE;
+                    float t = bufferIndex / (float)SAMPLE_RATE;
+                    phase += 2.0 * Math.PI * tones[toneIndex] / SAMPLE_RATE;
                     float tremolo = 0.55f + 0.45f * Mathf.Sin(t * tremoloHz * Mathf.PI * 2f);
-                    buffer[i] += (float)Math.Sin(phase) * tremolo * 0.2f;
+                    buffer[bufferIndex] += (float)Math.Sin(phase) * tremolo * 0.2f;
                 }
             }
             var air = Biquad.HighPass(5000f, 0.7f, SAMPLE_RATE);
-            for (int i = 0; i < buffer.Length; i++)
+            for (int bufferIndex = 0; bufferIndex < buffer.Length; bufferIndex++)
             {
-                buffer[i] += air.Process((float)(rng.NextDouble() * 2 - 1)) * 0.05f;
+                buffer[bufferIndex] += air.Process((float)(rng.NextDouble() * 2 - 1)) * 0.05f;
             }
             return Normalize(LoopWrap(buffer, 0.4f), 0.45f);
         }
@@ -631,16 +631,16 @@ namespace PoSumo.EditorTools
         private static void AddHit(float[] buffer, float atSeconds, float[] hit, float gain)
         {
             int start = (int)(atSeconds * SAMPLE_RATE);
-            for (int i = 0; i < hit.Length; i++)
+            for (int hitIndex = 0; hitIndex < hit.Length; hitIndex++)
             {
                 // Wrap rather than clip: a drum struck near the end of the loop
                 // must ring over the loop point, or every repeat has a hole in it.
-                int index = (start + i) % buffer.Length;
+                int index = (start + hitIndex) % buffer.Length;
                 if (index < 0)
                 {
                     continue;
                 }
-                buffer[index] += hit[i] * gain;
+                buffer[index] += hit[hitIndex] * gain;
             }
         }
 
@@ -651,8 +651,8 @@ namespace PoSumo.EditorTools
         private static float[] Mix(float[] a, float[] b, float bGain)
         {
             float[] result = new float[Mathf.Max(a.Length, b.Length)];
-            for (int i = 0; i < a.Length; i++) result[i] += a[i];
-            for (int i = 0; i < b.Length; i++) result[i] += b[i] * bGain;
+            for (int index = 0; index < a.Length; index++) result[index] += a[index];
+            for (int index = 0; index < b.Length; index++) result[index] += b[index] * bGain;
             return Normalize(result, 0.95f);
         }
 
@@ -669,10 +669,10 @@ namespace PoSumo.EditorTools
             int length = buffer.Length - fade;
             float[] result = new float[length];
             Array.Copy(buffer, result, length);
-            for (int i = 0; i < fade; i++)
+            for (int fadeIndex = 0; fadeIndex < fade; fadeIndex++)
             {
-                float t = i / (float)fade;
-                result[i] = Mathf.Lerp(buffer[length + i], buffer[i], t);
+                float t = fadeIndex / (float)fade;
+                result[fadeIndex] = Mathf.Lerp(buffer[length + fadeIndex], buffer[fadeIndex], t);
             }
             return result;
         }
@@ -680,9 +680,9 @@ namespace PoSumo.EditorTools
         private static float[] Normalize(float[] buffer, float peak)
         {
             float max = 0f;
-            for (int i = 0; i < buffer.Length; i++)
+            for (int bufferIndex = 0; bufferIndex < buffer.Length; bufferIndex++)
             {
-                float a = Mathf.Abs(buffer[i]);
+                float a = Mathf.Abs(buffer[bufferIndex]);
                 if (a > max) max = a;
             }
             if (max < 1e-6f)
@@ -690,9 +690,9 @@ namespace PoSumo.EditorTools
                 return buffer;
             }
             float scale = peak / max;
-            for (int i = 0; i < buffer.Length; i++)
+            for (int bufferIndex = 0; bufferIndex < buffer.Length; bufferIndex++)
             {
-                buffer[i] *= scale;
+                buffer[bufferIndex] *= scale;
             }
             return buffer;
         }
@@ -717,9 +717,9 @@ namespace PoSumo.EditorTools
                 writer.Write((short)16);          // bits per sample
                 writer.Write(new[] { 'd', 'a', 't', 'a' });
                 writer.Write(dataBytes);
-                for (int i = 0; i < samples.Length; i++)
+                for (int sampleIndex = 0; sampleIndex < samples.Length; sampleIndex++)
                 {
-                    writer.Write((short)(Mathf.Clamp(samples[i], -1f, 1f) * short.MaxValue));
+                    writer.Write((short)(Mathf.Clamp(samples[sampleIndex], -1f, 1f) * short.MaxValue));
                 }
             }
             return 1;

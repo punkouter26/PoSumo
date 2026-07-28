@@ -12,7 +12,7 @@ namespace PoSumo
     /// smoothed (~2 s) so the face doesn't flicker. Sprites load from
     /// Resources (Matt_neutral / Matt_happy1-3 / Matt_sad1-3). Spawned by
     /// Systems_GameMatchManager.
-    public class Systems_FaceMood : MonoBehaviour
+    public sealed class Systems_FaceMood : MonoBehaviour
     {
         [Tooltip("Behavior name of the fighter whose face reacts.")]
         public string fighterBehaviorName = "Matt";
@@ -30,49 +30,49 @@ namespace PoSumo
 
         // Fallback for characters with no face names on their definition asset
         // (Matt predates the per-character face fields).
-        const string FALLBACK_NEUTRAL = "Matt_neutral";
-        static readonly string[] FallbackHappy =
+        private const string FALLBACK_NEUTRAL = "Matt_neutral";
+        private static readonly string[] FallbackHappy =
         {
             "Matt_happy1",
             "Matt_happy2",
             "Matt_happy3",
         };
-        static readonly string[] FallbackSad =
+        private static readonly string[] FallbackSad =
         {
             "Matt_sad1",
             "Matt_sad2",
             "Matt_sad3",
         };
 
-        Systems_GameMatchManager _manager;
-        Systems_FightHud _hud;
-        Agent_Biped _fighter;
-        Agent_BipedBody _body;
-        bool _fighterIsA;
+        private Systems_GameMatchManager _manager;
+        private Systems_FightHud _hud;
+        private Agent_Biped _fighter;
+        private Agent_BipedBody _body;
+        private bool _fighterIsA;
 
-        Sprite _neutral;
-        Sprite[] _happy, _sad;
+        private Sprite _neutral;
+        private Sprite[] _happy, _sad;
 
-        float _smoothedDom = 50f;
-        int _displayLevel;         // -3 (sad3) .. 0 (neutral) .. +3 (happy3), moves ±1 per step
-        float _nextStepTime;
-        Sprite _current;
+        private float _smoothedDom = 50f;
+        private int _displayLevel;         // -3 (sad3) .. 0 (neutral) .. +3 (happy3), moves ±1 per step
+        private float _nextStepTime;
+        private Sprite _current;
 
-        int _flashLevel;
-        float _flashUntil;
-        bool _flashActive;
-        bool _holdActive;          // match-over face, kept until rematch
-        int _holdLevel;
-        bool _wasDown;
-        float _kdRearmTime;
+        private int _flashLevel;
+        private float _flashUntil;
+        private bool _flashActive;
+        private bool _holdActive;          // match-over face, kept until rematch
+        private int _holdLevel;
+        private bool _wasDown;
+        private float _kdRearmTime;
 
-        float _lastInterestTime;   // last flash/round event/mood shift
-        float _idleDelay;          // rolled 15-30 s after each interesting moment
-        int _idleFlourishes;
-        int _lastMoodTarget;
-        const float FLOURISH_SECONDS = 0.9f; // ladder rides up, holds a beat, walks back
+        private float _lastInterestTime;   // last flash/round event/mood shift
+        private float _idleDelay;          // rolled 15-30 s after each interesting moment
+        private int _idleFlourishes;
+        private int _lastMoodTarget;
+        private const float FLOURISH_SECONDS = 0.9f; // ladder rides up, holds a beat, walks back
 
-        void Start()
+        private void Start()
         {
             _manager = FindAnyObjectByType<Systems_GameMatchManager>();
             _hud = FindAnyObjectByType<Systems_FightHud>();
@@ -105,12 +105,12 @@ namespace PoSumo
             _happy = new Sprite[happyNames.Length];
             _sad = new Sprite[sadNames.Length];
             int loaded = _neutral != null ? 1 : 0;
-            for (int i = 0; i < happyNames.Length; i++)
+            for (int happyNameIndex = 0; happyNameIndex < happyNames.Length; happyNameIndex++)
             {
-                _happy[i] = Resources.Load<Sprite>(happyNames[i]);
-                _sad[i] = Resources.Load<Sprite>(sadNames[i]);
-                if (_happy[i] != null) loaded++;
-                if (_sad[i] != null) loaded++;
+                _happy[happyNameIndex] = Resources.Load<Sprite>(happyNames[happyNameIndex]);
+                _sad[happyNameIndex] = Resources.Load<Sprite>(sadNames[happyNameIndex]);
+                if (_happy[happyNameIndex] != null) loaded++;
+                if (_sad[happyNameIndex] != null) loaded++;
             }
             if (loaded < 7)
             {
@@ -126,7 +126,7 @@ namespace PoSumo
             Apply(LevelSprite(0));
         }
 
-        void OnDisable()
+        private void OnDisable()
         {
             if (_manager != null)
             {
@@ -137,7 +137,7 @@ namespace PoSumo
             }
         }
 
-        void MarkInterest()
+        private void MarkInterest()
         {
             _lastInterestTime = Time.unscaledTime;
             _idleDelay = Random.Range(idleMinSeconds, idleMaxSeconds);
@@ -148,7 +148,7 @@ namespace PoSumo
         /// happy2, clinching happy3 — which is what actually gets the middle
         /// expressions on screen. Rounds are far too short for in-round dominance
         /// drift to reach them on its own.
-        void OnRoundEnded(Agent_Biped winner, Agent_Biped loser)
+        private void OnRoundEnded(Agent_Biped winner, Agent_Biped loser)
         {
             int margin = MarginForFighter();
             int level = Mathf.Clamp(Mathf.Abs(margin), 1, 3);
@@ -157,7 +157,7 @@ namespace PoSumo
         }
 
         /// Score margin from this fighter's point of view, after the round.
-        int MarginForFighter()
+        private int MarginForFighter()
         {
             if (_manager == null) return 1;
             int mine = _fighterIsA ? _manager.ScoreA : _manager.ScoreB;
@@ -166,13 +166,13 @@ namespace PoSumo
             return margin == 0 ? 1 : margin;
         }
 
-        void OnMatchEnded(Agent_Biped winner)
+        private void OnMatchEnded(Agent_Biped winner)
         {
             _holdActive = true;
             _holdLevel = winner == _fighter ? 3 : -3;
         }
 
-        void OnMatchReset()
+        private void OnMatchReset()
         {
             _holdActive = false;
             _flashActive = false;
@@ -181,7 +181,7 @@ namespace PoSumo
             MarkInterest();
         }
 
-        void Flash(int level, float seconds)
+        private void Flash(int level, float seconds)
         {
             _flashLevel = level;
             _flashActive = true;
@@ -189,7 +189,7 @@ namespace PoSumo
             MarkInterest();
         }
 
-        void Update()
+        private void Update()
         {
             if (_fighter == null || _body == null) return;
 
@@ -239,7 +239,7 @@ namespace PoSumo
             }
         }
 
-        static int MoodLevel(float dom)
+        private static int MoodLevel(float dom)
         {
             if (dom >= 76f) return 3;
             if (dom >= 66f) return 2;
@@ -250,14 +250,14 @@ namespace PoSumo
             return 0;
         }
 
-        Sprite LevelSprite(int level)
+        private Sprite LevelSprite(int level)
         {
             if (level > 0) return _happy[level - 1];
             if (level < 0) return _sad[-level - 1];
             return _neutral;
         }
 
-        void Apply(Sprite s)
+        private void Apply(Sprite s)
         {
             if (s == null || s == _current) return;
             _current = s;

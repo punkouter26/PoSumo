@@ -168,7 +168,7 @@ namespace PoSumo.EditorTools
             CopyInto(source, behaviorName, agentFolder, "walk brain", walkSlot: true);
         }
 
-        static void CopyInto(string source, string behaviorName, string agentFolder, string note,
+        private static void CopyInto(string source, string behaviorName, string agentFolder, string note,
                              bool walkSlot = false)
         {
             Directory.CreateDirectory(agentFolder);

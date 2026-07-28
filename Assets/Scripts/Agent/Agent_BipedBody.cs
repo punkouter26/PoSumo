@@ -10,7 +10,7 @@ namespace PoSumo
     /// Right-facing geometry is defined once; facingSign = -1 mirrors it.
     /// All colliders of the same biped ignore each other (limbs pass through
     /// their own body) but still collide with the ground and the opponent.
-    public class Agent_BipedBody : MonoBehaviour
+    public sealed class Agent_BipedBody : MonoBehaviour
     {
         [Tooltip("Character sheet; when set, overrides teamColor/headSprite/body scales at Awake.")]
         public Agent_CharacterDefinition character;
@@ -22,7 +22,7 @@ namespace PoSumo
         /// this one colour for near/far depth; it never introduces a second hue, so
         /// a wrestler always reads as a single identifiable colour.
         public Color teamColor = new Color(0.85f, 0.25f, 0.2f);
-        bool _faceArtFacesLeft;
+        private bool _faceArtFacesLeft;
 
         [Header("Build (1 = Matt's lightweight baseline)")]
         [Tooltip("Multiplies every part's mass. Heavyweight sumo ~2.")]
@@ -84,23 +84,23 @@ namespace PoSumo
         // Spawn clearance above contact surfaces: enough to avoid frame-0
         // interpenetration, small enough that the feet are effectively already
         // planted when physics starts (a taller drop costs balance).
-        const float SPAWN_CLEARANCE = 0.01f;
-        const float MAX_ANGULAR_VELOCITY = 1080f; // deg/s clamp against physics blow-up
+        private const float SPAWN_CLEARANCE = 0.01f;
+        private const float MAX_ANGULAR_VELOCITY = 1080f; // deg/s clamp against physics blow-up
         // Art is drawn at EXACTLY collider size. An earlier version oversized it to
         // hide the seams between segments, but that made the drawing lie about the
         // physics: a limb appeared to touch the opponent while the colliders were
         // still apart. Accuracy wins — the drawn edge is the edge that collides.
-        const float ART_OVERLAP = 1f;
+        private const float ART_OVERLAP = 1f;
 
-        float[] _maxSpeed;   // deg/s per joint
-        float[] _maxTorque;
-        Vector3[] _initialLocalPos;
-        Quaternion[] _initialLocalRot;
-        Rigidbody2D[] _thighs;
-        float _headCellW, _headCellH; // chest local scale the head must compensate for
+        private float[] _maxSpeed;   // deg/s per joint
+        private float[] _maxTorque;
+        private Vector3[] _initialLocalPos;
+        private Quaternion[] _initialLocalRot;
+        private Rigidbody2D[] _thighs;
+        private float _headCellW, _headCellH; // chest local scale the head must compensate for
 
-        static Sprite _boxSprite, _torsoSprite, _circleSprite, _squareSprite;
-        static PhysicsMaterial2D _footMat, _bodyMat;
+        private static Sprite _boxSprite, _torsoSprite, _circleSprite, _squareSprite;
+        private static PhysicsMaterial2D _footMat, _bodyMat;
 
         /// Passive joint resistance, as a fraction of each joint's own motor
         /// budget. HingeJoint2D has no spring — that is a 3D-joint feature — so it
@@ -111,8 +111,8 @@ namespace PoSumo
         /// oscillation, without giving the policy something it has to overpower to
         /// move. Before this, every joint was either motor-driven or completely
         /// free, which is why unheld limbs swung like a pendulum.
-        const float PASSIVE_STIFFNESS_FRAC = 0.06f;   // of max torque at 90 deg off neutral
-        const float PASSIVE_DAMPING_FRAC = 0.10f;     // of max torque at 400 deg/s
+        private const float PASSIVE_STIFFNESS_FRAC = 0.06f;   // of max torque at 90 deg off neutral
+        private const float PASSIVE_DAMPING_FRAC = 0.10f;     // of max torque at 400 deg/s
 
         // NOT YET IMPLEMENTED: passive neck.
         //
@@ -129,7 +129,7 @@ namespace PoSumo
         // and resets Parts[]. A neck wired in halfway leaves the head still
         // simulating after the match-end freeze. It needs its own pass.
 
-        struct PartDef
+        private struct PartDef
         {
             public string name; public float w, h, mass, x, y;
             public bool circle, isFoot; public int sorting; public float tint;
@@ -138,7 +138,7 @@ namespace PoSumo
             { name = n; w = w_; h = h_; mass = m; x = x_; y = y_; sorting = sort; tint = tint_; circle = circ; isFoot = foot; }
         }
 
-        struct JointDef
+        private struct JointDef
         {
             public int child, parent; public float ax, ay, min, max, torque, speed;
             public JointDef(int c, int p, float ax_, float ay_, float mn, float mx, float t, float s)
@@ -162,7 +162,7 @@ namespace PoSumo
         // The legs grew 0.084 m and the trunk gave back 0.043, so standing height
         // rises only ~2%. The whole chain below is derived from those lengths:
         // change a segment and the joint anchors above it must move with it.
-        static readonly PartDef[] PART_DEFS =
+        private static readonly PartDef[] PART_DEFS =
         {
             new PartDef("Pelvis",    0.32f,  0.18f,  11f,  0f,    1.054f,  0, 1f),
             new PartDef("ThighNear", 0.14f,  0.431f,  7f,  0f,    0.749f,  2, 0.95f),
@@ -217,7 +217,7 @@ namespace PoSumo
         //   spine    400 -> 180 each (540 total, still generous for a sumo)
         //   shoulder 150 -> 80  (human ~50-100)
         //   elbow    100 -> 60  (human ~50-70)
-        static readonly JointDef[] JOINT_DEFS =
+        private static readonly JointDef[] JOINT_DEFS =
         {
             new JointDef(1, 0,  0f, 0.964f,-120f,  30f, 300f, 400f), // hip near
             new JointDef(2, 1,  0f, 0.533f,   0f, 150f, 250f, 500f), // knee near
@@ -234,7 +234,7 @@ namespace PoSumo
             new JointDef(13,12, 0f, 1.144f,-150f,   0f,  60f, 500f), // elbow far
         };
 
-        void Awake()
+        private void Awake()
         {
             if (character != null)
             {
@@ -286,11 +286,11 @@ namespace PoSumo
                     wrapMode = TextureWrapMode.Clamp,
                     filterMode = FilterMode.Bilinear,
                 };
-                for (int y = 0; y < S; y++)
+                for (int rowIndex = 0; rowIndex < S; rowIndex++)
                 {
-                    for (int x = 0; x < S; x++)
+                    for (int columnIndex = 0; columnIndex < S; columnIndex++)
                     {
-                        tex.SetPixel(x, y, Color.white);
+                        tex.SetPixel(columnIndex, rowIndex, Color.white);
                     }
                 }
                 tex.Apply();
@@ -300,7 +300,7 @@ namespace PoSumo
             return _squareSprite;
         }
 
-        static Sprite RoundedSprite(ref Sprite cache, float radiusFraction)
+        private static Sprite RoundedSprite(ref Sprite cache, float radiusFraction)
         {
             if (cache == null)
             {
@@ -313,16 +313,16 @@ namespace PoSumo
                 };
                 float half = S * 0.5f;
                 float inner = half - RADIUS;
-                for (int y = 0; y < S; y++)
+                for (int rowIndex = 0; rowIndex < S; rowIndex++)
                 {
-                    for (int x = 0; x < S; x++)
+                    for (int columnIndex = 0; columnIndex < S; columnIndex++)
                     {
                         // Distance to the rounded-rect boundary, in pixels.
-                        float dx = Mathf.Max(Mathf.Abs(x + 0.5f - half) - inner, 0f);
-                        float dy = Mathf.Max(Mathf.Abs(y + 0.5f - half) - inner, 0f);
+                        float dx = Mathf.Max(Mathf.Abs(columnIndex + 0.5f - half) - inner, 0f);
+                        float dy = Mathf.Max(Mathf.Abs(rowIndex + 0.5f - half) - inner, 0f);
                         float distance = Mathf.Sqrt(dx * dx + dy * dy);
                         float alpha = Mathf.Clamp01((RADIUS - distance) / 1.5f);
-                        tex.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+                        tex.SetPixel(columnIndex, rowIndex, new Color(1f, 1f, 1f, alpha));
                     }
                 }
                 tex.Apply();
@@ -339,11 +339,11 @@ namespace PoSumo
                 const int S = 64;
                 var tex = new Texture2D(S, S, TextureFormat.RGBA32, false);
                 float r = S / 2f - 1f;
-                for (int y = 0; y < S; y++)
-                    for (int x = 0; x < S; x++)
+                for (int rowIndex = 0; rowIndex < S; rowIndex++)
+                    for (int columnIndex = 0; columnIndex < S; columnIndex++)
                     {
-                        float d = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), new Vector2(S / 2f, S / 2f));
-                        tex.SetPixel(x, y, d <= r ? Color.white : Color.clear);
+                        float d = Vector2.Distance(new Vector2(columnIndex + 0.5f, rowIndex + 0.5f), new Vector2(S / 2f, S / 2f));
+                        tex.SetPixel(columnIndex, rowIndex, d <= r ? Color.white : Color.clear);
                     }
                 tex.Apply();
                 _circleSprite = Sprite.Create(tex, new Rect(0, 0, S, S), new Vector2(0.5f, 0.5f), S);
@@ -351,7 +351,7 @@ namespace PoSumo
             return _circleSprite;
         }
 
-        void Build()
+        private void Build()
         {
             if (_footMat == null)
             {
@@ -368,9 +368,9 @@ namespace PoSumo
             bool IsTorsoPart(string name) =>
                 name == "Pelvis" || name == "LowerBack" || name == "UpperBack" || name == "Chest";
 
-            for (int i = 0; i < n; i++)
+            for (int index = 0; index < n; index++)
             {
-                var d = PART_DEFS[i];
+                var d = PART_DEFS[index];
                 var go = new GameObject(d.name);
                 go.transform.SetParent(transform, false);
                 go.transform.localPosition = new Vector3(d.x * facingSign, d.y + SPAWN_CLEARANCE, 0);
@@ -405,7 +405,7 @@ namespace PoSumo
                 // the sweat/clay terms apply; the per-part tint stays on the
                 // renderer, which costs no extra material.
                 sr.sharedMaterial = BodyMaterial;
-                ArtRenderers[i] = sr;
+                ArtRenderers[index] = sr;
 
 
                 var rb = go.AddComponent<Rigidbody2D>();
@@ -438,7 +438,7 @@ namespace PoSumo
                 col.sharedMaterial = d.isFoot ? _footMat : _bodyMat;
                 AllColliders.Add(col);
 
-                Parts[i] = rb;
+                Parts[index] = rb;
                 if (d.name.StartsWith("Thigh")) thighs.Add(rb);
 
                 // Soft-tissue lag on the trunk. Lives on the Art child, which
@@ -453,7 +453,7 @@ namespace PoSumo
                     jiggle.amplitude = 0.055f * widthScale * Mathf.Sqrt(massScale);
                 }
 
-                if (i == 0) Torso = rb; // pelvis: root mass, ring-out tracking
+                if (index == 0) Torso = rb; // pelvis: root mass, ring-out tracking
 
                 if (d.name == "Chest")
                 {
@@ -552,9 +552,9 @@ namespace PoSumo
             Joints = new HingeJoint2D[JOINT_DEFS.Length];
             _maxSpeed = new float[JOINT_DEFS.Length];
             _maxTorque = new float[JOINT_DEFS.Length];
-            for (int j = 0; j < JOINT_DEFS.Length; j++)
+            for (int jointDefIndex = 0; jointDefIndex < JOINT_DEFS.Length; jointDefIndex++)
             {
-                var d = JOINT_DEFS[j];
+                var d = JOINT_DEFS[jointDefIndex];
                 var child = Parts[d.child];
                 var parent = Parts[d.parent];
                 var joint = child.gameObject.AddComponent<HingeJoint2D>();
@@ -574,9 +574,9 @@ namespace PoSumo
                 joint.useMotor = true;
                 var m = joint.motor; m.maxMotorTorque = d.torque * torqueScale; m.motorSpeed = 0; joint.motor = m;
 
-                Joints[j] = joint;
-                _maxSpeed[j] = d.speed;
-                _maxTorque[j] = d.torque * torqueScale;
+                Joints[jointDefIndex] = joint;
+                _maxSpeed[jointDefIndex] = d.speed;
+                _maxTorque[jointDefIndex] = d.torque * torqueScale;
             }
 
             // Self-pass-through: ignore every collider pair within this biped.
@@ -587,10 +587,10 @@ namespace PoSumo
             // Record spawn pose for resets.
             _initialLocalPos = new Vector3[n];
             _initialLocalRot = new Quaternion[n];
-            for (int i = 0; i < n; i++)
+            for (int index = 0; index < n; index++)
             {
-                _initialLocalPos[i] = Parts[i].transform.localPosition;
-                _initialLocalRot[i] = Parts[i].transform.localRotation;
+                _initialLocalPos[index] = Parts[index].transform.localPosition;
+                _initialLocalRot[index] = Parts[index].transform.localRotation;
             }
 
             // Soft contact shadow so the body reads as grounded.
@@ -606,12 +606,12 @@ namespace PoSumo
         public void ResetPose()
         {
             RestoreMotors();   // a limp body from last round must drive again
-            for (int i = 0; i < Parts.Length; i++)
+            for (int partIndex = 0; partIndex < Parts.Length; partIndex++)
             {
-                Parts[i].transform.localPosition = _initialLocalPos[i];
-                Parts[i].transform.localRotation = _initialLocalRot[i];
-                Parts[i].linearVelocity = Vector2.zero;
-                Parts[i].angularVelocity = 0f;
+                Parts[partIndex].transform.localPosition = _initialLocalPos[partIndex];
+                Parts[partIndex].transform.localRotation = _initialLocalRot[partIndex];
+                Parts[partIndex].linearVelocity = Vector2.zero;
+                Parts[partIndex].angularVelocity = 0f;
             }
             // Tiny random kick on the thighs so left/right symmetry breaks.
             foreach (var t in _thighs)
@@ -703,9 +703,9 @@ namespace PoSumo
         /// order has been reordered before and hardcoded indices went stale silently.
         public static int JointIndexForChild(int childPart)
         {
-            for (int j = 0; j < JOINT_DEFS.Length; j++)
+            for (int jointDefIndex = 0; jointDefIndex < JOINT_DEFS.Length; jointDefIndex++)
             {
-                if (JOINT_DEFS[j].child == childPart) return j;
+                if (JOINT_DEFS[jointDefIndex].child == childPart) return jointDefIndex;
             }
             return -1;
         }
@@ -759,9 +759,9 @@ namespace PoSumo
         /// Clamp all body-part angular velocities against physics destabilization.
         public void ClampAngularVelocities()
         {
-            for (int i = 0; i < Parts.Length; i++)
-                Parts[i].angularVelocity =
-                    Mathf.Clamp(Parts[i].angularVelocity, -MAX_ANGULAR_VELOCITY, MAX_ANGULAR_VELOCITY);
+            for (int partIndex = 0; partIndex < Parts.Length; partIndex++)
+                Parts[partIndex].angularVelocity =
+                    Mathf.Clamp(Parts[partIndex].angularVelocity, -MAX_ANGULAR_VELOCITY, MAX_ANGULAR_VELOCITY);
         }
 
         // A destroyed HingeJoint2D throws on every read, and Agent_Biped's
@@ -788,17 +788,17 @@ namespace PoSumo
         /// per DecisionPeriod (3 steps here), and passive tissue does not take
         /// turns. Equal and opposite on the connected body so the pair stays an
         /// internal force and cannot push the fighter around by itself.
-        void FixedUpdate()
+        private void FixedUpdate()
         {
             if (Joints == null || _maxTorque == null) return;
-            for (int j = 0; j < Joints.Length; j++)
+            for (int jointIndex = 0; jointIndex < Joints.Length; jointIndex++)
             {
-                HingeJoint2D joint = Joints[j];
+                HingeJoint2D joint = Joints[jointIndex];
                 if (joint == null || !joint.enabled) continue;
                 Rigidbody2D child = joint.attachedRigidbody;
                 if (child == null || !child.simulated) continue;
 
-                float budget = _maxTorque[j];
+                float budget = _maxTorque[jointIndex];
                 float stiffness = budget * PASSIVE_STIFFNESS_FRAC / 90f;   // N-m per degree
                 float damping = budget * PASSIVE_DAMPING_FRAC / 400f;      // N-m per deg/s
                 float torque = -(joint.jointAngle * stiffness + joint.jointSpeed * damping);

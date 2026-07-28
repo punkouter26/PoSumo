@@ -15,7 +15,7 @@ namespace PoSumo
     ///  - extended (44 obs: +opponent uprightness/down/edge, period 3) — Matt's
     ///    technique brain, trained with the stance/gait/impact shaping below.
     [RequireComponent(typeof(Agent_BipedBody))]
-    public class Agent_Biped : Agent
+    public sealed class Agent_Biped : Agent
     {
         public enum Mode { Walk, Sumo, Recover }
 
@@ -75,30 +75,30 @@ namespace PoSumo
         /// Last motor commands as sent to the joints (for HUD display).
         [System.NonSerialized] public float[] LastActions = new float[ActionCount];
 
-        Agent_BipedBody _b;
-        Agent_BipedBody _opponentBody;
-        readonly float[] _prevActions = new float[ActionCount];
-        float _pendingImpact;
-        float _lastTorsoY;
-        int _lastSinglePlant;
-        float _lastStepTime;
+        private Agent_BipedBody _b;
+        private Agent_BipedBody _opponentBody;
+        private readonly float[] _prevActions = new float[ActionCount];
+        private float _pendingImpact;
+        private float _lastTorsoY;
+        private int _lastSinglePlant;
+        private float _lastStepTime;
 
         // Sumo reward coefficients — defaults here; overridden by `character`.
-        float _rUpright = 0.0005f, _rClosing = 0.0006f, _rLunge = 0.001f, _lungeThresh = 1.5f;
-        float _rImpact = 0.01f, _impactCap = 8f, _rKnee = 0.0004f, _rHips = 0.0003f;
-        float _rCadence = 0.0015f, _rRise = 0.02f, _pEnergy = 0.0004f, _pJerk = 0.0003f;
-        float _bendFloor = 0.3f;
+        private float _rUpright = 0.0005f, _rClosing = 0.0006f, _rLunge = 0.001f, _lungeThresh = 1.5f;
+        private float _rImpact = 0.01f, _impactCap = 8f, _rKnee = 0.0004f, _rHips = 0.0003f;
+        private float _rCadence = 0.0015f, _rRise = 0.02f, _pEnergy = 0.0004f, _pJerk = 0.0003f;
+        private float _bendFloor = 0.3f;
         // New in the realism pass. Unlike the coefficients above these do NOT
         // default to the constant the branch used before, because there was no
         // such constant — neither term existed. They are deliberate behavioural
         // change and every fighter needs a corrective run to pick them up.
-        float _pEffort = 0.0015f, _rStance = 0.0009f;
+        private float _pEffort = 0.0015f, _rStance = 0.0009f;
 
         // Walk-school coefficients — defaults are the constants this branch used
         // before they became per-character, so an unassigned character trains the
         // identical gait it always did.
-        float _wForward = 0.004f, _wStanceFloor = 0.15f, _wBend = 0.0006f;
-        float _wUpright = 0.001f, _wCadence = 0.002f, _wEnergy = 0.0003f, _wStall = 0.0008f;
+        private float _wForward = 0.004f, _wStanceFloor = 0.15f, _wBend = 0.0006f;
+        private float _wUpright = 0.001f, _wCadence = 0.002f, _wEnergy = 0.0003f, _wStall = 0.0008f;
 
         protected override void Awake()
         {
@@ -172,7 +172,7 @@ namespace PoSumo
             _lastTorsoY = _b.Torso.position.y;
             _lastSinglePlant = 0;
             _lastStepTime = 0f;
-            for (int j = 0; j < ActionCount; j++) _prevActions[j] = 0f;
+            for (int actionIndex = 0; actionIndex < ActionCount; actionIndex++) _prevActions[actionIndex] = 0f;
 
             // Recovery school: episodes may start with a knockdown shove. The
             // trainer's curriculum ramps the chance — gentle standing starts
@@ -190,7 +190,7 @@ namespace PoSumo
             }
         }
 
-        float Fs => _b.facingSign;
+        private float Fs => _b.facingSign;
         public Rigidbody2D Torso => _b.Torso;
         public float TorsoX => Torso.position.x;
         public bool IsDown => NonFootGroundContacts > 0;
@@ -201,8 +201,8 @@ namespace PoSumo
             _pendingImpact += relativeSpeed;
         }
 
-        Unity.InferenceEngine.ModelAsset _fightModel;
-        float _savedCenterX;
+        private Unity.InferenceEngine.ModelAsset _fightModel;
+        private float _savedCenterX;
 
         /// Round-opening walk-in: borrow the locomotion brain and walk toward
         /// targetX (the opponent). The fight brain takes back over via
@@ -239,7 +239,7 @@ namespace PoSumo
         }
 
         /// NaN/Inf sanitization guard for every value submitted to the model.
-        static float San(float v) => float.IsFinite(v) ? v : 0f;
+        private static float San(float v) => float.IsFinite(v) ? v : 0f;
 
         public override void CollectObservations(VectorSensor sensor)
         {
@@ -253,10 +253,10 @@ namespace PoSumo
             sensor.AddObservation(San(lean * Fs / 180f));                         // 1
             sensor.AddObservation(San(_b.Chest.angularVelocity * Fs / 500f));     // 1
 
-            for (int j = 0; j < ActionCount; j++)                                 // 26
+            for (int actionIndex = 0; actionIndex < ActionCount; actionIndex++)                                 // 26
             {
-                sensor.AddObservation(San(_b.JointAngleNorm(j)));
-                sensor.AddObservation(San(_b.JointSpeedNorm(j)));
+                sensor.AddObservation(San(_b.JointAngleNorm(actionIndex)));
+                sensor.AddObservation(San(_b.JointSpeedNorm(actionIndex)));
             }
 
             Vector2 fn = _b.FootNear.position - tp;                               // 4
@@ -307,14 +307,14 @@ namespace PoSumo
         }
 
         /// Mean knee flexion mapped to 0..1 (1 = both knees bent 60°+).
-        float KneeBendFactor()
+        private float KneeBendFactor()
         {
             float near = Mathf.Clamp01(_b.JointAngleNorm(1) * 180f / 60f);
             float far = Mathf.Clamp01(_b.JointAngleNorm(4) * 180f / 60f);
             return (near + far) * 0.5f;
         }
 
-        float HipsLowFactor() => Mathf.Clamp01((0.95f - San(Torso.position.y)) / 0.3f);
+        private float HipsLowFactor() => Mathf.Clamp01((0.95f - San(Torso.position.y)) / 0.3f);
 
         /// How much this looks like a sumo stance, 0..1: both feet planted, and
         /// planted APART. Multiplied by knee bend so it cannot be farmed by
@@ -324,7 +324,7 @@ namespace PoSumo
         /// query so it costs nothing per step; a foot within ankle height of the
         /// surface is planted. Spread saturates at SUMO_STANCE_WIDTH, roughly a
         /// shoulder-and-a-half, past which wider is not better.
-        float StanceFactor()
+        private float StanceFactor()
         {
             const float PLANTED_HEIGHT = 0.12f;   // foot centre sits ~0.04 when flat
             const float SUMO_STANCE_WIDTH = 0.55f;
@@ -344,7 +344,7 @@ namespace PoSumo
 
         /// Step-cadence bonus: pays once per alternation of the single planted
         /// foot (near->far or far->near), i.e. actual stepping, not skating.
-        void CadenceReward(float scale)
+        private void CadenceReward(float scale)
         {
             bool nearPlanted = _b.FootNear.position.y < 0.12f
                 && Mathf.Abs(_b.FootNear.linearVelocity.x) < 0.5f;
@@ -366,26 +366,26 @@ namespace PoSumo
         {
             if (!actionsEnabled)
             {
-                for (int j = 0; j < ActionCount; j++)
+                for (int actionIndex = 0; actionIndex < ActionCount; actionIndex++)
                 {
-                    _b.ApplyMotor(j, 0f);
-                    LastActions[j] = 0f;
-                    _prevActions[j] = 0f;
+                    _b.ApplyMotor(actionIndex, 0f);
+                    LastActions[actionIndex] = 0f;
+                    _prevActions[actionIndex] = 0f;
                 }
                 _pendingImpact = 0f;
                 return;
             }
             var a = actions.ContinuousActions;
             float energy = 0f, jerk = 0f, effort = 0f;
-            for (int j = 0; j < ActionCount; j++)
+            for (int actionIndex = 0; actionIndex < ActionCount; actionIndex++)
             {
-                _b.ApplyMotor(j, a[j] * actionScale);
-                float clamped = Mathf.Clamp(a[j], -1f, 1f);
-                LastActions[j] = clamped;
+                _b.ApplyMotor(actionIndex, a[actionIndex] * actionScale);
+                float clamped = Mathf.Clamp(a[actionIndex], -1f, 1f);
+                LastActions[actionIndex] = clamped;
                 energy += Mathf.Abs(clamped);
                 effort += clamped * clamped;
-                jerk += Mathf.Abs(clamped - _prevActions[j]);
-                _prevActions[j] = clamped;
+                jerk += Mathf.Abs(clamped - _prevActions[actionIndex]);
+                _prevActions[actionIndex] = clamped;
             }
             energy /= ActionCount;
             // QUADRATIC, unlike `energy`. An L1 cost has a constant gradient, so it
@@ -529,7 +529,7 @@ namespace PoSumo
         public override void Heuristic(in ActionBuffers actionsOut)
         {
             var a = actionsOut.ContinuousActions;
-            for (int i = 0; i < a.Length; i++) a[i] = 0f;
+            for (int index = 0; index < a.Length; index++) a[index] = 0f;
         }
     }
 }

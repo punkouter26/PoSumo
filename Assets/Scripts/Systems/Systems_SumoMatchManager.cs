@@ -8,7 +8,7 @@ namespace PoSumo
     /// physically dropping off the dohyo (torso below fallY). Each round can
     /// randomize the starting platform width and surface friction so policies
     /// train across the whole endgame space. Timeout is a draw.
-    public class Systems_SumoMatchManager : MonoBehaviour
+    public sealed class Systems_SumoMatchManager : MonoBehaviour
     {
         public Agent_Biped wrestlerA;
         public Agent_Biped wrestlerB;
@@ -46,12 +46,12 @@ namespace PoSumo
         [Tooltip("0 = always full stable platform, 1 = full width/friction randomization.")]
         public float platformDifficulty = 1f;
 
-        float _elapsed;
-        float _startHalf;
-        float _nextShoveTime;
-        Agent_BipedBody _bodyA, _bodyB;
+        private float _elapsed;
+        private float _startHalf;
+        private float _nextShoveTime;
+        private Agent_BipedBody _bodyA, _bodyB;
 
-        void Start()
+        private void Start()
         {
             if (wrestlerA == null || wrestlerB == null)
             {
@@ -79,7 +79,7 @@ namespace PoSumo
             ResetRound();
         }
 
-        void FixedUpdate()
+        private void FixedUpdate()
         {
             if (wrestlerA == null || wrestlerB == null) return;
             _elapsed += Time.fixedDeltaTime;
@@ -112,7 +112,7 @@ namespace PoSumo
             }
         }
 
-        bool Loses(Agent_Biped w)
+        private bool Loses(Agent_Biped w)
         {
             // Stepping out, matching the deployed game exactly: a foot below the
             // mat surface has gone over the edge. Training previously used only
@@ -130,7 +130,7 @@ namespace PoSumo
             return false;
         }
 
-        void EndRound(Agent_Biped winner, Agent_Biped loser)
+        private void EndRound(Agent_Biped winner, Agent_Biped loser)
         {
             winner.AddReward(1f);
             loser.AddReward(-1f);
@@ -139,7 +139,7 @@ namespace PoSumo
             ResetRound();
         }
 
-        void Draw()
+        private void Draw()
         {
             // Interrupted (not terminal) so value bootstrapping stays correct.
             wrestlerA.EpisodeInterrupted();
@@ -147,7 +147,7 @@ namespace PoSumo
             ResetRound();
         }
 
-        void ResetRound()
+        private void ResetRound()
         {
             _elapsed = 0f;
             _nextShoveTime = Random.Range(2f, 5f);
