@@ -160,11 +160,13 @@ MonoBehaviour:
   opponent: {fileID: 0}
   ringHalfWidth: 2.75
   arenaCenterX: 0
+  arenaGroundY: 0
   extendedObservations: 0
   decisionPeriod: 5
   inferenceOnly: 1
   recoverShoveChance: 0.7
   inferenceModel: {fileID: 5022602860645237092, guid: 8f76568562941a345ae69c088f1518bf, type: 3}
+  walkModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
   behaviorName: Standard
@@ -218,9 +220,12 @@ MonoBehaviour:
   widthScale: 1
   torqueScale: 1
   headSprite: {fileID: 0}
+  headDiameter: 0.5
+  enableJiggle: 1
   Torso: {fileID: 0}
   Chest: {fileID: 0}
   HeadRenderer: {fileID: 0}
+  HeadMask: {fileID: 0}
   Joints: []
   Parts: []
   AllColliders: []
@@ -269,7 +274,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Systems_SumoArena
   ringHalfWidth: 2.45
-  groundWidth: 5.5
+  groundWidth: 11
   platformDrop: 0.6
   floorWidth: 22
   showPosts: 1
@@ -444,11 +449,13 @@ MonoBehaviour:
   opponent: {fileID: 0}
   ringHalfWidth: 2.75
   arenaCenterX: 0
+  arenaGroundY: 0
   extendedObservations: 1
   decisionPeriod: 3
   inferenceOnly: 0
   recoverShoveChance: 0.7
   inferenceModel: {fileID: 0}
+  walkModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
   behaviorName: Matt
@@ -502,9 +509,12 @@ MonoBehaviour:
   widthScale: 1
   torqueScale: 1
   headSprite: {fileID: 0}
+  headDiameter: 0.5
+  enableJiggle: 1
   Torso: {fileID: 0}
   Chest: {fileID: 0}
   HeadRenderer: {fileID: 0}
+  HeadMask: {fileID: 0}
   Joints: []
   Parts: []
   AllColliders: []
@@ -555,15 +565,13 @@ MonoBehaviour:
   wrestlerA: {fileID: 687244891}
   wrestlerB: {fileID: 1476417986}
   arena: {fileID: 186417205}
-  ringHalfWidth: 2.75
+  ringHalfWidth: 5.5
   roundTimeoutSeconds: 30
   knockdownLoses: 0
   fallY: -0.2
-  stallBreakStart: 12
-  stallShrinkRate: 0.15
-  minRingHalfWidth: 0.6
+  footOffMatY: -0.06
   randomizeRounds: 1
-  startHalfRange: {x: 1.7, y: 2.75}
+  startHalfRange: {x: 1.7, y: 5.5}
   frictionRange: {x: 0.5, y: 1.1}
   spawnGapHalf: 1.2
   shoveImpulse: 0
@@ -664,7 +672,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Systems_SumoArena
   ringHalfWidth: 2.45
-  groundWidth: 5.5
+  groundWidth: 11
   platformDrop: 0.6
   floorWidth: 22
   showPosts: 1
@@ -773,11 +781,13 @@ MonoBehaviour:
   opponent: {fileID: 0}
   ringHalfWidth: 2.75
   arenaCenterX: 0
+  arenaGroundY: 0
   extendedObservations: 1
   decisionPeriod: 3
   inferenceOnly: 0
   recoverShoveChance: 0.7
   inferenceModel: {fileID: 0}
+  walkModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
   behaviorName: Matt
@@ -831,9 +841,12 @@ MonoBehaviour:
   widthScale: 1
   torqueScale: 1
   headSprite: {fileID: 0}
+  headDiameter: 0.5
+  enableJiggle: 1
   Torso: {fileID: 0}
   Chest: {fileID: 0}
   HeadRenderer: {fileID: 0}
+  HeadMask: {fileID: 0}
   Joints: []
   Parts: []
   AllColliders: []
@@ -921,9 +934,12 @@ MonoBehaviour:
   widthScale: 1
   torqueScale: 1
   headSprite: {fileID: 0}
+  headDiameter: 0.5
+  enableJiggle: 1
   Torso: {fileID: 0}
   Chest: {fileID: 0}
   HeadRenderer: {fileID: 0}
+  HeadMask: {fileID: 0}
   Joints: []
   Parts: []
   AllColliders: []
@@ -949,11 +965,13 @@ MonoBehaviour:
   opponent: {fileID: 0}
   ringHalfWidth: 2.75
   arenaCenterX: 0
+  arenaGroundY: 0
   extendedObservations: 1
   decisionPeriod: 3
   inferenceOnly: 0
   recoverShoveChance: 0.7
   inferenceModel: {fileID: 0}
+  walkModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
   behaviorName: Matt
@@ -1004,15 +1022,13 @@ MonoBehaviour:
   wrestlerA: {fileID: 1646994351}
   wrestlerB: {fileID: 4392839}
   arena: {fileID: 1356077660}
-  ringHalfWidth: 2.75
+  ringHalfWidth: 5.5
   roundTimeoutSeconds: 30
   knockdownLoses: 0
   fallY: -0.2
-  stallBreakStart: 12
-  stallShrinkRate: 0.15
-  minRingHalfWidth: 0.6
+  footOffMatY: -0.06
   randomizeRounds: 1
-  startHalfRange: {x: 1.7, y: 2.75}
+  startHalfRange: {x: 1.7, y: 5.5}
   frictionRange: {x: 0.5, y: 1.1}
   spawnGapHalf: 1.2
   shoveImpulse: 0

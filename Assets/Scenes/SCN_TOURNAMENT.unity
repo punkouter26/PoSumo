@@ -232,7 +232,13 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 14211cdaf9881594c90184adc2678b1f, type: 2}
   - {fileID: 11400000, guid: 385d01880fa1e394d9a85ae625be52ac, type: 2}
   _panelSettings: {fileID: 11400000, guid: 5f29889ae85d92343b4edf70b0058e9d, type: 2}
-  _arenaScene: SCN_SUMO
+  _tuning: {fileID: 11400000, guid: b40c783b035d5814a918a508fb517706, type: 2}
+  _arenaScenes:
+  - SCN_SUMO
+  - SCN_SUMO_ICE
+  - SCN_SUMO_STICKY
+  _autoPlay: 1
+  _betweenMatchSeconds: 2.5
 --- !u!1 &1062724133
 GameObject:
   m_ObjectHideFlags: 0

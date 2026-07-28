@@ -38,7 +38,9 @@ namespace PoSumo
         public float swayHz = 0.45f;
 
         [Header("Light shafts")]
-        public bool showShafts = true;
+        // Off with the rest of the spotlight dressing: a shaft is a visible cone
+        // of light falling from the roof, which is exactly the look being removed.
+        public bool showShafts = false;
         public int shaftCount = 4;
         public float shaftTopY = 6.1f;
         public float shaftLength = 6.4f;

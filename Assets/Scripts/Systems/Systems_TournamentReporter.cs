@@ -53,9 +53,17 @@ namespace PoSumo
             Debug.Log($"[TOURNAMENT] match {Systems_TournamentState.CurrentMatch} winner: " +
                       $"{(character != null ? character.behaviorName : "unknown")}");
 
-            // The result card is itself delayed while the loser flops, so wait
-            // that out too or the scene would change before it is readable.
-            Invoke(nameof(ReturnToBracket), resultPause + _manager.limpBeforeAnnounce);
+            // The result card is itself delayed — while the loser flops on a
+            // normal finish, or for longer on a knockout so the KO slow-motion
+            // plays out first. Wait out whichever delay this match actually used,
+            // or the scene changes before the card has been on screen its full
+            // resultPause. Hardcoding only limpBeforeAnnounce meant a match ended
+            // by the three-knockdown rule showed its result for ~1.5s of the
+            // intended 2.5s.
+            float announceDelay = _manager.EndedByKnockout
+                ? _manager.knockoutAnnounceSeconds
+                : _manager.limpBeforeAnnounce;
+            Invoke(nameof(ReturnToBracket), resultPause + announceDelay);
         }
 
         void ReturnToBracket()

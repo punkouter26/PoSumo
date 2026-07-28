@@ -1,0 +1,77 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1f18a0997d07b2f49806e91d8ab2fbc5, type: 3}
+  m_Name: VoiceGains
+  m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Systems_VoiceGains
+  _targetRmsDb: -20
+  _clipNames:
+  - Matt_Happy_1
+  - Matt_Happy_2
+  - Matt_Happy_3
+  - Matt_Happy_4
+  - Matt_Happy_5
+  - Matt_Insult_1
+  - Matt_Insult_2
+  - Matt_Insult_3
+  - Matt_Insult_4
+  - Matt_Insult_5
+  - Matt_Sad_1
+  - Matt_Sad_2
+  - Matt_Sad_3
+  - Matt_Sad_4
+  - Matt_Sad_5
+  - Nick_Happy_1
+  - Nick_Happy_2
+  - Nick_Happy_3
+  - Nick_Happy_4
+  - Nick_Happy_5
+  - Nick_Insult_1
+  - Nick_Insult_2
+  - Nick_Insult_3
+  - Nick_Insult_4
+  - Nick_Insult_5
+  - Nick_Sad_1
+  - Nick_Sad_2
+  - Nick_Sad_3
+  - Nick_Sad_4
+  - Nick_Sad_5
+  _gains:
+  - 1.8129313
+  - 1.5413464
+  - 0.7580478
+  - 0.6960979
+  - 0.572167
+  - 1.8303001
+  - 1.9439865
+  - 1.2645035
+  - 1.756134
+  - 1.3020871
+  - 3.2153728
+  - 1.6107017
+  - 1.393283
+  - 0.6383589
+  - 0.7039272
+  - 6.226328
+  - 2.0548265
+  - 3.1226206
+  - 1.7704649
+  - 2.6777697
+  - 3.2394512
+  - 3.3472219
+  - 3.1278257
+  - 4.206348
+  - 3.5393226
+  - 5.5217824
+  - 4.77393
+  - 3.878524
+  - 1.829508
+  - 0.9624577

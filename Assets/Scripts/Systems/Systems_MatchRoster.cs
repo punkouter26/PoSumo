@@ -27,7 +27,7 @@ namespace PoSumo
             Agent_CharacterDefinition slotA = tournament ? Systems_TournamentState.CurrentA : _characterA;
             Agent_CharacterDefinition slotB = tournament ? Systems_TournamentState.CurrentB : _characterB;
 
-            var agents = FindObjectsByType<Agent_Biped>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            var agents = FindObjectsByType<Agent_Biped>(FindObjectsInactive.Include);
             for (int agentIndex = 0; agentIndex < agents.Length; agentIndex++)
             {
                 Agent_Biped agent = agents[agentIndex];

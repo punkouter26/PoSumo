@@ -1,4 +1,5 @@
 using UnityEditor;
+using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
 using UnityEngine;
 
@@ -21,7 +22,7 @@ namespace PoSumo.EditorTools
                 return;
             }
 
-            PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.Android, APP_ID);
+            PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, APP_ID);
 
             var scenes = new System.Collections.Generic.List<string>();
             foreach (var scene in EditorBuildSettings.scenes)

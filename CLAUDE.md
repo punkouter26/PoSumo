@@ -9,7 +9,9 @@ wrestling via ML-Agents, then fight each other in a playable, presentation-dress
 match/tournament layer. Portrait orientation, Android target
 (`com.punkouter26.posumo`). `DESIGN.md` is the original approved spec and is now
 partly historical — where it disagrees with this file or the code, the code wins
-(notably: the ring is a raised dohyo of half-width ~2.75 m, not `|x| > 7`).
+(notably: the ring is a raised dohyo, not `|x| > 7`; its half-width is **5.5 m**, doubled
+from 2.75 in the realism pass and now read from `GameTuning.asset` because all three arena
+scenes serialize their own copy).
 
 The roster is exactly four trained fighters — **Matt**, **Standard**, **Nick**,
 **Kim** — each with an `.onnx`, a `*_Character.asset` and a `MANIFEST.md`. The
@@ -82,14 +84,33 @@ multiplied into a facing-local frame). Intra-biped collisions are disabled pairw
 `torqueScale` come from the character asset, so physique is data, not code.
 
 Physical fidelity, so nobody has to re-derive it: gravity is Earth's −9.81 (project
-setting *and* re-asserted at runtime), and the baseline body is **69.6 kg** at ~1.76 m —
+setting *and* re-asserted at runtime), and the baseline body is **69.6 kg** —
 trust `Agent_BipedBody.TotalMass`, not prose. Segment masses track Winter's anthropometric
 fractions closely (thigh 10.1% vs 10.0, foot 1.44% vs 1.45) with the arms ~20-28% heavy.
-Knee, elbow and hip limits are anatomically correct including the no-hyperextension stops;
-ankle (±45°), the three spine joints (±25° each) and shoulder (±160°) are deliberately
-*symmetric*, so they bend backwards far past human range, and spine/shoulder/elbow torque
-caps are 2-4× human peak. The head is not a separate body — it is a compound collider on
-the Chest rigidbody with its 6 kg folded into Chest's 13 kg, so there is no neck joint.
+**Segment lengths** now track Winter too, re-derived for a 1.76 m body in the realism pass:
+every limb had been 8-18% short (shank 0.38 vs 0.246H = 0.433, foot 0.22 vs 0.152H = 0.268)
+while the trunk ran long. The joint anchors are *derived from* those lengths — change a
+segment and every anchor above it moves with it, or the chain comes apart. Verified by
+measuring anchor separation across all 13 joints: 0.0000 m.
+
+Knee (−150…0°), elbow (0…150°) and hip (−30…120°) limits are anatomically correct including
+the no-hyperextension stops. Ankle (±25°), the three spine joints (±20° each) and shoulder
+(±120°) are clamped to roughly human TOTAL range but remain **symmetric** — the sign
+convention for flexion differs per joint in this rig, so assigning asymmetry needs one
+visual check first. Leg torques are realistic (hip 300, knee 250, ankle 120 N·m); the upper
+body was 2-4× human and was brought back to spine 180 each / shoulder 80 / elbow 60.
+
+Joints carry **passive resistance** — a restoring torque at 6% of each joint's motor budget
+per 90°, plus 10% per 400°/s of damping, applied every physics step in
+`Agent_BipedBody.FixedUpdate`. `HingeJoint2D` has no spring (that is 3D-only), hence the
+explicit torque. Bodies also damp at 0.25 linear / 0.8 angular, up from 0.05.
+
+The head is still not a separate body — a compound collider on Chest with its 6 kg folded
+into Chest's 13, so there is **no neck joint** and the head cannot bob or whip. Adding one
+means giving it its own rigidbody and an *unpowered* hinge: a driven neck would be a 14th
+action, and `Agent_Biped.CollectObservations` loops over `ActionCount`, so it would change
+the action space and the 44-obs vector together and invalidate every brain's input *and*
+output layer.
 
 ### The brain contract (`Agent_Biped`)
 - **13 continuous actions** (`ActionCount`), always.
@@ -258,7 +279,8 @@ sets the character asset's `inferenceModel`. Copying a checkpoint does not requi
 a headless run.
 
 `Training/results` **is** the TensorBoard logdir, so treat it as a curated list, not a
-dumping ground: it holds only runs that back a deployed brain (currently five). Everything
+dumping ground: it holds only runs that back a deployed brain (currently eight — a sumo
+and a walk run for each of the four fighters). Everything
 else goes elsewhere —
 
 - prune a deployed run to its final `<Behavior>.onnx`, `checkpoint.pt`,

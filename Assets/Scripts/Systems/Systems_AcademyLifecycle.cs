@@ -13,8 +13,13 @@ namespace PoSumo
         {
             Application.runInBackground = true;
             Physics2D.gravity = new Vector2(0f, -9.81f);
-            Physics2D.positionIterations = 12;
-            Physics2D.velocityIterations = 8;
+            // Raised for the 14-body, 13-joint ragdoll on the widened ring. Two
+            // things got harder at once: the mat doubled so collisions arrive with
+            // more closing speed, and the KO knockback applies a mass-scaled
+            // impulse to all 14 parts on one frame. Under-solved, a hinge chain
+            // that long visibly separates at the joints when hit hard.
+            Physics2D.positionIterations = 16;
+            Physics2D.velocityIterations = 14;
 
             Application.quitting += DisposeAcademy;
         }

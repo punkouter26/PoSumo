@@ -12,7 +12,8 @@ namespace PoSumo
     ///            -> Fighting
     /// A round loss (pushed out, fallen off, or sustained throw-down) scores a
     /// point for the opponent; first to pointsToWin takes the match. Match end
-    /// dims the arena and waits for Space to rematch. UI Toolkit only.
+    /// dims the arena and waits for the REMATCH button, a pointer press or Space.
+    /// UI Toolkit only.
     public class Systems_GameMatchManager : MonoBehaviour
     {
         enum Phase { Fighting, RoundEnded, Grace, WalkIn, MatchOver }
@@ -24,33 +25,46 @@ namespace PoSumo
         public Color colorA = new Color(0.85f, 0.25f, 0.2f);
         public Color colorB = new Color(0.2f, 0.5f, 0.3f);
         public int pointsToWin = 3;
-        public float ringHalfWidth = 2.75f;
+        // Doubled from 2.75. This is the physical platform half-width AND the
+        // edge-distance observation every brain reads, so the four shipped
+        // policies are now fighting a ring twice the size they trained on —
+        // expect slower ring-outs and more wandering until they get a corrective
+        // pass. Copied from GameTuning in Start; the arena scenes serialize their
+        // own copy, which is why the asset is the one that matters.
+        public float ringHalfWidth = 5.5f;
         public float fallY = -1.5f;
-        public bool knockdownLoses = true;
+        // MUST match Systems_SumoMatchManager.knockdownLoses, which is false. This
+        // defaulted true while the training referee defaulted false: every shipped
+        // arena scene serializes 0 so nothing was live, but a NEW arena scene would
+        // have silently given the game a losing condition no brain was trained
+        // against. That divergence has bitten this project before.
+        public bool knockdownLoses = false;
+        [Tooltip("Head knockouts one fighter can suffer before losing the match outright — boxing's three-knockdown rule. 0 disables it. Copied from GameTuning in Start.")]
+        public int knockoutsToLoseMatch = 3;
+        [Tooltip("Realtime seconds from the deciding knockout to the result card, so the KO slow-motion plays out first. Copied from GameTuning in Start.")]
+        public float knockoutAnnounceSeconds = 2.2f;
         public float roundTimeoutSeconds = 30f;
         public float betweenRoundsPause = 2.5f;
         public float graceSeconds = 0.4f;
         public float downGraceSeconds = 0.2f;
         public PanelSettings panelSettings;
         public Systems_GameTuning tuning;
-        [Tooltip("Spawn Systems_MatchPresentation (slow-mo, punch-in, replay) at startup.")]
-        public bool enablePresentation = true;
-        [Tooltip("Spawn Systems_MatchAudio (impacts, crowd, gong) at startup.")]
-        public bool enableAudio = true;
-        [Tooltip("Spawn Systems_FaceMood (Matt's expression follows dominance) at startup.")]
-        public bool enableFaceMood = true;
+        // Companion spawn toggles and knockdownLoses now live on GameTuning.asset
+        // (copied in Start), so all three arena scenes share one set instead of
+        // each carrying its own serialized copy. Only mirrorPitchScale stays here
+        // because it is a per-match presentation detail, not a global rule.
+        [Tooltip("Pitch applied to the SECOND fighter's voice when both wrestlers are the same character, so a mirror match has two distinguishable voices.")]
+        public float mirrorPitchScale = 0.85f;
         [Tooltip("Persist results to the career record (W/L, head-to-head, Elo, titles). Turn off for throwaway test matches such as MatchTestHarness runs.")]
         public bool recordCareerStats = true;
-        [Tooltip("Spawn Systems_ArenaLighting (2D light rig + post-processing) at startup.")]
-        public bool enableLighting = true;
-        [Tooltip("Spawn Systems_ImpactFx (dust bursts + camera shake scaled by hit strength).")]
-        public bool enableImpactFx = true;
-        [Tooltip("Spawn Systems_PostFx (post-processing that reacts to hits, match point and finishes).")]
-        public bool enablePostFx = true;
-        [Tooltip("Spawn Systems_ArenaAtmosphere (backdrop parallax, haze tinting, crowd sway, light shafts).")]
-        public bool enableAtmosphere = true;
-        [Tooltip("Spawn Systems_MusicDirector (adaptive layered score).")]
-        public bool enableMusic = true;
+
+        // Resolved from `tuning` in Start; the defaults here are the fallback when
+        // no tuning asset is assigned.
+        bool enablePresentation = true, enableAudio = true, enableFaceMood = true;
+        bool enableVoice = true, enableLighting = true, enableImpactFx = true;
+        bool enablePostFx = true, enableAtmosphere = true, enableMusic = true;
+        bool enableBodyDamage = true;
+        bool enableMomentumGraph = true;
         [Tooltip("Round-opening countdown length; physics and brains are held until it finishes.")]
         public int countdownSeconds = 3;
         [Tooltip("Camera ortho when the countdown punches in on a fighter's head.")]
@@ -83,6 +97,7 @@ namespace PoSumo
         public float footOffMatY = -0.06f;
 
         int _scoreA, _scoreB;
+        int _koA, _koB;                 // head knockouts SUFFERED, this match
         float _elapsed, _phaseLeft, _downA, _downB;
         int _lastShownSeconds = -1;
         float _countdownLeft;
@@ -93,6 +108,11 @@ namespace PoSumo
         float _braceStarted = -999f;
         float _releaseTime = -1f;
         bool _walkBrainHolding;
+        /// The long-mat walk-in is a MATCH ceremony, not a round one: it plays
+        /// once when the match opens and later rounds go straight to the
+        /// countdown from the stand-off. Cleared by ResetMatch so a rematch — and
+        /// every fresh bracket match, which loads the scene again — gets its own.
+        bool _walkInPlayed;
         bool _parkedA, _parkedB;
         Systems_SumoArena _arena;
         Systems_CameraFollow _camFollow;
@@ -113,6 +133,13 @@ namespace PoSumo
         // Read-only stats for HUDs.
         public int ScoreA => _scoreA;
         public int ScoreB => _scoreB;
+        /// Head knockouts each fighter has SUFFERED this match.
+        public int KnockoutsA => _koA;
+        public int KnockoutsB => _koB;
+        /// True when the last match ended on the three-knockdown rule rather than
+        /// on rounds. Read by Systems_TournamentReporter, whose return-to-bracket
+        /// delay has to outlast whichever announce delay the result card used.
+        public bool EndedByKnockout { get; private set; }
         public int MatchWinsA { get; private set; }
         public int MatchWinsB { get; private set; }
         public float RoundElapsed => _elapsed;
@@ -120,7 +147,23 @@ namespace PoSumo
         /// How many rounds were settled by the timeout tiebreak rather than a
         /// ring-out. Zero over a long session means the tiebreak is unreachable.
         public int TimeoutDecisions { get; private set; }
+        /// True from the instant the round phase opens — INCLUDING the countdown,
+        /// while both fighters are still frozen on their marks. Reactive systems
+        /// (crowd, faces, voices) want this, because they should be live for the
+        /// build-up too.
         public bool RoundActive => _phase == Phase.Fighting;
+
+        /// True only once the countdown has released the fighters and they are
+        /// actually wrestling.
+        ///
+        /// Anything that AVERAGES over the round must use this, not RoundActive.
+        /// The stats table sampled on RoundActive and so folded ~3 seconds of two
+        /// motionless bodies into every average each round: work rate and balance
+        /// were quietly diluted, and TERRITORY — which is a share of the round
+        /// between the two fighters and must therefore total 100 — was reading
+        /// 26/51 and 32/48, because during the freeze the pair sit symmetric
+        /// about the centre line and the sample counts for neither of them.
+        public bool ScoringLive => _phase == Phase.Fighting && _countdownLeft <= 0f;
 
         /// Fired when a round is decided: (roundWinner, roundLoser) — both null on a draw.
         public event System.Action<Agent_Biped, Agent_Biped> RoundEnded;
@@ -130,21 +173,12 @@ namespace PoSumo
         public event System.Action<Agent_Biped> MatchEnded;
         /// Fired when a rematch resets the scores (HUD aggregates restart here).
         public event System.Action MatchReset;
-        Label _scoreLabel, _banner, _clock, _countdown;
-        VisualElement _pauseCard;
-        bool _paused;
-        VisualElement _scoreBlock;   // hidden while the result card is up
-        Button _rematchBtn;
-        VisualElement _overlay, _resultCard;
+        Systems_HudRoot _hud;
+        Label _scoreDigits, _banner, _clock, _countdown;
         Label _resultTitle, _resultScore;
-        Color _scoreBaseColor = new Color(0.95f, 0.93f, 0.85f);
-
-        static TextShadow OutlineShadow => new TextShadow
-        {
-            offset = new Vector2(0f, 2f),
-            blurRadius = 4f,
-            color = new Color(0f, 0f, 0f, 0.85f),
-        };
+        VisualElement _pauseCard, _resultCard;
+        VisualElement _scoreBug;   // hidden while the result card is up
+        bool _paused;
 
         void Start()
         {
@@ -161,6 +195,25 @@ namespace PoSumo
                 betweenRoundsPause = tuning.betweenRoundsPause;
                 graceSeconds = tuning.graceSeconds;
                 downGraceSeconds = tuning.downGraceSeconds;
+                knockdownLoses = tuning.knockdownLoses;
+                knockoutsToLoseMatch = tuning.knockoutsToLoseMatch;
+                knockoutAnnounceSeconds = tuning.knockoutAnnounceSeconds;
+                ringHalfWidth = tuning.ringHalfWidth;
+                enableWalkIn = tuning.enableWalkIn;
+                walkInHalfWidth = tuning.walkInHalfWidth;
+                walkInStartGapHalf = tuning.walkInStartGapHalf;
+                walkInTimeout = tuning.walkInTimeout;
+                enablePresentation = tuning.enablePresentation;
+                enableAudio = tuning.enableAudio;
+                enableFaceMood = tuning.enableFaceMood;
+                enableVoice = tuning.enableVoice;
+                enableLighting = tuning.enableLighting;
+                enableImpactFx = tuning.enableImpactFx;
+                enablePostFx = tuning.enablePostFx;
+                enableAtmosphere = tuning.enableAtmosphere;
+                enableMusic = tuning.enableMusic;
+                enableBodyDamage = tuning.enableBodyDamage;
+                enableMomentumGraph = tuning.enableMomentumGraph;
             }
 
             ResolveWrestlers();
@@ -172,6 +225,8 @@ namespace PoSumo
             wrestlerB.ringHalfWidth = ringHalfWidth;
             wrestlerA.arenaCenterX = transform.position.x;
             wrestlerB.arenaCenterX = transform.position.x;
+            wrestlerA.arenaGroundY = transform.position.y;
+            wrestlerB.arenaGroundY = transform.position.y;
 
             // Size the dohyo to the configured ring at startup. The platform is
             // resized once more per round — wide for the walk-in, back to
@@ -180,14 +235,21 @@ namespace PoSumo
             // Baked scenes ship a 5.5 m-wide platform, so without this the
             // physical edge would ignore ringHalfWidth entirely.
             _arena = FindAnyObjectByType<Systems_SumoArena>();
-            if (_arena != null) _arena.SetPlatformHalfWidth(ringHalfWidth);
+            if (_arena != null)
+            {
+                // SetPlatformHalfWidth clamps to groundWidth * 0.5, so a ring
+                // wider than the arena's configured span would be silently capped
+                // and the fight would run on a mat narrower than every observation
+                // told the brains it was. Make the span fit the ring first.
+                _arena.groundWidth = Mathf.Max(_arena.groundWidth, ringHalfWidth * 2f);
+                _arena.SetPlatformHalfWidth(ringHalfWidth);
+            }
 
             _camFollow = FindAnyObjectByType<Systems_CameraFollow>();
             BuildUi();
             UpdateScoreboard(false);
             SpawnCompanionSystems();
 
-            // The very first round gets the same opening as every later one.
             if (enableWalkIn && WalkBrainsReady())
             {
                 _phase = Phase.WalkIn;
@@ -210,10 +272,16 @@ namespace PoSumo
             AdoptCharacterIdentity();
         }
 
+        // Systems_BodyDamage.Knockout is a static event: a missed unsubscribe
+        // keeps a finished scene's referee counting knockouts in the next one.
+        void OnEnable() => Systems_BodyDamage.Knockout += OnKnockout;
+
+        void OnDisable() => Systems_BodyDamage.Knockout -= OnKnockout;
+
         void ResolveWrestlers()
         {
             if (wrestlerA != null && wrestlerB != null) return;
-            foreach (var a in FindObjectsByType<Agent_Biped>(FindObjectsSortMode.None))
+            foreach (var a in FindObjectsByType<Agent_Biped>())
             {
                 if (a.teamId == 0) wrestlerA = a; else wrestlerB = a;
             }
@@ -246,6 +314,17 @@ namespace PoSumo
         /// the fighting ring is exactly the size the fight brains trained on.
         void BeginWalkInPhase()
         {
+            _walkInPlayed = true;
+            // Pull the camera out for the ceremony. At normal framing the start
+            // marks sit outside the frame, so the fighters appeared from
+            // off-screen already halfway through their walk — the approach is the
+            // point, so it has to be visible from the first stride. Held a beat
+            // past the timeout; the arrival path clears it early.
+            if (_camFollow != null)
+            {
+                _camFollow.PullBackWide(walkInTimeout + 1f);
+            }
+
             if (_arena != null)
             {
                 // SetPlatformHalfWidth clamps to groundWidth * 0.5, so widening the
@@ -448,6 +527,27 @@ namespace PoSumo
                 SpawnFaceMood(wrestlerA);
                 SpawnFaceMood(wrestlerB);
             }
+            if (enableMomentumGraph && FindAnyObjectByType<Systems_MomentumGraph>() == null)
+            {
+                var go = new GameObject("MomentumGraph");
+                go.transform.SetParent(transform, false);
+                go.AddComponent<Systems_MomentumGraph>().panelSettings = panelSettings;
+            }
+            if (enableBodyDamage && FindAnyObjectByType<Systems_BodyDamage>() == null)
+            {
+                SpawnBodyDamage(wrestlerA);
+                SpawnBodyDamage(wrestlerB);
+            }
+            if (enableVoice && FindAnyObjectByType<Systems_FighterVoice>() == null)
+            {
+                SpawnVoice(wrestlerA, 1f);
+                // The bracket seeds every fighter twice, so both wrestlers can be
+                // the same character. Drop the second one's pitch so a Matt-vs-Matt
+                // bout does not sound like one man arguing with himself.
+                bool mirrorMatch = wrestlerA != null && wrestlerB != null
+                                   && wrestlerA.behaviorName == wrestlerB.behaviorName;
+                SpawnVoice(wrestlerB, mirrorMatch ? mirrorPitchScale : 1f);
+            }
             if (enableImpactFx && FindAnyObjectByType<Systems_ImpactFx>() == null)
             {
                 var go = new GameObject("ImpactFx");
@@ -489,6 +589,29 @@ namespace PoSumo
             }
         }
 
+        void SpawnBodyDamage(Agent_Biped fighter)
+        {
+            if (fighter == null) return;
+            var body = fighter.GetComponent<Agent_BipedBody>();
+            if (body == null) return;
+            var go = new GameObject($"Damage_{fighter.behaviorName}");
+            go.transform.SetParent(transform, false);
+            go.AddComponent<Systems_BodyDamage>().body = body;
+        }
+
+        /// One voice per fighter. Systems_FighterVoice disables itself when that
+        /// fighter has no recorded clips in Resources, so this is safe to call for
+        /// everyone — today only Matt has a voice.
+        void SpawnVoice(Agent_Biped fighter, float pitchScale)
+        {
+            if (fighter == null) return;
+            var go = new GameObject($"Voice_{fighter.behaviorName}");
+            go.transform.SetParent(transform, false);
+            var voice = go.AddComponent<Systems_FighterVoice>();
+            voice.fighterBehaviorName = fighter.behaviorName;
+            voice.pitchScale = pitchScale;
+        }
+
         void SpawnFaceMood(Agent_Biped fighter)
         {
             if (fighter == null) return;
@@ -504,202 +627,153 @@ namespace PoSumo
 
         void BuildUi()
         {
-            var doc = gameObject.AddComponent<UIDocument>();
-            if (panelSettings != null) doc.panelSettings = panelSettings;
-            var root = doc.rootVisualElement;
-            root.style.flexGrow = 1;
-            Systems_SafeArea.Attach(transform, root);
+            _hud = Systems_HudRoot.Ensure(transform, panelSettings);
+            BuildTopBar();
+            BuildCallouts();
+            BuildResultCard();
+            BuildPauseUi();
+        }
 
-            _overlay = new VisualElement();
-            _overlay.style.position = Position.Absolute;
-            _overlay.style.top = 0; _overlay.style.bottom = 0;
-            _overlay.style.left = 0; _overlay.style.right = 0;
-            _overlay.style.backgroundColor = new Color(0f, 0f, 0f, 0.7f);
-            _overlay.style.display = DisplayStyle.None;
-            root.Add(_overlay);
+        /// The top bar: pause on the left, the scorebug and round clock in the
+        /// middle. Systems_FightHud adds its STATS toggle to the right slot.
+        ///
+        /// These were four independently positioned floats before — the score at
+        /// `bottom:480`, a pixel offset measured against a 1280-tall panel that
+        /// lands at a different height on every other aspect ratio and put the
+        /// score over the arena rather than clear of it; the clock stacked under
+        /// it; the pause chip at `top:10 left:10`; the stats chip at
+        /// `top:10 right:10` from a different file and a different UIDocument.
+        void BuildTopBar()
+        {
+            _hud.TopBarLeft.Add(Systems_UiKit.ChipButton("❚❚", TogglePause, 60));
 
-            // Score + clock live in the dead band between the dohyo and the
-            // stat panels — never over the wrestlers, clear of any notch.
-            var scoreBlock = new VisualElement();
-            scoreBlock.style.position = Position.Absolute;
-            scoreBlock.style.bottom = 480;
-            scoreBlock.style.left = 0;
-            scoreBlock.style.right = 0;
-            scoreBlock.style.alignItems = Align.Center;
-            root.Add(scoreBlock);
-            _scoreBlock = scoreBlock;
+            // Which bout of the bracket this is. The bracket screen announces
+            // "MATCH 3 of 7 — KIM v NICK", then the arena showed two names and a
+            // score and nothing else, so a quarterfinal and the final were
+            // indistinguishable — during autoplay you could watch the tournament
+            // be decided without knowing it. Exhibition matches have no bracket
+            // position, so they get no label.
+            if (Systems_TournamentState.Active)
+            {
+                int match = Systems_TournamentState.CurrentMatch;
+                Label round = Systems_UiKit.Text(
+                    $"{Systems_TournamentState.RoundName(match)} · MATCH {match + 1}/{Systems_TournamentState.MATCH_COUNT}",
+                    Systems_UiKit.FONT_MICRO, Systems_UiKit.Gold, true);
+                round.style.unityTextAlign = TextAnchor.MiddleCenter;
+                round.style.marginBottom = Systems_UiKit.SPACE_1;
+                round.style.textShadow = Systems_UiKit.Outline;
+                _hud.TopBarCentre.Add(round);
+            }
 
-            var scoreCard = new VisualElement();
-            scoreCard.style.backgroundColor = new Color(0f, 0f, 0f, 0.45f);
-            scoreCard.style.borderTopLeftRadius = 12;
-            scoreCard.style.borderTopRightRadius = 12;
-            scoreCard.style.borderBottomLeftRadius = 12;
-            scoreCard.style.borderBottomRightRadius = 12;
-            scoreCard.style.paddingLeft = 22; scoreCard.style.paddingRight = 22;
-            scoreCard.style.paddingTop = 6; scoreCard.style.paddingBottom = 8;
-            scoreCard.style.alignItems = Align.Center;
-            scoreBlock.Add(scoreCard);
+            _scoreBug = Systems_UiKit.Card(Systems_UiKit.Panel).NoPick();
+            _scoreBug.style.flexDirection = FlexDirection.Row;
+            _scoreBug.style.alignItems = Align.Center;
+            _scoreBug.Pad(Systems_UiKit.SPACE_4, Systems_UiKit.SPACE_1);
 
-            _scoreLabel = new Label();
-            _scoreLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
-            _scoreLabel.style.fontSize = 44;
-            _scoreLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
-            _scoreLabel.style.color = _scoreBaseColor;
-            _scoreLabel.style.textShadow = OutlineShadow;
-            scoreCard.Add(_scoreLabel);
+            _scoreBug.Add(NamePlate(nameA, colorA));
 
-            _clock = new Label();
+            _scoreDigits = Systems_UiKit.Text("0 : 0", Systems_UiKit.FONT_TITLE, Systems_UiKit.TextHi, true);
+            _scoreDigits.style.marginLeft = Systems_UiKit.SPACE_3;
+            _scoreDigits.style.marginRight = Systems_UiKit.SPACE_3;
+            _scoreDigits.style.unityTextAlign = TextAnchor.MiddleCenter;
+            _scoreBug.Add(_scoreDigits);
+
+            _scoreBug.Add(NamePlate(nameB, colorB));
+            _hud.TopBarCentre.Add(_scoreBug);
+
+            _clock = Systems_UiKit.Text("", Systems_UiKit.FONT_LEAD, Systems_UiKit.TextMid, true);
+            _clock.style.marginTop = Systems_UiKit.SPACE_1;
             _clock.style.unityTextAlign = TextAnchor.MiddleCenter;
-            _clock.style.fontSize = 26;
-            _clock.style.color = new Color(0.8f, 0.76f, 0.68f);
-            _clock.style.textShadow = OutlineShadow;
-            scoreCard.Add(_clock);
+            _clock.style.textShadow = Systems_UiKit.Outline;
+            _hud.TopBarCentre.Add(_clock);
+        }
 
-            // Round callout rides the dohyo floor band so it never covers a fighter.
-            _banner = new Label();
-            _banner.style.position = Position.Absolute;
-            _banner.style.top = Length.Percent(49);
-            _banner.style.left = 0;
-            _banner.style.right = 0;
+        static Label NamePlate(string fighterName, Color teamColor)
+        {
+            Label plate = Systems_UiKit.Text(fighterName, Systems_UiKit.FONT_BODY, teamColor, true);
+            plate.style.unityTextAlign = TextAnchor.MiddleCenter;
+            return plate;
+        }
+
+        /// Round banner and countdown digit. Both are centred in the stage band
+        /// by the layout instead of at hand-tuned percentages (49% and 36%), and
+        /// the HUD root shows only one member of this layer at a time, so the
+        /// 112pt digit can no longer land on top of a banner.
+        void BuildCallouts()
+        {
+            _banner = Systems_UiKit.Text("", Systems_UiKit.FONT_HERO, Systems_UiKit.Gold, true);
             _banner.style.unityTextAlign = TextAnchor.MiddleCenter;
-            _banner.style.fontSize = 56;
-            _banner.style.unityFontStyleAndWeight = FontStyle.Bold;
-            _banner.style.color = new Color(1f, 0.85f, 0.3f);
-            _banner.style.textShadow = OutlineShadow;
-            _banner.style.display = DisplayStyle.None;
-            root.Add(_banner);
+            _banner.style.textShadow = Systems_UiKit.Outline;
+            _banner.style.whiteSpace = WhiteSpace.Normal;
+            _hud.AddCentre(_banner);
 
-            // Round-opening countdown: one huge digit over the ring center.
-            _countdown = new Label();
-            _countdown.style.position = Position.Absolute;
-            _countdown.style.top = Length.Percent(36);
-            _countdown.style.left = 0;
-            _countdown.style.right = 0;
+            _countdown = Systems_UiKit.Text("", Systems_UiKit.FONT_MEGA, Systems_UiKit.Gold, true);
             _countdown.style.unityTextAlign = TextAnchor.MiddleCenter;
-            _countdown.style.fontSize = 120;
-            _countdown.style.unityFontStyleAndWeight = FontStyle.Bold;
-            _countdown.style.color = new Color(1f, 0.85f, 0.3f);
-            _countdown.style.textShadow = OutlineShadow;
-            _countdown.style.display = DisplayStyle.None;
-            root.Add(_countdown);
+            _countdown.style.textShadow = Systems_UiKit.Outline;
+            _hud.AddCentre(_countdown);
+        }
 
-            // Match-over: one centered results card owns the moment.
-            _resultCard = new VisualElement();
-            _resultCard.style.position = Position.Absolute;
-            _resultCard.style.top = Length.Percent(32);
-            _resultCard.style.left = Length.Percent(12);
-            _resultCard.style.right = Length.Percent(12);
-            _resultCard.style.backgroundColor = new Color(0.05f, 0.045f, 0.06f, 0.94f);
+        /// Match-over: one centred results card owns the moment.
+        void BuildResultCard()
+        {
+            _resultCard = Systems_UiKit.Card(Systems_UiKit.Ink, Systems_UiKit.RADIUS_LG);
+            _resultCard.style.width = Length.Percent(100);
+            _resultCard.style.maxWidth = 520;
+            _resultCard.Pad(Systems_UiKit.SPACE_5, Systems_UiKit.SPACE_5);
             _resultCard.style.borderTopWidth = 5;
-            _resultCard.style.borderTopLeftRadius = 14;
-            _resultCard.style.borderTopRightRadius = 14;
-            _resultCard.style.borderBottomLeftRadius = 14;
-            _resultCard.style.borderBottomRightRadius = 14;
-            _resultCard.style.paddingLeft = 24; _resultCard.style.paddingRight = 24;
-            _resultCard.style.paddingTop = 22; _resultCard.style.paddingBottom = 22;
-            _resultCard.style.alignItems = Align.Stretch;
-            _resultCard.style.display = DisplayStyle.None;
-            root.Add(_resultCard);
+            // Coloured here as well as on match end. The border width was set at
+            // build time but its colour only when a match was decided, so any
+            // earlier display drew a black bar across the top of the card.
+            _resultCard.style.borderTopColor = Systems_UiKit.Gold;
 
-            _resultTitle = new Label();
+            _resultTitle = Systems_UiKit.Text("", Systems_UiKit.FONT_HERO, Systems_UiKit.Gold, true);
             _resultTitle.style.unityTextAlign = TextAnchor.MiddleCenter;
-            _resultTitle.style.fontSize = 46;
-            _resultTitle.style.unityFontStyleAndWeight = FontStyle.Bold;
-            _resultTitle.style.color = new Color(1f, 0.85f, 0.3f);
+            _resultTitle.style.whiteSpace = WhiteSpace.Normal;
             _resultCard.Add(_resultTitle);
 
-            _resultScore = new Label();
+            _resultScore = Systems_UiKit.Text("", Systems_UiKit.FONT_LEAD, Systems_UiKit.TextMid);
             _resultScore.style.unityTextAlign = TextAnchor.MiddleCenter;
-            _resultScore.style.fontSize = 28;
-            _resultScore.style.color = new Color(0.8f, 0.77f, 0.72f);
-            _resultScore.style.marginTop = 4;
+            _resultScore.style.marginTop = Systems_UiKit.SPACE_1;
             _resultCard.Add(_resultScore);
 
-            BuildPauseUi(root);
+            // Big touch-friendly rematch button (mobile) — Space and any pointer
+            // press still work too.
+            Button rematch = Systems_UiKit.PrimaryButton("REMATCH", ResetMatch);
+            rematch.style.marginTop = Systems_UiKit.SPACE_5;
+            _resultCard.Add(rematch);
 
-            // Big touch-friendly rematch button (mobile) — Space still works too.
-            _rematchBtn = new Button(ResetMatch) { text = "REMATCH" };
-            _rematchBtn.style.height = 72;
-            _rematchBtn.style.marginTop = 18;
-            _rematchBtn.style.fontSize = 32;
-            _rematchBtn.style.unityFontStyleAndWeight = FontStyle.Bold;
-            _rematchBtn.style.color = new Color(0.08f, 0.06f, 0.05f);
-            _rematchBtn.style.backgroundColor = new Color(1f, 0.85f, 0.3f);
-            _rematchBtn.style.borderTopLeftRadius = 12;
-            _rematchBtn.style.borderTopRightRadius = 12;
-            _rematchBtn.style.borderBottomLeftRadius = 12;
-            _rematchBtn.style.borderBottomRightRadius = 12;
-            _resultCard.Add(_rematchBtn);
+            _hud.AddModal(_resultCard);
         }
 
         /// Pause / quit. Before this the only exit from a match was playing it to
         /// the end — on Android the hardware back button did nothing at all.
-        void BuildPauseUi(VisualElement root)
+        void BuildPauseUi()
         {
-            var pauseBtn = new Button(TogglePause) { text = "❚❚" };
-            pauseBtn.style.position = Position.Absolute;
-            pauseBtn.style.top = 10;
-            pauseBtn.style.left = 10;
-            pauseBtn.style.width = 60;      // >=44pt: comfortable thumb target
-            pauseBtn.style.height = 44;
-            pauseBtn.style.fontSize = 18;
-            pauseBtn.style.color = new Color(0.95f, 0.93f, 0.85f);
-            pauseBtn.style.backgroundColor = new Color(0.12f, 0.11f, 0.13f, 0.75f);
-            Round(pauseBtn, 8);
-            root.Add(pauseBtn);
+            _pauseCard = Systems_UiKit.Card(Systems_UiKit.Ink, Systems_UiKit.RADIUS_LG);
+            _pauseCard.style.width = Length.Percent(100);
+            _pauseCard.style.maxWidth = 520;
+            _pauseCard.Pad(Systems_UiKit.SPACE_5, Systems_UiKit.SPACE_5);
 
-            _pauseCard = new VisualElement();
-            _pauseCard.style.position = Position.Absolute;
-            _pauseCard.style.top = Length.Percent(34);
-            _pauseCard.style.left = Length.Percent(14);
-            _pauseCard.style.right = Length.Percent(14);
-            _pauseCard.style.backgroundColor = new Color(0.05f, 0.045f, 0.06f, 0.96f);
-            _pauseCard.style.paddingLeft = 22; _pauseCard.style.paddingRight = 22;
-            _pauseCard.style.paddingTop = 20; _pauseCard.style.paddingBottom = 20;
-            Round(_pauseCard, 14);
-            _pauseCard.style.display = DisplayStyle.None;
-            root.Add(_pauseCard);
-
-            var title = new Label("PAUSED");
+            Label title = Systems_UiKit.Text("PAUSED", Systems_UiKit.FONT_TITLE, Systems_UiKit.Gold, true);
             title.style.unityTextAlign = TextAnchor.MiddleCenter;
-            title.style.fontSize = 40;
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            title.style.color = new Color(1f, 0.85f, 0.3f);
             _pauseCard.Add(title);
 
-            var resume = new Button(TogglePause) { text = "RESUME" };
-            StyleMenuButton(resume, new Color(1f, 0.85f, 0.3f), new Color(0.08f, 0.06f, 0.05f));
+            Button resume = Systems_UiKit.PrimaryButton("RESUME", TogglePause);
+            resume.style.marginTop = Systems_UiKit.SPACE_5;
             _pauseCard.Add(resume);
 
-            var quit = new Button(QuitToBracket) { text = "QUIT MATCH" };
-            StyleMenuButton(quit, new Color(0.22f, 0.2f, 0.21f), new Color(0.85f, 0.82f, 0.78f));
+            Button quit = Systems_UiKit.GhostButton("QUIT MATCH", QuitToBracket);
+            quit.style.marginTop = Systems_UiKit.SPACE_3;
             _pauseCard.Add(quit);
-        }
 
-        static void StyleMenuButton(Button b, Color background, Color text)
-        {
-            b.style.height = 64;
-            b.style.marginTop = 14;
-            b.style.fontSize = 26;
-            b.style.unityFontStyleAndWeight = FontStyle.Bold;
-            b.style.color = text;
-            b.style.backgroundColor = background;
-            Round(b, 12);
-        }
-
-        static void Round(VisualElement e, int radius)
-        {
-            e.style.borderTopLeftRadius = radius;
-            e.style.borderTopRightRadius = radius;
-            e.style.borderBottomLeftRadius = radius;
-            e.style.borderBottomRightRadius = radius;
+            _hud.AddModal(_pauseCard);
         }
 
         void TogglePause()
         {
             if (_phase == Phase.MatchOver) return;   // result card owns that moment
             _paused = !_paused;
-            _pauseCard.style.display = _paused ? DisplayStyle.Flex : DisplayStyle.None;
+            if (_paused) _hud.ShowModal(_pauseCard); else _hud.HideModal();
             // Restore to 1 rather than to the pre-pause value: presentation slow-mo
             // ends on a realtime timer that keeps running while paused, so the saved
             // value would be stale.
@@ -719,15 +793,19 @@ namespace PoSumo
             UnityEngine.SceneManagement.SceneManager.LoadScene("SCN_TOURNAMENT");
         }
 
+        /// The names are static for the life of the match and are drawn as their
+        /// own coloured labels in the scorebug, so only the digits are rewritten
+        /// here — no per-round rich-text string to rebuild.
         void UpdateScoreboard(bool flash)
         {
-            if (_scoreLabel == null) return;
-            _scoreLabel.text =
-                $"<color=#{Hex(colorA)}>{nameA}</color>  {_scoreA} : {_scoreB}  <color=#{Hex(colorB)}>{nameB}</color>";
+            if (_scoreDigits == null) return;
+            _scoreDigits.text = $"{_scoreA} : {_scoreB}";
             if (flash)
             {
-                _scoreLabel.style.fontSize = 54;
-                _scoreLabel.schedule.Execute(() => _scoreLabel.style.fontSize = 44).StartingIn(400);
+                _scoreDigits.style.fontSize = Systems_UiKit.FONT_HERO;
+                _scoreDigits.schedule
+                    .Execute(() => _scoreDigits.style.fontSize = Systems_UiKit.FONT_TITLE)
+                    .StartingIn(400);
             }
         }
 
@@ -745,6 +823,9 @@ namespace PoSumo
             _countdownLeft -= Time.fixedDeltaTime;
             if (_countdownLeft <= 0f)
             {
+                // A word needs a smaller size than a single digit does: "FIGHT!"
+                // at the digit's 112pt runs past the edge of a 720pt-wide panel.
+                _countdown.style.fontSize = Systems_UiKit.FONT_HERO;
                 _countdown.text = "FIGHT!";
                 _countdown.schedule.Execute(HideCountdown).StartingIn(600);
                 return;
@@ -753,8 +834,9 @@ namespace PoSumo
             int digit = Mathf.CeilToInt(_countdownLeft);
             if (digit == _lastCountdownDigit) return;
             _lastCountdownDigit = digit;
-            _countdown.style.display = DisplayStyle.Flex;
+            _countdown.style.fontSize = Systems_UiKit.FONT_MEGA;
             _countdown.text = digit.ToString();
+            _hud.ShowCentre(_countdown);
 
             if (digit == 1) return; // let the last punch-in expire — wide for the engage
             var fighter = ((countdownSeconds - digit) & 1) == 0 ? wrestlerA : wrestlerB;
@@ -773,7 +855,7 @@ namespace PoSumo
 
         void HideCountdown()
         {
-            _countdown.style.display = DisplayStyle.None;
+            _hud.HideCentre(_countdown);
         }
 
         void UpdateClock()
@@ -783,15 +865,13 @@ namespace PoSumo
             {
                 _lastShownSeconds = remaining;
                 _clock.text = remaining.ToString();
-                _clock.style.color = remaining <= 5
-                    ? new Color(1f, 0.4f, 0.3f)
-                    : new Color(0.8f, 0.76f, 0.68f);
+                _clock.style.color = remaining <= 5 ? Systems_UiKit.Bad : Systems_UiKit.TextMid;
             }
         }
 
         void Update()
         {
-            if (_phase == Phase.MatchOver && SpacePressed()) { ResetMatch(); return; }
+            if (_phase == Phase.MatchOver && ContinuePressed()) { ResetMatch(); return; }
             // Android maps its hardware back button onto escapeKey, so this is the
             // system-back handler as well as the desktop shortcut. Update still runs
             // at timeScale 0, so it can also un-pause.
@@ -807,9 +887,19 @@ namespace PoSumo
 #endif
         }
 
-        bool SpacePressed()
+        /// Dismiss the result card and rematch.
+        ///
+        /// This was space-only. On the actual target platform there is no keyboard,
+        /// so Keyboard.current is null and the check could never return true — an
+        /// Android player reaching the result card was stuck on it with no way out.
+        /// Any pointer press (touch or mouse) now works, with space kept for desktop.
+        bool ContinuePressed()
         {
 #if ENABLE_INPUT_SYSTEM
+            if (Pointer.current != null && Pointer.current.press.wasPressedThisFrame)
+            {
+                return true;
+            }
             return Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame;
 #else
             return Input.GetKeyDown(KeyCode.Space);
@@ -838,7 +928,7 @@ namespace PoSumo
                         wrestlerB.EndEpisode();
                         HoldUpright();
                         _downA = _downB = 0f;
-                        _banner.style.display = DisplayStyle.None;
+                        _hud.HideCentre(_banner);
                         _phase = Phase.Grace;
                         _phaseLeft = graceSeconds;
                     }
@@ -850,7 +940,8 @@ namespace PoSumo
                     _phaseLeft -= Time.fixedDeltaTime;
                     if (_phaseLeft <= 0f)
                     {
-                        if (enableWalkIn && WalkBrainsReady())
+                        // Only the round that opens the match walks in.
+                        if (enableWalkIn && !_walkInPlayed && WalkBrainsReady())
                         {
                             _phase = Phase.WalkIn;
                             BeginWalkInPhase();
@@ -883,6 +974,9 @@ namespace PoSumo
                         HoldUpright();
                         EndWalkInPhase();
                         ContractMat();
+                        // Drop the wide ceremony shot so the camera settles onto
+                        // the pair before the countdown punches in on their heads.
+                        if (_camFollow != null) _camFollow.ClearShots();
                         _braceStarted = Time.time;
                         _phase = Phase.Fighting;
                         _elapsed = 0f;
@@ -910,8 +1004,15 @@ namespace PoSumo
             _elapsed += Time.fixedDeltaTime;
             UpdateClock();
 
-            _downA = wrestlerA.IsDown ? _downA + Time.fixedDeltaTime : 0f;
-            _downB = wrestlerB.IsDown ? _downB + Time.fixedDeltaTime : 0f;
+            // Only accumulated when the rule that reads them is on. With
+            // knockdownLoses off (the shipping config) these fed one unreachable
+            // branch and were pure work every physics step. The HUD's KD stat does
+            // NOT come from here — Systems_FightHud tracks Agent_Biped.IsDown itself.
+            if (knockdownLoses)
+            {
+                _downA = wrestlerA.IsDown ? _downA + Time.fixedDeltaTime : 0f;
+                _downB = wrestlerB.IsDown ? _downB + Time.fixedDeltaTime : 0f;
+            }
 
             // Anyone off the mat goes limp the instant it happens, so the ragdoll
             // flop plays out before the result is announced.
@@ -1037,15 +1138,17 @@ namespace PoSumo
                 _phase = Phase.MatchOver;
                 bool aWon = _scoreA > _scoreB;
                 if (aWon) MatchWinsA++; else MatchWinsB++;
-                _banner.style.display = DisplayStyle.None;
+                _hud.HideCentre(_banner);
                 _resultTitle.text = $"{WrapName(aWon ? nameA : nameB, aWon ? colorA : colorB)} WINS";
                 _resultScore.text = $"{Mathf.Max(_scoreA, _scoreB)} — {Mathf.Min(_scoreA, _scoreB)}";
                 _resultCard.style.borderTopColor = aWon ? colorA : colorB;
-                ShowAfter(_resultCard, announceDelayMs);
-                ShowAfter(_overlay, announceDelayMs);
-                // The running scoreboard would otherwise sit under the result
-                // card competing with it; the card already states the score.
-                HideAfter(_scoreBlock, announceDelayMs);
+                // One call now raises the card AND its backdrop; they were two
+                // separately scheduled reveals that had to be kept in step. It
+                // also freezes both fighters on the same frame.
+                ShowResultCardAfter(announceDelayMs);
+                // The running scorebug would otherwise sit above the result card
+                // competing with it; the card already states the score.
+                HideAfter(_scoreBug, announceDelayMs);
                 MatchEnded?.Invoke(aWon ? wrestlerA : wrestlerB);
                 return;
             }
@@ -1053,12 +1156,84 @@ namespace PoSumo
             _banner.text = roundWinner != null
                 ? (winText ?? $"{WrapName(roundWinner == wrestlerA ? nameA : nameB, roundWinner == wrestlerA ? colorA : colorB)} SCORES!")
                 : drawText;
-            ShowAfter(_banner, announceDelayMs);
+            ShowCentreAfter(_banner, announceDelayMs);
 
             _phase = Phase.RoundEnded;
             // Extend the pause by the announce delay so the result stays on
             // screen just as long as it did before.
             _phaseLeft = betweenRoundsPause + announceDelayMs / 1000f;
+        }
+
+        /// Boxing's three-knockdown rule, layered on top of the sumo rules.
+        ///
+        /// A head knockout was otherwise pure spectacle: Systems_BodyDamage cuts
+        /// the fighter's motors and Systems_MatchPresentation slows time, but the
+        /// round was still only won by pushing the limp body out, so a clean head
+        /// shot could cost the man who landed it nothing at all. Counting them
+        /// gives the KO a consequence — take `knockoutsToLoseMatch` in one match
+        /// and it ends there, wherever the bodies happen to be standing.
+        ///
+        /// Deliberately NOT mirrored into Systems_SumoMatchManager. The two
+        /// referees are kept in step on the losing conditions a policy has to
+        /// learn; this is not one of them. It can only end a MATCH, never a
+        /// training episode, so no brain can meet a rule it never trained against.
+        void OnKnockout(Agent_BipedBody victim, Vector3 point)
+        {
+            if (victim == null || knockoutsToLoseMatch <= 0) return;
+            // _hud null means Start has not built the UI yet; MatchOver means the
+            // result card already owns the screen.
+            if (_hud == null || _phase == Phase.MatchOver) return;
+
+            Agent_Biped loser;
+            int suffered;
+            if (victim == _bodyA) { loser = wrestlerA; suffered = ++_koA; }
+            else if (victim == _bodyB) { loser = wrestlerB; suffered = ++_koB; }
+            else return;
+
+            Debug.Log($"[MATCH] knockout {suffered}/{knockoutsToLoseMatch} on " +
+                      $"{(loser == wrestlerA ? nameA : nameB)}");
+            if (suffered < knockoutsToLoseMatch) return;
+
+            EndMatchByKnockout(loser);
+        }
+
+        /// Stops the match on the deciding knockout. The KO'd fighter loses no
+        /// matter what the round score says — that is the whole point of the rule.
+        void EndMatchByKnockout(Agent_Biped loser)
+        {
+            Agent_Biped winner = loser == wrestlerA ? wrestlerB : wrestlerA;
+            bool aWon = winner == wrestlerA;
+
+            _phase = Phase.MatchOver;
+            EndedByKnockout = true;
+            if (aWon) MatchWinsA++; else MatchWinsB++;
+            LongestRound = Mathf.Max(LongestRound, _elapsed);
+
+            // The loser is already limp from Systems_BodyDamage; keep it that way
+            // and let the winner carry on moving over the body.
+            GoLimp(loser);
+            winner.actionsEnabled = true;
+
+            _clock.text = "";
+            _lastShownSeconds = -1;
+            _countdownLeft = 0f;
+            HideCountdown();
+            _hud.HideCentre(_banner);
+
+            _resultTitle.text = $"{WrapName(aWon ? nameA : nameB, aWon ? colorA : colorB)} WINS BY KO";
+            _resultScore.text = $"{(aWon ? _koB : _koA)} knockouts · rounds {_scoreA}–{_scoreB}";
+            _resultCard.style.borderTopColor = aWon ? colorA : colorB;
+
+            // The UI Toolkit scheduler runs on realtime, as does the presentation's
+            // slow-motion timer, so this delay genuinely outlasts the KO replay
+            // instead of being stretched along with it.
+            long delayMs = (long)(Mathf.Max(0f, knockoutAnnounceSeconds) * 1000f);
+            ShowResultCardAfter(delayMs);
+            HideAfter(_scoreBug, delayMs);
+
+            // No RoundEnded is fired: no round was won. Raising it would hand the
+            // career recorder a round result that never happened.
+            MatchEnded?.Invoke(winner);
         }
 
         static bool IsLimp(Agent_Biped fighter)
@@ -1075,17 +1250,72 @@ namespace PoSumo
                    .StartingIn(delayMs);
         }
 
-        /// Reveal a UI element now, or after a delay so the ragdoll lands first.
-        static void ShowAfter(VisualElement element, long delayMs)
+        /// Reveal the result card, and stop the match dead at the same moment.
+        ///
+        /// The winner is deliberately left driving through the finish so he
+        /// carries on moving over the body instead of freezing mid-pose. Once the
+        /// card is up that reads as the game still running behind a dialog, so
+        /// everything halts on the same frame the card appears — not when the
+        /// match was decided, because the ragdoll flop in between is the point.
+        void RevealResultCard()
+        {
+            FreezeFighter(wrestlerA);
+            FreezeFighter(wrestlerB);
+            _hud.ShowModal(_resultCard);
+        }
+
+        void ShowResultCardAfter(long delayMs)
         {
             if (delayMs <= 0L)
             {
-                element.style.display = DisplayStyle.Flex;
+                RevealResultCard();
                 return;
             }
-            element.style.display = DisplayStyle.None;
-            element.schedule.Execute(() => element.style.display = DisplayStyle.Flex)
-                   .StartingIn(delayMs);
+            _resultCard.schedule.Execute(RevealResultCard).StartingIn(delayMs);
+        }
+
+        /// Kills a fighter's motion outright: motors off, velocities zeroed and
+        /// physics stopped, so the pose under the result card holds still.
+        /// ResetMatch's EndEpisode -> HoldUpright -> round opening puts them back
+        /// to simulating, so nothing has to undo this explicitly.
+        static void FreezeFighter(Agent_Biped fighter)
+        {
+            if (fighter == null) return;
+            fighter.actionsEnabled = false;
+            var body = fighter.GetComponent<Agent_BipedBody>();
+            if (body == null || body.Parts == null) return;
+            for (int partIndex = 0; partIndex < body.Parts.Length; partIndex++)
+            {
+                Rigidbody2D part = body.Parts[partIndex];
+                if (part == null) continue;
+                part.linearVelocity = Vector2.zero;
+                part.angularVelocity = 0f;
+                part.simulated = false;
+            }
+        }
+
+        /// Raise a dialog now, or after a delay so the ragdoll lands first.
+        /// Routing through the HUD root means the dim backdrop and the mutual
+        /// exclusion with any other dialog come along automatically.
+        void ShowModalAfter(VisualElement element, long delayMs)
+        {
+            if (delayMs <= 0L)
+            {
+                _hud.ShowModal(element);
+                return;
+            }
+            element.schedule.Execute(() => _hud.ShowModal(element)).StartingIn(delayMs);
+        }
+
+        /// Same, for a callout drawn over the arena rather than a dialog.
+        void ShowCentreAfter(VisualElement element, long delayMs)
+        {
+            if (delayMs <= 0L)
+            {
+                _hud.ShowCentre(element);
+                return;
+            }
+            element.schedule.Execute(() => _hud.ShowCentre(element)).StartingIn(delayMs);
         }
 
         static string WrapName(string n, Color c) => $"<color=#{Hex(c)}>{n}</color>";
@@ -1093,12 +1323,14 @@ namespace PoSumo
         void ResetMatch()
         {
             _scoreA = _scoreB = 0;
+            _koA = _koB = 0;
+            EndedByKnockout = false;
+            _walkInPlayed = false;   // a rematch is a new match, so it walks in again
             MatchReset?.Invoke();
             UpdateScoreboard(false);
-            _overlay.style.display = DisplayStyle.None;
-            _banner.style.display = DisplayStyle.None;
-            _resultCard.style.display = DisplayStyle.None;
-            if (_scoreBlock != null) _scoreBlock.style.display = DisplayStyle.Flex;
+            _hud.HideModal();            // clears the result card and the backdrop
+            _hud.HideCentre(_banner);
+            if (_scoreBug != null) _scoreBug.style.display = DisplayStyle.Flex;
             wrestlerA.EndEpisode();
             wrestlerB.EndEpisode();
             HoldUpright();

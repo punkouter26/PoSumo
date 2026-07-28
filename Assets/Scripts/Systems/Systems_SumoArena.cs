@@ -21,10 +21,14 @@ namespace PoSumo
         /// Visual + physics preset for the dohyo top surface.
         public enum SurfaceStyle { Clay = 0, Ice = 1, Sticky = 2 }
 
-        public float ringHalfWidth = 2.45f;  // tawara position
-        public float groundWidth = 5.5f;     // platform width (edge = +/- groundWidth/2)
+        // Widths doubled with the fighting ring. The dressing built from these
+        // (roof, ridge, arena floor, crowd) is BAKED into the scene, so changing
+        // them requires re-running Build() and re-saving — SetPlatformHalfWidth
+        // only rescales the platform, surface, lip and tawara at runtime.
+        public float ringHalfWidth = 4.9f;   // tawara position
+        public float groundWidth = 11f;      // platform width (edge = +/- groundWidth/2)
         public float platformDrop = 0.6f;    // how far down the crowd floor sits
-        public float floorWidth = 22f;       // lower arena floor span
+        public float floorWidth = 34f;       // lower arena floor span
         public bool showPosts = true;        // tawara + dressing on/off
         public bool deluxe = false;          // full-stadium dressing (SCN_SUMO)
         [Tooltip("Surface preset: recolors the dohyo. Clay=warm, Ice=blue-white, Sticky=dark resin.")]
@@ -238,9 +242,33 @@ namespace PoSumo
             if (transform.childCount > 0)
             {
                 RebindBaked();
+                ApplyLitMaterial();
                 return;
             }
             Build();
+            ApplyLitMaterial();
+        }
+
+        /// Put every renderer the ARENA owns onto the lit material so the 2D light
+        /// rig reaches the dohyo, crowd and backdrop.
+        ///
+        /// Systems_ArenaLighting used to do this by sweeping every SpriteRenderer in
+        /// the scene, which meant it also claimed renderers it did not own — the
+        /// wrestlers' body materials and the light shafts both got overwritten, and
+        /// each needed an exception carved out. Scoped to this subtree, the arena
+        /// owns its own look and nothing else has to defend against it.
+        void ApplyLitMaterial()
+        {
+            Material lit = Systems_ArenaLighting.LitSpriteMaterial();
+            if (lit == null)
+            {
+                return;
+            }
+            var renderers = GetComponentsInChildren<SpriteRenderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                renderers[i].sharedMaterial = lit;
+            }
         }
 
         void RebindBaked()

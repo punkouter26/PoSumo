@@ -1,0 +1,102 @@
+# Nick fight — corrective pass onto the REBUILT body and the DOUBLED ring.
+#
+# Five things changed under the policy at once, which is why this cannot be a
+# resume and must be a warm-started corrective run:
+#
+#   1. Ring half-width 2.75 -> 5.5. Edge distance reaches the policy normalised
+#      by ringHalfWidth, so every observation of the boundary moved. On the wide
+#      ring the shipped brains stopped finishing bouts at all — rounds began
+#      reaching the 30 s timeout and being settled on position, which the tight
+#      ring almost never did.
+#   2. Segment lengths re-derived to Winter. Limbs were 8-18% short; legs grew
+#      ~0.084 m and the trunk gave back ~0.043. Every joint anchor moved with
+#      them.
+#   3. Joint ranges clamped to human total ROM (ankle +/-45 -> +/-25, spine
+#      +/-25 -> +/-20 each, shoulder +/-160 -> +/-120).
+#   4. Upper-body torque cut to human peak (spine 400 -> 180 each, shoulder
+#      150 -> 80, elbow 100 -> 60). Legs unchanged.
+#   5. Passive joint resistance and real body damping added, so unheld limbs no
+#      longer swing free.
+#
+# Two new shaping terms come with it, and BOTH are deliberate behaviour change
+# rather than the usual default-to-the-old-constant:
+#   effortPenalty  ungated, quadratic. The existing energyPenalty is switched off
+#                  whenever the fighter moves fast, which made full-power flailing
+#                  free mid-charge — measured 7-12 of 13 motors railed above |0.9|.
+#   stanceReward   both feet planted, planted apart, knees bent. Nothing rewarded
+#                  a sumo base before; fighters were measured standing on one foot
+#                  with the chest 0.87 m off the mat.
+#
+#   mlagents-learn Training/configs/NickSumo05.yaml --run-id=nick_sumo05 #     --initialize-from=nick_sumo04 --results-dir=Training/results #     --env=Builds/NickEnv/NickEnv.exe --num-envs=3 --no-graphics --base-port 5620
+#
+# Same behavior name as its trunk, so no staging directory is needed.
+# network_settings MUST stay 512 x 3 to match nick_sumo04.
+#
+# 6M steps, double the usual corrective pass: the body itself changed, not just a
+# contact shape, so the policy has more to re-learn than a nudge. learning_rate
+# is 1.5e-4 — above the 1.0e-4 used for a contact-shape tweak, below the 3.0e-4 of
+# a fresh run.
+#
+# Judge on the ELO curve, NOT mean reward. Two new shaping terms mean reward is
+# not comparable with nick_sumo04 at all; a lower number here says nothing.
+
+behaviors:
+  Nick:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 1.5e-4
+      beta: 5.0e-3
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:      # MUST match nick_sumo04 exactly (initialize-from)
+      normalize: true
+      hidden_units: 512
+      num_layers: 3
+      vis_encode_type: simple
+    reward_signals:
+      extrinsic:
+        gamma: 0.997
+        strength: 1.0
+    keep_checkpoints: 5
+    checkpoint_interval: 250000
+    max_steps: 6000000
+    time_horizon: 1000
+    summary_freq: 30000
+    threaded: true
+    self_play:
+      window: 25
+      play_against_latest_model_ratio: 0.25
+      save_steps: 50000
+      swap_steps: 50000
+      team_change: 250000
+
+# Ring-width curriculum. Systems_SumoMatchManager randomises platform half-width
+# per round between startHalfRange (now 1.7 .. 5.5, widened from 1.7 .. 2.75 so it
+# spans the new game ring). platform_difficulty drives how far toward the narrow
+# end it may go, so ramping it teaches edge distance across SCALES instead of
+# letting the policy memorise one mat width.
+environment_parameters:
+  platform_difficulty:
+    curriculum:
+      - name: wide
+        completion_criteria:
+          measure: progress
+          behavior: Nick
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.3
+        value: 0.0
+      - name: mixed
+        completion_criteria:
+          measure: progress
+          behavior: Nick
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.6
+        value: 0.5
+      - name: full
+        value: 1.0

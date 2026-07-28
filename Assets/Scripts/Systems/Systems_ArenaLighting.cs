@@ -19,19 +19,30 @@ namespace PoSumo
     /// shape on top of it rather than being the only illumination.
     public sealed class Systems_ArenaLighting : MonoBehaviour
     {
+        // FLAT LIGHTING. The rig used to be a bright key point-light over the
+        // dohyo with two rim point-lights and a volumetric cone, which is what
+        // produced the spotlit look and the darkness at the edges of the arena.
+        // A Light2D of type Global has no position and no falloff — it lights
+        // every sprite on its target layers identically — so carrying the whole
+        // scene on the global fill is what "well lit, no drop off" means here.
+        //
+        // The key and rim lights are still CREATED, at zero intensity, because
+        // Systems_PostFx and Systems_ArenaAtmosphere read KeyLight off Instance
+        // and a null there would be a new crash rather than a new look. Raise
+        // keyIntensity above zero to get the old shaping back.
         [Header("Global fill")]
-        [Tooltip("Base illumination everything receives. 1 = as bright as the old unlit look.")]
-        public float globalIntensity = 0.95f;
-        public Color globalColor = new Color(1f, 0.95f, 0.88f);
+        [Tooltip("Base illumination everything receives, with no falloff anywhere. Carries the whole scene now that the key and rim lights are off.")]
+        public float globalIntensity = 1.35f;
+        public Color globalColor = new Color(1f, 0.97f, 0.93f);
 
-        [Header("Key light (above the dohyo)")]
-        public float keyIntensity = 1.15f;
+        [Header("Key light (above the dohyo) — 0 disables the spotlight look")]
+        public float keyIntensity = 0f;
         public Color keyColor = new Color(1f, 0.93f, 0.78f);
         public float keyHeight = 5.2f;
         public float keyOuterRadius = 7.5f;
 
-        [Header("Rim lights (crowd side)")]
-        public float rimIntensity = 0.85f;
+        [Header("Rim lights (crowd side) — 0 keeps the edges as bright as the middle")]
+        public float rimIntensity = 0f;
         public Color rimColor = new Color(0.45f, 0.62f, 1f);
         public float rimSpread = 4.2f;
 
@@ -42,15 +53,18 @@ namespace PoSumo
         public float shadowSoftness = 0.55f;
 
         [Header("Light volumes (god rays)")]
-        [Tooltip("Volumetric glow on the key light — the visible cone under the tsuriyane. 0 disables it.")]
-        [Range(0f, 1f)] public float keyVolumeIntensity = 0.22f;
-        [Range(0f, 1f)] public float keyShadowVolumeIntensity = 0.35f;
+        [Tooltip("Volumetric glow on the key light — the visible cone under the tsuriyane. Zero: the cone WAS the spotlight effect.")]
+        [Range(0f, 1f)] public float keyVolumeIntensity = 0f;
+        [Range(0f, 1f)] public float keyShadowVolumeIntensity = 0f;
 
         [Header("Post-processing")]
         public bool enablePost = true;
         public float bloomIntensity = 0.85f;
         public float bloomThreshold = 0.82f;
-        public float vignette = 0.26f;
+        // Zero: a vignette is darkening at the edge of frame, which is the same
+        // "drop off" the point lights were producing, just applied in screen
+        // space instead of world space.
+        public float vignette = 0f;
         public float contrast = 12f;
         public float saturation = 10f;
         public float grain = 0.18f;
@@ -243,35 +257,18 @@ namespace PoSumo
             }
         }
 
-        private void Start()
-        {
-            // The dohyo, crowd and backdrop are baked into the scene with the
-            // default unlit sprite material, so they would ignore the rig entirely.
-            // Convert them once, after the arena has finished building itself.
-            ConvertSceneSpritesToLit();
-        }
-
-        private static void ConvertSceneSpritesToLit()
-        {
-            Material lit = LitSpriteMaterial();
-            SpriteRenderer[] renderers =
-                FindObjectsByType<SpriteRenderer>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-            int converted = 0;
-            for (int i = 0; i < renderers.Length; i++)
-            {
-                SpriteRenderer sr = renderers[i];
-                // Skip anything already on a PoSumo material. Without this the
-                // per-fighter body materials (sweat, clay, rim) get stomped back to
-                // the flat scenery material the frame after they are created.
-                if (IsPoSumoLitMaterial(sr.sharedMaterial))
-                {
-                    continue;
-                }
-                sr.sharedMaterial = lit;
-                converted++;
-            }
-            Debug.Log($"Systems_ArenaLighting: lit {converted} sprite renderers.");
-        }
+        // The scene-wide material sweep that used to live here is gone.
+        //
+        // It ran FindObjectsByType<SpriteRenderer> across the whole scene in Start
+        // and reassigned sharedMaterial on everything it did not recognise. That is
+        // an opt-OUT design: every new renderer had to be defended against it. It
+        // already ate the per-fighter body materials once (hence an IsPoSumoLitMaterial
+        // check bolted on) and it silently replaced the light shafts' material too.
+        //
+        // Arena scenery now takes the lit material from Systems_SumoArena as it is
+        // built, and runtime-built objects (bodies, cloth, shafts) set their own.
+        // Ownership sits with whoever creates the renderer, which is the only rule
+        // that does not need a list of exceptions.
 
         private void BuildLights()
         {

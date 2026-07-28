@@ -156,3 +156,86 @@ To audition a brain from a run that is still going, call
 `DeployBrain.DeployLatestCheckpoint("<run-id>", "<Behavior>", "Assets/Agents/<Folder>")`
 via MCP `script-execute` — the trainer only writes the unnumbered export on
 shutdown. Copying a checkpoint does not require stopping the run.
+
+## Realism pass — corrective runs (pending)
+
+The body was rebuilt and the ring doubled, which invalidates all four shipped
+fight brains. These four configs are the corrective pass. They are **warm starts,
+not resumes**: `--initialize-from` the current trunk, 6M steps at lr 1.5e-4.
+
+| Config | Run id | Trunk | Env | Port |
+|---|---|---|---|---|
+| `MattSumo07.yaml` | `matt_sumo07` | `matt_sumo06` | `MattAggrEnv` | 5600 |
+| `StandardSumo03.yaml` | `standard_sumo03` | `standard_sumo02` | `StandardEnv` | 5610 |
+| `NickSumo05.yaml` | `nick_sumo05` | `nick_sumo04` | `NickEnv` | 5620 |
+| `KimSumo03.yaml` | `kim_sumo03` | `kim_sumo02` | `KimEnv` | 5630 |
+
+What changed under the policies:
+
+1. Ring half-width 2.75 → 5.5 (edge distance is a normalised observation).
+2. Segment lengths re-derived to Winter — limbs were 8–18% short.
+3. Joint ROM clamped to human total (ankle ±25, spine ±20 each, shoulder ±120).
+4. Upper-body torque cut to human peak (spine 180 each, shoulder 80, elbow 60).
+5. Passive joint resistance + real body damping.
+6. Two new shaping terms: `effortPenalty` (ungated, quadratic) and `stanceReward`.
+
+**Judge these on the ELO curve, not mean reward.** Two new shaping terms mean the
+reward scale is not comparable with the trunk runs at all.
+
+Each config carries a `platform_difficulty` curriculum (wide → mixed → full) so
+the policy learns edge distance across ring widths rather than memorising one mat.
+`Systems_SumoMatchManager.startHalfRange` was widened to 1.7–5.5 to match.
+
+Rebuild each env first — the body changed, so an old env binary trains the old
+skeleton:
+
+```powershell
+# PoSumo > Build <Name> Training Env, for each of the four
+Training\venv\Scripts\mlagents-learn.exe Training/configs/MattSumo07.yaml `
+  --run-id=matt_sumo07 --initialize-from=matt_sumo06 --results-dir=Training/results `
+  --env=Builds/MattAggrEnv/MattAggrEnv.exe --num-envs=3 --no-graphics --base-port 5600
+```
+
+### Known trap: SCN_TRAIN_STD has no character asset assigned
+
+`SCN_TRAIN_STD` contains **zero** references to `Standard_Character.asset` (8 fields
+sit at `character: {fileID: 0}`), while the other seven training scenes reference
+theirs correctly. Verified by GUID-grepping the saved `.unity` files, which is the
+check CLAUDE.md mandates.
+
+It is currently harmless *by coincidence*: Standard's sheet is byte-identical to
+`Agent_Biped`'s code defaults (massScale/widthScale/torqueScale 1, uprightReward
+0.0005, closingReward 0.0006, energyPenalty 0.0004, straightLegEarnFraction 0.3 …),
+so an agent with no character trains exactly what Standard's sheet would ask for.
+`standard_sumo03` was therefore left running rather than restarted.
+
+It becomes a real bug the moment anyone tunes Standard's sheet — the training scene
+will silently ignore it, which is precisely how this project once trained the wrong
+policy for 1.5M steps. Assign the character in the scene and rebuild StandardEnv
+before any Standard-specific tuning.
+
+### Sumo corrective runs: full 6M budget (an earlier 3M cut was reverted)
+
+These runs go the configured `max_steps: 6000000`. The trainers stop themselves at
+that point and write the unnumbered `<Behavior>.onnx`.
+
+An earlier note here said they would be stopped at 3M. That was a wall-clock
+decision, not a training one — at the measured ~100 steps/s with four self-play
+runs plus four walk runs sharing the machine, 6M was ~15 h. 3M would still have
+been defensible, since CLAUDE.md's documented corrective window is "1-3M steps
+against trunks of 12-45M". With more time available the cut was reverted, and the
+early-stop watcher removed, so nothing truncates them now.
+
+The walk runs finish first (2.5M), which frees four env processes and should let
+the sumo runs speed up for the remainder.
+
+If a run is interrupted, resume rather than restart:
+
+```powershell
+Trainingenv\Scripts\mlagents-learn.exe Training/configs/MattSumo07.yaml `
+  --run-id=matt_sumo07 --results-dir=Training/results `
+  --env=Builds/MattAggrEnv/MattAggrEnv.exe --num-envs=2 --no-graphics --base-port 5600 --resume
+```
+
+`--resume`, not `--force`: force deletes the run directory, and would also need
+TensorBoard restarted because it holds a stale handle on Windows.

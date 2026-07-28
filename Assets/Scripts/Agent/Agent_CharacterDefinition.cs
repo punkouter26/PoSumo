@@ -64,6 +64,10 @@ namespace PoSumo
         public float cadenceReward = 0.0015f;
         [Tooltip("Reward per meter of torso rise while down (getting back up).")]
         public float riseReward = 0.02f;
+        [Tooltip("UNGATED per-step cost of squared motor effort. The older energyPenalty is switched off whenever the fighter is moving fast, which made full-power flailing free mid-charge and left 7-12 of the 13 motors railed. This one always applies and is quadratic, so it bites hardest exactly at the rails. 0 restores the old behaviour.")]
+        public float effortPenalty = 0.0015f;
+        [Tooltip("Per-step reward for a real sumo base: both feet planted, planted apart, and knees bent. Nothing rewarded stance before, and fighters were measured mid-bout standing on one foot with the chest 0.87 m off the mat.")]
+        public float stanceReward = 0.0009f;
         public float energyPenalty = 0.0004f;
         public float jerkPenalty = 0.0003f;
         [Range(0f, 1f)]

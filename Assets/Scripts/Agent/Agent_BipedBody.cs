@@ -35,6 +35,9 @@ namespace PoSumo
         [Tooltip("Optional face texture for the head (drawn right-facing; auto-flipped when facingSign is -1). Falls back to a plain circle.")]
         public Sprite headSprite;
 
+        [Tooltip("Diameter of the head hitbox in metres, identical for every character regardless of face art. PHYSICS: changing this changes collision geometry and invalidates trained brains — 0.5 is what the previous art-derived collider measured, so it is the value that changes the dynamics least.")]
+        public float headDiameter = 0.5f;
+
         // Dressing. Visual only: no extra rigidbodies, no extra colliders, no extra
         // joints, and nothing that touches a mass or a contact — so it cannot
         // change the dynamics a policy was trained against.
@@ -51,6 +54,9 @@ namespace PoSumo
         [HideInInspector] public Rigidbody2D Torso;   // pelvis (root mass, ring-out tracking)
         [HideInInspector] public Rigidbody2D Chest;   // top segment (posture/lean sensing)
         [HideInInspector] public SpriteRenderer HeadRenderer; // face sprite (mood swaps)
+        /// Alpha silhouette of the current face, kept in step with HeadRenderer.
+        /// Systems_BodyDamage clips head decals against it.
+        [HideInInspector] public SpriteMask HeadMask;
         [HideInInspector] public HingeJoint2D[] Joints;   // 10 motors
         [HideInInspector] public Rigidbody2D[] Parts;
         [HideInInspector] public List<Collider2D> AllColliders = new List<Collider2D>();
@@ -63,6 +69,17 @@ namespace PoSumo
         /// Every limb/torso art renderer, in PART_DEFS order. Head excluded — it
         /// carries face art and is swapped by Systems_FaceMood.
         public SpriteRenderer[] ArtRenderers { get; private set; }
+
+        /// The head's own collider. The head is a compound child collider on the
+        /// CHEST rigidbody and has no Sensor_Impact of its own, so a hit to the head
+        /// arrives as a Chest collision — identifying it means comparing against
+        /// this. Exposed for Systems_BodyDamage's head-KO check.
+        public CircleCollider2D HeadCollider { get; private set; }
+
+        /// Unit-scale transform riding on the head, immune to face-art rescaling.
+        /// Parent head decals here, never to HeadRenderer.transform — local units
+        /// are metres.
+        public Transform HeadDecalAnchor { get; private set; }
 
         // Spawn clearance above contact surfaces: enough to avoid frame-0
         // interpenetration, small enough that the feet are effectively already
@@ -85,6 +102,33 @@ namespace PoSumo
         static Sprite _boxSprite, _torsoSprite, _circleSprite, _squareSprite;
         static PhysicsMaterial2D _footMat, _bodyMat;
 
+        /// Passive joint resistance, as a fraction of each joint's own motor
+        /// budget. HingeJoint2D has no spring — that is a 3D-joint feature — so it
+        /// is applied as an explicit restoring torque each physics step.
+        ///
+        /// Deliberately weak. This is ligament and antagonist muscle tone, not a
+        /// second actuator: it biases the body toward its neutral pose and bleeds
+        /// oscillation, without giving the policy something it has to overpower to
+        /// move. Before this, every joint was either motor-driven or completely
+        /// free, which is why unheld limbs swung like a pendulum.
+        const float PASSIVE_STIFFNESS_FRAC = 0.06f;   // of max torque at 90 deg off neutral
+        const float PASSIVE_DAMPING_FRAC = 0.10f;     // of max torque at 400 deg/s
+
+        // NOT YET IMPLEMENTED: passive neck.
+        //
+        // The head is a compound collider on the Chest rigidbody with its 6 kg
+        // folded into Chest's 13, so it cannot bob or whip on impact. Making it a
+        // real segment needs its own Rigidbody2D and an unpowered hinge — powered
+        // is not an option, because Agent_Biped builds observations by looping over
+        // ActionCount, so a 14th driven joint would change the action space AND
+        // the 44-obs vector, invalidating every brain's input and output layer.
+        //
+        // The reason it is not done here: the head would have to leave PART_DEFS'
+        // parallel arrays, which index ArtRenderers (head is deliberately excluded
+        // from those, it carries face art) and back every loop that limps, freezes
+        // and resets Parts[]. A neck wired in halfway leaves the head still
+        // simulating after the match-end freeze. It needs its own pass.
+
         struct PartDef
         {
             public string name; public float w, h, mass, x, y;
@@ -101,47 +145,82 @@ namespace PoSumo
             { child = c; parent = p; ax = ax_; ay = ay_; min = mn; max = mx; torque = t; speed = s; }
         }
 
-        // Right-facing layout. Heights: ankle 0.10, knee 0.48, hip 0.88,
-        // spine joints 1.06 / 1.20 / 1.34, shoulder 1.43, elbow 1.13.
-        // Total ~1.76 m, 69.6 kg (torso chain 38 kg incl. the 6 kg head, legs
-        // 23 kg, arms 8.6 kg) — see the TotalMass property, which is the number
-        // to trust. Segment masses track Winter's anthropometric fractions:
+        // Right-facing layout. Heights: ankle 0.10, knee 0.533, hip 0.964,
+        // spine joints 1.130 / 1.259 / 1.388, shoulder 1.471, elbow 1.144.
+        // 69.6 kg — see the TotalMass property, which is the number to trust.
+        //
+        // MASSES track Winter's anthropometric fractions and are unchanged:
         // thigh 10.1% (vs 10.0), shin 5.0% (4.65), foot 1.44% (1.45), torso
         // chain 54.6% (57.8); the arms run ~20-28% heavy on purpose.
+        //
+        // LENGTHS did not, and were re-derived against Winter for a 1.76 m body.
+        // Every limb had been 8-18% short — shank 0.38 against 0.246H = 0.433,
+        // foot 0.22 against 0.152H = 0.268, upper arm 0.30 against 0.186H = 0.327
+        // — while the trunk ran long at 0.55 against 0.288H = 0.507. Short shanks
+        // and short feet mean a short stride and a small base of support, which
+        // works directly against the sumo stance the shaping now asks for.
+        // The legs grew 0.084 m and the trunk gave back 0.043, so standing height
+        // rises only ~2%. The whole chain below is derived from those lengths:
+        // change a segment and the joint anchors above it must move with it.
         static readonly PartDef[] PART_DEFS =
         {
-            new PartDef("Pelvis",    0.32f, 0.18f, 11f, 0f,    0.97f,  0, 1f),
-            new PartDef("ThighNear", 0.14f, 0.40f,  7f, 0f,    0.68f,  2, 0.95f),
-            new PartDef("ShinNear",  0.11f, 0.38f,  3.5f, 0f,  0.29f,  2, 0.95f),
-            new PartDef("FootNear",  0.22f, 0.08f,  1f, 0.05f, 0.04f,  2, 0.95f, false, true),
-            new PartDef("ThighFar",  0.14f, 0.40f,  7f, 0f,    0.68f, -2, 0.78f),
-            new PartDef("ShinFar",   0.11f, 0.38f,  3.5f, 0f,  0.29f, -2, 0.78f),
-            new PartDef("FootFar",   0.22f, 0.08f,  1f, 0.05f, 0.04f, -2, 0.78f, false, true),
-            new PartDef("LowerBack", 0.30f, 0.14f,  7f, 0f,    1.13f,  0, 0.97f),
-            new PartDef("UpperBack", 0.31f, 0.14f,  7f, 0f,    1.27f,  0, 0.99f),
-            new PartDef("Chest",     0.34f, 0.18f, 13f, 0f,    1.43f,  0, 1f),
-            new PartDef("UArmNear",  0.10f, 0.30f,  2.5f, 0f,  1.28f,  3, 0.9f),
-            new PartDef("FArmNear",  0.09f, 0.28f,  1.8f, 0f,  0.99f,  3, 0.9f),
-            new PartDef("UArmFar",   0.10f, 0.30f,  2.5f, 0f,  1.28f, -3, 0.76f),
-            new PartDef("FArmFar",   0.09f, 0.28f,  1.8f, 0f,  0.99f, -3, 0.76f),
+            new PartDef("Pelvis",    0.32f,  0.18f,  11f,  0f,    1.054f,  0, 1f),
+            new PartDef("ThighNear", 0.14f,  0.431f,  7f,  0f,    0.749f,  2, 0.95f),
+            new PartDef("ShinNear",  0.11f,  0.433f,  3.5f, 0f,   0.317f,  2, 0.95f),
+            new PartDef("FootNear",  0.268f, 0.08f,   1f,  0.06f, 0.04f,   2, 0.95f, false, true),
+            new PartDef("ThighFar",  0.14f,  0.431f,  7f,  0f,    0.749f, -2, 0.78f),
+            new PartDef("ShinFar",   0.11f,  0.433f,  3.5f, 0f,   0.317f, -2, 0.78f),
+            new PartDef("FootFar",   0.268f, 0.08f,   1f,  0.06f, 0.04f,  -2, 0.78f, false, true),
+            new PartDef("LowerBack", 0.30f,  0.14f,   7f,  0f,    1.195f,  0, 0.97f),
+            new PartDef("UpperBack", 0.31f,  0.14f,   7f,  0f,    1.324f,  0, 0.99f),
+            new PartDef("Chest",     0.34f,  0.18f,  13f,  0f,    1.471f,  0, 1f),
+            new PartDef("UArmNear",  0.10f,  0.327f,  2.5f, 0f,   1.308f,  3, 0.9f),
+            new PartDef("FArmNear",  0.09f,  0.28f,   1.8f, 0f,   1.004f,  3, 0.9f),
+            new PartDef("UArmFar",   0.10f,  0.327f,  2.5f, 0f,   1.308f, -3, 0.76f),
+            new PartDef("FArmFar",   0.09f,  0.28f,   1.8f, 0f,   1.004f, -3, 0.76f),
         };
 
         // child, parent, anchor(x,y in root space), min, max (deg), torque, speed
+        //
+        // RANGES. Hip (-30..120), knee (-150..0) and elbow (0..150) are anatomically
+        // correct including the no-hyperextension stops, and are untouched. The
+        // ankle, the three spine joints and the shoulders were SYMMETRIC and bent
+        // backwards far past human range — a fighter could hyperextend his spine
+        // 75 degrees and throw an arm 160 degrees behind him, which is the single
+        // largest "that is not a body" contributor after motor saturation. They are
+        // now clamped to roughly human TOTAL range:
+        //   ankle    +/-45 -> +/-25   (human ROM ~70 deg: 20 dorsi + 50 plantar)
+        //   spine    +/-25 -> +/-20   each, so +/-60 over three (human ~120 total)
+        //   shoulder +/-160 -> +/-120 (human ~240 total)
+        // They remain symmetric because the sign convention for flexion differs per
+        // joint in this rig and assigning asymmetry blind would risk inverting a
+        // usable range. Making them properly asymmetric needs one visual check of
+        // which sign is flexion per joint; the magnitudes above are the safe half
+        // of that fix and remove the gross over-rotation on their own.
+        //
+        // TORQUE. Legs were already realistic (hip 300, knee 250, ankle 120 N-m
+        // against human peaks of ~250-300 / ~250-300 / ~150-200). The upper body
+        // was 2-4x human and is brought back: the three spine joints ran 400 N-m
+        // EACH against a human trunk-extensor peak of ~300-500 N-m in total, and
+        // that surplus is what let the torso catapult the whole body around.
+        //   spine    400 -> 180 each (540 total, still generous for a sumo)
+        //   shoulder 150 -> 80  (human ~50-100)
+        //   elbow    100 -> 60  (human ~50-70)
         static readonly JointDef[] JOINT_DEFS =
         {
-            new JointDef(1, 0,  0f, 0.88f,  -30f, 120f, 300f, 400f), // hip near
-            new JointDef(2, 1,  0f, 0.48f, -150f,   0f, 250f, 500f), // knee near
-            new JointDef(3, 2,  0f, 0.10f,  -45f,  45f, 120f, 400f), // ankle near
-            new JointDef(4, 0,  0f, 0.88f,  -30f, 120f, 300f, 400f), // hip far
-            new JointDef(5, 4,  0f, 0.48f, -150f,   0f, 250f, 500f), // knee far
-            new JointDef(6, 5,  0f, 0.10f,  -45f,  45f, 120f, 400f), // ankle far
-            new JointDef(7, 0,  0f, 1.06f,  -25f,  25f, 400f, 250f), // spine 1 (pelvis->lower back)
-            new JointDef(8, 7,  0f, 1.20f,  -25f,  25f, 400f, 250f), // spine 2 (lower->upper back)
-            new JointDef(9, 8,  0f, 1.34f,  -25f,  25f, 400f, 250f), // spine 3 (upper back->chest)
-            new JointDef(10, 9, 0f, 1.43f, -160f, 160f, 150f, 500f), // shoulder near (on chest)
-            new JointDef(11,10, 0f, 1.13f,    0f, 150f, 100f, 500f), // elbow near
-            new JointDef(12, 9, 0f, 1.43f, -160f, 160f, 150f, 500f), // shoulder far (on chest)
-            new JointDef(13,12, 0f, 1.13f,    0f, 150f, 100f, 500f), // elbow far
+            new JointDef(1, 0,  0f, 0.964f, -30f, 120f, 300f, 400f), // hip near
+            new JointDef(2, 1,  0f, 0.533f,-150f,   0f, 250f, 500f), // knee near
+            new JointDef(3, 2,  0f, 0.10f,  -25f,  25f, 120f, 400f), // ankle near
+            new JointDef(4, 0,  0f, 0.964f, -30f, 120f, 300f, 400f), // hip far
+            new JointDef(5, 4,  0f, 0.533f,-150f,   0f, 250f, 500f), // knee far
+            new JointDef(6, 5,  0f, 0.10f,  -25f,  25f, 120f, 400f), // ankle far
+            new JointDef(7, 0,  0f, 1.130f, -20f,  20f, 180f, 250f), // spine 1 (pelvis->lower back)
+            new JointDef(8, 7,  0f, 1.259f, -20f,  20f, 180f, 250f), // spine 2 (lower->upper back)
+            new JointDef(9, 8,  0f, 1.388f, -20f,  20f, 180f, 250f), // spine 3 (upper back->chest)
+            new JointDef(10, 9, 0f, 1.471f,-120f, 120f,  80f, 500f), // shoulder near (on chest)
+            new JointDef(11,10, 0f, 1.144f,   0f, 150f,  60f, 500f), // elbow near
+            new JointDef(12, 9, 0f, 1.471f,-120f, 120f,  80f, 500f), // shoulder far (on chest)
+            new JointDef(13,12, 0f, 1.144f,   0f, 150f,  60f, 500f), // elbow far
         };
 
         void Awake()
@@ -320,8 +399,13 @@ namespace PoSumo
 
                 var rb = go.AddComponent<Rigidbody2D>();
                 rb.mass = d.mass * massScale;
-                rb.linearDamping = 0.05f;
-                rb.angularDamping = 0.05f;
+                // Soft tissue. Real limbs are not frictionless linkages: muscle,
+                // fat and skin dissipate energy continuously, which is most of why
+                // a living body does not ring like a pendulum. At the old 0.05 the
+                // ragdoll had effectively no passive damping and every limb whipped
+                // and oscillated, which read as a puppet wearing motors.
+                rb.linearDamping = 0.25f;
+                rb.angularDamping = 0.8f;
                 rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
 
                 // Collider shape follows the drawn shape so contacts happen exactly
@@ -374,6 +458,15 @@ namespace PoSumo
                     hsr.sharedMaterial = BodyMaterial;
                     float parentW = d.w * widthScale;
                     HeadRenderer = hsr;
+
+                    // Alpha silhouette of the face, used to clip damage decals to
+                    // the drawn head. It lives on the ART object so it inherits the
+                    // same aspect-fit scale and flip the photo gets — a mask that
+                    // does not line up with the picture is worse than no mask.
+                    // alphaCutoff is low so soft hair edges still count as head.
+                    var mask = head.AddComponent<SpriteMask>();
+                    mask.alphaCutoff = 0.1f;
+                    HeadMask = mask;
                     _headCellW = parentW;
                     _headCellH = d.h;
                     if (headSprite != null)
@@ -386,9 +479,51 @@ namespace PoSumo
                         hsr.color = new Color(0.95f, 0.8f, 0.65f);
                         head.transform.localScale = new Vector3(0.312f / parentW, 0.312f / d.h, 1f);
                     }
-                    var hc = head.AddComponent<CircleCollider2D>();
+                    // Head hitbox on its OWN child, deliberately NOT the art
+                    // transform.
+                    //
+                    // The collider used to sit on the head art object — the same
+                    // object SetHeadSprite rescales to aspect-fit each character's
+                    // face photo. So the hitbox inherited the face image's aspect
+                    // ratio: measured live it came out 0.519 m across while the
+                    // drawn face was only 0.412 m wide, and, worse, a character
+                    // whose PNG had a different aspect got a DIFFERENT-SIZED head
+                    // to hit. That is a competitive difference between fighters
+                    // that nothing in the Inspector shows you.
+                    //
+                    // This child is scaled to cancel the chest's own scale, so its
+                    // world scale is uniform and the circle is a true circle of
+                    // headDiameter metres for every character, whatever art they
+                    // carry. Swapping a face can no longer change the physics.
+                    // Anchor for anything that must STICK to the head without being
+                    // rescaled by the face art: damage decals, blood stains.
+                    //
+                    // SetHeadSprite rescales the head art object to aspect-fit each
+                    // character's photo, and Systems_FaceMood swaps that photo
+                    // constantly during a match. Anything parented to the art
+                    // therefore gets re-scaled mid-fight — which is why blood stains
+                    // computed a compensating scale at paint time and then collapsed
+                    // to nothing the next time Matt changed expression.
+                    //
+                    // Scaled to cancel the chest's own scale, so its world scale is
+                    // exactly 1: child local units are metres, and nothing that
+                    // happens to the face can touch it.
+                    var headDecals = new GameObject("HeadDecals");
+                    headDecals.transform.SetParent(go.transform, false);
+                    headDecals.transform.localPosition = head.transform.localPosition;
+                    headDecals.transform.localScale = new Vector3(1f / parentW, 1f / d.h, 1f);
+                    HeadDecalAnchor = headDecals.transform;
+
+                    var headHit = new GameObject("HeadHitbox");
+                    headHit.transform.SetParent(go.transform, false);
+                    headHit.transform.localPosition = head.transform.localPosition;
+                    headHit.transform.localScale =
+                        new Vector3(headDiameter / parentW, headDiameter / d.h, 1f);
+                    var hc = headHit.AddComponent<CircleCollider2D>();
+                    hc.radius = 0.5f;                 // unit circle -> headDiameter world
                     hc.sharedMaterial = _bodyMat;
                     AllColliders.Add(hc);
+                    HeadCollider = hc;
                 }
                 // (Chest rb mass already includes the head via the def table.)
 
@@ -427,6 +562,7 @@ namespace PoSumo
                 joint.limits = lim;
                 joint.useMotor = true;
                 var m = joint.motor; m.maxMotorTorque = d.torque * torqueScale; m.motorSpeed = 0; joint.motor = m;
+
                 Joints[j] = joint;
                 _maxSpeed[j] = d.speed;
                 _maxTorque[j] = d.torque * torqueScale;
@@ -539,6 +675,36 @@ namespace PoSumo
 
         public float JointSpeedNorm(int j) => Joints[j].jointSpeed * facingSign / 600f;
 
+        /// Applies the passive restoring torque to every joint.
+        ///
+        /// Runs every physics step, not every decision: the policy only acts once
+        /// per DecisionPeriod (3 steps here), and passive tissue does not take
+        /// turns. Equal and opposite on the connected body so the pair stays an
+        /// internal force and cannot push the fighter around by itself.
+        void FixedUpdate()
+        {
+            if (Joints == null || _maxTorque == null) return;
+            for (int j = 0; j < Joints.Length; j++)
+            {
+                HingeJoint2D joint = Joints[j];
+                if (joint == null || !joint.enabled) continue;
+                Rigidbody2D child = joint.attachedRigidbody;
+                if (child == null || !child.simulated) continue;
+
+                float budget = _maxTorque[j];
+                float stiffness = budget * PASSIVE_STIFFNESS_FRAC / 90f;   // N-m per degree
+                float damping = budget * PASSIVE_DAMPING_FRAC / 400f;      // N-m per deg/s
+                float torque = -(joint.jointAngle * stiffness + joint.jointSpeed * damping);
+
+                child.AddTorque(torque);
+                Rigidbody2D parent = joint.connectedBody;
+                if (parent != null && parent.simulated)
+                {
+                    parent.AddTorque(-torque);
+                }
+            }
+        }
+
         /// Swap the face sprite, aspect-fitting to ~0.39 m tall regardless of
         /// the source image size (mood images vary a few pixels each).
         public void SetHeadSprite(Sprite s)
@@ -546,6 +712,15 @@ namespace PoSumo
             if (HeadRenderer == null || s == null) return;
             HeadRenderer.sprite = s;
             HeadRenderer.color = Color.white;
+            // The mask carries the same photo on the same transform, so blood
+            // parented under HeadDecalAnchor is clipped to the drawn silhouette
+            // instead of hanging over the transparent margin beside the face.
+            // Re-assigned here because Systems_FaceMood swaps this sprite
+            // constantly during a match and the mask has to follow it.
+            if (HeadMask != null)
+            {
+                HeadMask.sprite = s;
+            }
             // Rig geometry is right-facing; left-facing source art flips the
             // other way so every character looks where it is walking.
             HeadRenderer.flipX = _faceArtFacesLeft ? facingSign > 0 : facingSign < 0;

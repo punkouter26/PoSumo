@@ -6,22 +6,37 @@ using UnityEngine.InputSystem;
 
 namespace PoSumo
 {
-    /// Broadcast-style match HUD: one compact panel per wrestler in the bottom
-    /// screen corners, below the wrestlers' feet, toggled
-    /// with Tab or the STATS chip. Stats aggregate over the WHOLE match (reset
-    /// on rematch), sampled only while a round is live:
+    /// Broadcast-style match stats, drawn as ONE comparison table in the HUD dock
+    /// and toggled with Tab or the STATS chip. Stats aggregate over the WHOLE
+    /// match (reset on rematch), sampled only while a round is live:
     ///   DOMINANCE — pairwise-normalized composite (territory/KD/shoves/balance)
     ///   TERRITORY — % of time the fight's midpoint is on the opponent's half
     ///   KD        — knockdowns dealt–suffered
     ///   SHOVES    — big momentum transfers landed, plus the hardest one
     ///   WORK      — average motor effort
     ///   BALANCE / PUSH — time-averaged bars (push averaged only in contact)
-    /// UI Toolkit only.
+    ///
+    /// This used to be two mirrored panels, one per wrestler, pinned to the bottom
+    /// screen corners at 48% width each. Same seven rows twice, so comparing any
+    /// metric meant reading a number on the left, tracking across the screen and
+    /// reading its twin on the right — and the footer line printed the
+    /// match-global LONGEST RD in both copies. One table with the metric name down
+    /// the middle and the two fighters' values on either side makes the comparison
+    /// the layout instead of a job for the reader, in half the width and half the
+    /// elements. The bars go further: each is a single tug-of-war track that fills
+    /// outward from the centre in each fighter's colour, so who leads is a shape,
+    /// not a subtraction.
+    ///
+    /// UI Toolkit only, drawn into the shared Systems_HudRoot.
     public class Systems_FightHud : MonoBehaviour
     {
         public Systems_GameMatchManager manager;
         public PanelSettings panelSettings;
-        public bool startVisible = true;
+        // `startVisible` used to live here. It was dead: Systems_MomentumGraph
+        // calls SetStatsVisible(false) from its own Start regardless of what any
+        // scene had serialized, so the field could only ever mislead. The table
+        // now simply starts visible and the graph hides it when the graph exists —
+        // which means a build with the graph disabled still gets the stats.
 
         const float AVG_PUSH_MAX = 500f;    // bar scale for contact-averaged push
         const float SHOVE_FORCE_N = 400f;   // momentum transfer that counts as a shove
@@ -29,15 +44,22 @@ namespace PoSumo
         const float TOUCH_DIST = 1.2f;      // torso distance treated as "in contact"
         const float KD_REARM_SECONDS = 0.5f; // must stay up this long before next KD counts
 
-        static readonly Color PanelBg = new Color(0.04f, 0.04f, 0.06f, 0.8f);
-        static readonly Color LabelDim = new Color(0.62f, 0.6f, 0.56f);
-        static readonly Color ValueBright = new Color(0.96f, 0.95f, 0.92f);
-        static readonly Color BarBg = new Color(0.2f, 0.2f, 0.24f);
+        // The table's three columns. The middle column carries the metric name, so
+        // the two value columns sit directly under their fighter's name plate.
+        const int SIDE_PERCENT = 27;
+        const int LABEL_PERCENT = 46;
 
-        class PanelRefs
+        /// One metric, shown as [fighter A's value] METRIC [fighter B's value].
+        sealed class ComparePair
         {
-            public Label dom, territory, kd, shoves, work, balVal, pushVal, footer;
-            public VisualElement root, balFill, pushFill;
+            public Label a, b;
+        }
+
+        /// One metric drawn as a centre-out tug-of-war bar.
+        sealed class BarPair
+        {
+            public VisualElement fillA, fillB;
+            public Label valueA, valueB;
         }
 
         /// Whole-match accumulators for one wrestler.
@@ -58,7 +80,6 @@ namespace PoSumo
             }
         }
 
-        PanelRefs _panelA, _panelB;
         readonly Agg _aggA = new Agg();
         readonly Agg _aggB = new Agg();
         int _samples;
@@ -66,12 +87,19 @@ namespace PoSumo
         int _clashRounds;
         bool _clashThisRound;
 
+        Systems_HudRoot _hud;
+        VisualElement _card;
+        ComparePair _dominance, _territory, _knockdowns, _shoves, _work;
+        BarPair _balance, _push;
+        Label _footer;
+
         bool _visible;
         Vector2 _prevVelA, _prevVelB;
         Agent_BipedBody _bodyA, _bodyB;
 
         /// Live pairwise-normalized dominance (0-100, the pair sums to 100).
-        /// Consumed by Systems_FaceMood; updated even while the HUD is hidden.
+        /// Consumed by Systems_FaceMood, Systems_FighterVoice and
+        /// Systems_MomentumGraph; updated even while the table is hidden.
         public float DominanceA { get; private set; } = 50f;
         public float DominanceB { get; private set; } = 50f;
 
@@ -80,7 +108,7 @@ namespace PoSumo
             if (manager == null) manager = FindAnyObjectByType<Systems_GameMatchManager>();
             manager.MatchReset += ResetAggregates;
             manager.RoundStarted += OnRoundStarted;
-            _visible = startVisible;
+            _visible = true;
             BuildUi();
         }
 
@@ -105,161 +133,180 @@ namespace PoSumo
 
         void OnRoundStarted() { _clashThisRound = false; }
 
-        static VisualElement Divider()
+        // ---- Build ---------------------------------------------------------
+
+        void BuildUi()
         {
-            var d = new VisualElement();
-            d.style.height = 1;
-            d.style.backgroundColor = new Color(1f, 1f, 1f, 0.12f);
-            d.style.marginTop = 8;
-            d.style.marginBottom = 8;
-            return d;
+            // Own PanelSettings if the scene assigned one, otherwise the match
+            // manager's — whichever component's Start runs first builds the root,
+            // and that order is undefined.
+            PanelSettings settings = panelSettings != null ? panelSettings
+                : manager != null ? manager.panelSettings : null;
+            _hud = Systems_HudRoot.Ensure(transform, settings);
+
+            _card = Systems_UiKit.Card(Systems_UiKit.Panel).NoPick();
+            _card.Pad(Systems_UiKit.SPACE_4, Systems_UiKit.SPACE_3);
+            _card.style.marginBottom = Systems_UiKit.SPACE_2;
+
+            BuildHeader();
+
+            _dominance = CompareRow("DOMINANCE", Systems_UiKit.FONT_TITLE);
+            _card.Add(Systems_UiKit.Divider());
+            _territory = CompareRow("TERRITORY", Systems_UiKit.FONT_BODY);
+            _knockdowns = CompareRow("KNOCKDOWNS", Systems_UiKit.FONT_BODY);
+            _shoves = CompareRow("SHOVES · BEST", Systems_UiKit.FONT_BODY);
+            _work = CompareRow("WORK RATE", Systems_UiKit.FONT_BODY);
+            _card.Add(Systems_UiKit.Divider());
+            _balance = MirrorBarRow("BALANCE");
+            _push = MirrorBarRow("PUSH IN CONTACT");
+
+            // One footer for the whole table. The old layout printed this line in
+            // both panels, and LONGEST RD is a property of the match, not of a
+            // fighter, so half of it was always redundant.
+            _footer = Systems_UiKit.Text("", Systems_UiKit.FONT_MICRO, Systems_UiKit.TextLow);
+            _footer.style.unityTextAlign = TextAnchor.MiddleCenter;
+            _footer.style.marginTop = Systems_UiKit.SPACE_2;
+            _card.Add(_footer);
+
+            // Above the momentum graph, which stays pinned to the bottom edge.
+            // Insert rather than Add so the order holds whichever of the two
+            // components reaches the dock first.
+            _hud.Dock.Insert(0, _card);
+
+            // Touch-friendly toggle in the top bar's right slot, beside the pause
+            // button in the left slot — Tab works too. It was a free-floating 34pt
+            // chip, under the 44pt minimum the pause button already honoured.
+            _hud.TopBarRight.Add(Systems_UiKit.ChipButton(
+                "STATS", () => { _visible = !_visible; ApplyVisibility(); }, 88));
+
+            ApplyVisibility();
         }
 
-        static Label StatRow(VisualElement parent, string label, int valueSize)
+        void BuildHeader()
         {
-            var row = new VisualElement();
-            row.style.flexDirection = FlexDirection.Row;
-            row.style.justifyContent = Justify.SpaceBetween;
-            row.style.alignItems = Align.Center;
-            row.style.height = valueSize + 7;
+            VisualElement header = Systems_UiKit.Row();
+            header.style.marginBottom = Systems_UiKit.SPACE_1;
 
-            var lbl = new Label(label);
-            lbl.style.fontSize = 19;
-            lbl.style.color = LabelDim;
-            row.Add(lbl);
+            Label a = Systems_UiKit.Text(manager.nameA, Systems_UiKit.FONT_BODY, manager.colorA, true);
+            a.style.width = Length.Percent(SIDE_PERCENT);
+            a.style.unityTextAlign = TextAnchor.MiddleLeft;
 
-            var val = new Label("—");
-            val.style.fontSize = valueSize;
-            val.style.color = ValueBright;
-            val.style.unityFontStyleAndWeight = FontStyle.Bold;
-            val.style.unityTextAlign = TextAnchor.MiddleRight;
-            val.style.minWidth = 96;
-            val.style.flexShrink = 0;
-            row.Add(val);
+            Label title = Systems_UiKit.Text("MATCH STATS", Systems_UiKit.FONT_MICRO, Systems_UiKit.TextLow, true);
+            title.style.width = Length.Percent(LABEL_PERCENT);
+            title.style.unityTextAlign = TextAnchor.MiddleCenter;
 
-            parent.Add(row);
-            return val;
+            Label b = Systems_UiKit.Text(manager.nameB, Systems_UiKit.FONT_BODY, manager.colorB, true);
+            b.style.width = Length.Percent(SIDE_PERCENT);
+            b.style.unityTextAlign = TextAnchor.MiddleRight;
+
+            header.Add(a);
+            header.Add(title);
+            header.Add(b);
+            _card.Add(header);
         }
 
-        static VisualElement BarRow(VisualElement parent, string label, Color fillColor, out Label valueLabel)
+        ComparePair CompareRow(string label, int valueSize)
         {
-            var caption = new VisualElement();
-            caption.style.flexDirection = FlexDirection.Row;
-            caption.style.justifyContent = Justify.SpaceBetween;
-            caption.style.marginTop = 3;
+            VisualElement row = Systems_UiKit.Row();
+            row.style.height = valueSize + 10;
 
-            var lbl = new Label(label);
-            lbl.style.fontSize = 17;
-            lbl.style.color = LabelDim;
-            caption.Add(lbl);
+            var pair = new ComparePair
+            {
+                a = SideValue(valueSize, TextAnchor.MiddleLeft),
+                b = SideValue(valueSize, TextAnchor.MiddleRight),
+            };
 
-            valueLabel = new Label("");
-            valueLabel.style.fontSize = 17;
-            valueLabel.style.color = LabelDim;
-            caption.Add(valueLabel);
-            parent.Add(caption);
+            Label name = Systems_UiKit.Text(label, Systems_UiKit.FONT_SMALL, Systems_UiKit.TextLow);
+            name.style.width = Length.Percent(LABEL_PERCENT);
+            name.style.unityTextAlign = TextAnchor.MiddleCenter;
 
-            var bar = new VisualElement();
-            bar.style.height = 13;
-            bar.style.marginTop = 4;
-            bar.style.marginBottom = 4;
-            bar.style.backgroundColor = BarBg;
-            bar.style.borderTopLeftRadius = 2;
-            bar.style.borderTopRightRadius = 2;
-            bar.style.borderBottomLeftRadius = 2;
-            bar.style.borderBottomRightRadius = 2;
+            row.Add(pair.a);
+            row.Add(name);
+            row.Add(pair.b);
+            _card.Add(row);
+            return pair;
+        }
+
+        /// Percentage widths, not the old fixed `minWidth: 96`. The panel resolves
+        /// narrower than its 720pt reference on tall phones, and a fixed value
+        /// plus a caption overflowed the row there.
+        static Label SideValue(int fontSize, TextAnchor align)
+        {
+            Label value = Systems_UiKit.Text("—", fontSize, Systems_UiKit.TextHi, true);
+            value.style.width = Length.Percent(SIDE_PERCENT);
+            value.style.unityTextAlign = align;
+            return value;
+        }
+
+        /// A caption row plus one track that fills outward from the centre: A's
+        /// share grows leftward in A's colour, B's rightward in B's.
+        BarPair MirrorBarRow(string label)
+        {
+            var pair = new BarPair();
+
+            VisualElement caption = Systems_UiKit.Row();
+            caption.style.marginTop = Systems_UiKit.SPACE_1;
+
+            pair.valueA = Systems_UiKit.Text("", Systems_UiKit.FONT_SMALL, Systems_UiKit.TextLow);
+            pair.valueA.style.width = Length.Percent(SIDE_PERCENT);
+
+            Label name = Systems_UiKit.Text(label, Systems_UiKit.FONT_SMALL, Systems_UiKit.TextLow);
+            name.style.width = Length.Percent(LABEL_PERCENT);
+            name.style.unityTextAlign = TextAnchor.MiddleCenter;
+
+            pair.valueB = Systems_UiKit.Text("", Systems_UiKit.FONT_SMALL, Systems_UiKit.TextLow);
+            pair.valueB.style.width = Length.Percent(SIDE_PERCENT);
+            pair.valueB.style.unityTextAlign = TextAnchor.MiddleRight;
+
+            caption.Add(pair.valueA);
+            caption.Add(name);
+            caption.Add(pair.valueB);
+            _card.Add(caption);
+
+            VisualElement track = Systems_UiKit.Row();
+            track.style.height = 12;
+            track.style.marginTop = Systems_UiKit.SPACE_1;
+            track.style.marginBottom = Systems_UiKit.SPACE_1;
+            track.style.backgroundColor = Systems_UiKit.Track;
+            track.style.overflow = Overflow.Hidden;
+            track.Round(3);
+
+            pair.fillA = HalfFill(track, Justify.FlexEnd, manager.colorA);
+            pair.fillB = HalfFill(track, Justify.FlexStart, manager.colorB);
+            _card.Add(track);
+            return pair;
+        }
+
+        static VisualElement HalfFill(VisualElement track, Justify grow, Color colour)
+        {
+            VisualElement half = Systems_UiKit.Row();
+            half.style.width = Length.Percent(50);
+            half.style.height = Length.Percent(100);
+            half.style.justifyContent = grow;
 
             var fill = new VisualElement();
             fill.style.height = Length.Percent(100);
             fill.style.width = 0;
-            fill.style.backgroundColor = fillColor;
-            fill.style.borderTopLeftRadius = 2;
-            fill.style.borderBottomLeftRadius = 2;
-            bar.Add(fill);
-            parent.Add(bar);
+            fill.style.backgroundColor = colour;
+            half.Add(fill);
+            track.Add(half);
             return fill;
         }
 
-        PanelRefs MakePanel(bool left, Color accent, string fighterName)
+        /// Show or hide the stats table from code.
+        ///
+        /// Systems_MomentumGraph hides it on start so the default HUD is one
+        /// readable graph, and the STATS chip brings it back.
+        public void SetStatsVisible(bool visible)
         {
-            var refs = new PanelRefs();
-            var p = new VisualElement();
-            refs.root = p;
-            p.style.position = Position.Absolute;
-            p.style.bottom = 12;
-            if (left) p.style.left = 8; else p.style.right = 8;
-            p.style.width = Length.Percent(48);
-            p.style.backgroundColor = PanelBg;
-            p.style.borderTopWidth = 5;
-            p.style.borderTopColor = accent;
-            p.style.borderBottomLeftRadius = 8;
-            p.style.borderBottomRightRadius = 8;
-            p.style.paddingLeft = 19; p.style.paddingRight = 19;
-            p.style.paddingTop = 13; p.style.paddingBottom = 16;
-
-            var name = new Label(fighterName);
-            name.style.fontSize = 34;
-            name.style.color = accent;
-            name.style.unityFontStyleAndWeight = FontStyle.Bold;
-            name.style.marginBottom = 5;
-            p.Add(name);
-
-            refs.dom = StatRow(p, "DOMINANCE", 28);
-            p.Add(Divider());
-            refs.territory = StatRow(p, "TERRITORY", 20);
-            refs.kd = StatRow(p, "KNOCKDOWNS", 20);
-            refs.shoves = StatRow(p, "SHOVES · BEST", 20);
-            refs.work = StatRow(p, "WORK RATE", 20);
-            p.Add(Divider());
-            refs.balFill = BarRow(p, "BALANCE", new Color(0.35f, 0.75f, 0.4f), out refs.balVal);
-            refs.pushFill = BarRow(p, "PUSH (in contact)", new Color(0.95f, 0.55f, 0.2f), out refs.pushVal);
-
-            refs.footer = new Label("");
-            refs.footer.style.fontSize = 17;
-            refs.footer.style.color = LabelDim;
-            refs.footer.style.marginTop = 7;
-            p.Add(refs.footer);
-
-            return refs;
-        }
-
-        void BuildUi()
-        {
-            var doc = gameObject.AddComponent<UIDocument>();
-            if (panelSettings != null) doc.panelSettings = panelSettings;
-            var root = doc.rootVisualElement;
-            root.style.flexGrow = 1;
-
-            _panelA = MakePanel(true, manager.colorA, manager.nameA);
-            _panelB = MakePanel(false, manager.colorB, manager.nameB);
-            root.Add(_panelA.root);
-            root.Add(_panelB.root);
-
-            // Touch-friendly toggle chip, top-right corner — Tab works too.
-            var toggle = new Button(() => { _visible = !_visible; ApplyVisibility(); }) { text = "STATS" };
-            toggle.style.position = Position.Absolute;
-            toggle.style.top = 10;
-            toggle.style.right = 10;
-            toggle.style.width = 76;
-            toggle.style.height = 34;
-            toggle.style.fontSize = 14;
-            toggle.style.unityFontStyleAndWeight = FontStyle.Bold;
-            toggle.style.color = ValueBright;
-            toggle.style.backgroundColor = new Color(0.12f, 0.11f, 0.13f, 0.75f);
-            toggle.style.borderTopLeftRadius = 8;
-            toggle.style.borderTopRightRadius = 8;
-            toggle.style.borderBottomLeftRadius = 8;
-            toggle.style.borderBottomRightRadius = 8;
-            root.Add(toggle);
-
+            _visible = visible;
             ApplyVisibility();
         }
 
         void ApplyVisibility()
         {
-            var d = _visible ? DisplayStyle.Flex : DisplayStyle.None;
-            if (_panelA != null) _panelA.root.style.display = d;
-            if (_panelB != null) _panelB.root.style.display = d;
+            if (_card == null) return;
+            _card.style.display = _visible ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         bool TabPressed()
@@ -271,6 +318,8 @@ namespace PoSumo
 #endif
         }
 
+        // ---- Sampling ------------------------------------------------------
+
         void FixedUpdate()
         {
             var a = manager != null ? manager.wrestlerA : null;
@@ -281,7 +330,10 @@ namespace PoSumo
 
             Vector2 velA = a.Torso.linearVelocity, velB = b.Torso.linearVelocity;
 
-            if (manager.RoundActive)
+            // ScoringLive, not RoundActive: the latter is already true through the
+            // countdown, and averaging over three seconds of frozen fighters is
+            // what made TERRITORY fail to total 100 between the two of them.
+            if (manager.ScoringLive)
             {
                 float dt = Time.fixedDeltaTime;
                 float now = Time.time;
@@ -372,6 +424,8 @@ namespace PoSumo
             return 0.35f * territory + 0.30f * kdShare + 0.20f * shoveShare + 0.15f * balance;
         }
 
+        // ---- Display -------------------------------------------------------
+
         void Update()
         {
             if (TabPressed()) { _visible = !_visible; ApplyVisibility(); }
@@ -383,37 +437,53 @@ namespace PoSumo
             DominanceA = domA / domTotal * 100f;
             DominanceB = domB / domTotal * 100f;
 
-            if (!_visible || _panelA == null) return;
-            UpdatePanel(_panelA, _aggA, manager.MatchWinsA, DominanceA);
-            UpdatePanel(_panelB, _aggB, manager.MatchWinsB, DominanceB);
+            if (!_visible || _card == null) return;
+            UpdateTable();
         }
 
-        void UpdatePanel(PanelRefs p, Agg agg, int matchWins, float dominance)
+        void UpdateTable()
         {
             float n = Mathf.Max(1, _samples);
 
-            p.dom.text = $"{dominance:F0}";
-            p.dom.style.color = dominance >= 55f
-                ? new Color(0.55f, 0.9f, 0.5f)
-                : dominance <= 45f ? new Color(0.95f, 0.5f, 0.4f) : ValueBright;
+            _dominance.a.text = $"{DominanceA:F0}";
+            _dominance.b.text = $"{DominanceB:F0}";
+            _dominance.a.style.color = DominanceColour(DominanceA);
+            _dominance.b.style.color = DominanceColour(DominanceB);
 
-            p.territory.text = $"{agg.territorySamples / n * 100f:F0}%";
-            p.kd.text = $"{agg.kdDealt}–{agg.kdSuffered}";
-            p.shoves.text = $"{agg.shoves} · {agg.bestPush:F0} N";
-            p.work.text = $"{agg.sumWork / n * 100f:F0}%";
+            _territory.a.text = $"{_aggA.territorySamples / n * 100f:F0}%";
+            _territory.b.text = $"{_aggB.territorySamples / n * 100f:F0}%";
+            _knockdowns.a.text = $"{_aggA.kdDealt}–{_aggA.kdSuffered}";
+            _knockdowns.b.text = $"{_aggB.kdDealt}–{_aggB.kdSuffered}";
+            _shoves.a.text = $"{_aggA.shoves} · {_aggA.bestPush:F0}N";
+            _shoves.b.text = $"{_aggB.shoves} · {_aggB.bestPush:F0}N";
+            _work.a.text = $"{_aggA.sumWork / n * 100f:F0}%";
+            _work.b.text = $"{_aggB.sumWork / n * 100f:F0}%";
 
-            float avgBal = agg.sumBal / n;
-            p.balVal.text = $"{avgBal * 100f:F0}%";
-            p.balFill.style.width = Length.Percent(avgBal * 100f);
-            p.balFill.style.backgroundColor = avgBal > 0.7f
-                ? new Color(0.35f, 0.75f, 0.4f)
-                : avgBal > 0.4f ? new Color(0.9f, 0.75f, 0.25f) : new Color(0.9f, 0.35f, 0.25f);
+            float balA = _aggA.sumBal / n;
+            float balB = _aggB.sumBal / n;
+            SetBar(_balance, balA * 100f, balB * 100f, 100f, "{0:F0}%");
 
-            float avgPush = Mathf.Clamp(agg.sumPush / Mathf.Max(1, agg.touchSamples), 0f, AVG_PUSH_MAX);
-            p.pushFill.style.width = Length.Percent(avgPush / AVG_PUSH_MAX * 100f);
-            p.pushVal.text = $"{avgPush:F0} N";
+            float pushA = Mathf.Clamp(_aggA.sumPush / Mathf.Max(1, _aggA.touchSamples), 0f, AVG_PUSH_MAX);
+            float pushB = Mathf.Clamp(_aggB.sumPush / Mathf.Max(1, _aggB.touchSamples), 0f, AVG_PUSH_MAX);
+            SetBar(_push, pushA, pushB, AVG_PUSH_MAX, "{0:F0} N");
 
-            p.footer.text = $"MATCHES {matchWins} · LONGEST RD {manager.LongestRound:F0}s";
+            _footer.text = $"MATCHES {manager.MatchWinsA}–{manager.MatchWinsB}" +
+                           $" · LONGEST RD {manager.LongestRound:F0}s";
+        }
+
+        static Color DominanceColour(float dominance)
+        {
+            if (dominance >= 55f) return Systems_UiKit.Good;
+            if (dominance <= 45f) return Systems_UiKit.Bad;
+            return Systems_UiKit.TextHi;
+        }
+
+        static void SetBar(BarPair bar, float valueA, float valueB, float scale, string format)
+        {
+            bar.fillA.style.width = Length.Percent(Mathf.Clamp01(valueA / scale) * 100f);
+            bar.fillB.style.width = Length.Percent(Mathf.Clamp01(valueB / scale) * 100f);
+            bar.valueA.text = string.Format(format, valueA);
+            bar.valueB.text = string.Format(format, valueB);
         }
     }
 }

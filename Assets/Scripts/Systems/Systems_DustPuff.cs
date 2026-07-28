@@ -24,6 +24,7 @@ namespace PoSumo
         private ParticleSystem _sweat;
         private ParticleSystem _salt;
         private ParticleSystem _haze;
+        private ParticleSystem _blood;
         private static Texture2D _puffTexture;
 
         /// Enter Play Mode domain reload is disabled in this project, so a static
@@ -66,6 +67,7 @@ namespace PoSumo
             _sweat = BuildSweat();
             _salt = BuildSalt();
             _haze = BuildHaze();
+            _blood = BuildBlood();
         }
 
         private void OnApplicationQuit() => _quitting = true;
@@ -127,6 +129,31 @@ namespace PoSumo
                     0f);
                 emitParams.applyShapeToPosition = true;
                 instance._salt.Emit(emitParams, 1);
+            }
+        }
+
+        /// Blood from a head KO. Heavier and darker than sweat, thrown along the
+        /// impact direction, and it falls fast — Systems_BodyDamage separately
+        /// paints the lasting stains, because a particle cannot leave a mark.
+        public static void BloodSpray(Vector3 position, Vector2 direction, int count = 18)
+        {
+            Systems_DustPuff instance = Instance;
+            if (instance == null || instance._blood == null)
+            {
+                return;
+            }
+            Vector2 unit = direction.sqrMagnitude > 0.0001f ? direction.normalized : Vector2.up;
+            for (int i = 0; i < count; i++)
+            {
+                var emitParams = MakeParams(position, 0.05f);
+                // Cone around the impact direction, biased upward so it arcs.
+                float spread = Random.Range(-0.7f, 0.7f);
+                Vector2 dir = new Vector2(
+                    unit.x + spread * unit.y,
+                    unit.y - spread * unit.x + 0.5f).normalized;
+                emitParams.velocity = dir * Random.Range(1.5f, 4.5f);
+                emitParams.applyShapeToPosition = true;
+                instance._blood.Emit(emitParams, 1);
             }
         }
 
@@ -290,6 +317,40 @@ namespace PoSumo
             ParticleSystem.ColorOverLifetimeModule colour = system.colorOverLifetime;
             colour.enabled = true;
             colour.color = new ParticleSystem.MinMaxGradient(FadeOut(0.65f));
+            return system;
+        }
+
+        private ParticleSystem BuildBlood()
+        {
+            ParticleSystem system = CreateSystem("Blood", 200, 7);
+            ParticleSystem.MainModule main = system.main;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(0.5f, 1.3f);
+            main.startSize = new ParticleSystem.MinMaxCurve(0.02f, 0.055f);
+            main.startSpeed = 0f;          // velocity comes from EmitParams
+            main.gravityModifier = 2.2f;   // heavy: blood drops, it does not drift
+            main.startColor = new ParticleSystem.MinMaxGradient(
+                new Color(0.55f, 0.03f, 0.03f, 1f),
+                new Color(0.32f, 0.01f, 0.02f, 1f));
+
+            // Almost no fade: droplets stay solid and simply fall out of frame,
+            // which reads as liquid. Fading them out reads as smoke.
+            ParticleSystem.ColorOverLifetimeModule colour = system.colorOverLifetime;
+            colour.enabled = true;
+            colour.color = new ParticleSystem.MinMaxGradient(FadeOut(0.8f));
+
+            // Droplets now hit the mat instead of falling through it. lifetimeLoss
+            // 1 kills the particle on contact, so each one lands exactly once and
+            // hands its position to Systems_RingBlood, which stamps the lasting
+            // stain — a particle cannot leave a mark by itself.
+            ParticleSystem.CollisionModule collision = system.collision;
+            collision.enabled = true;
+            collision.type = ParticleSystemCollisionType.World;
+            collision.mode = ParticleSystemCollisionMode.Collision2D;
+            collision.sendCollisionMessages = true;
+            collision.lifetimeLoss = 1f;
+            collision.bounce = 0f;
+            collision.dampen = 1f;
+            system.gameObject.AddComponent<Systems_RingBlood>();
             return system;
         }
 

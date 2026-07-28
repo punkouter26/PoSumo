@@ -18,8 +18,23 @@ namespace PoSumo
         // NOTE: GameTuning.asset (and scene-serialized values) win over these
         // defaults — change the asset, not just here.
         public float minOrtho = 2.47f;
-        public float maxOrtho = 4.55f;
-        public float feetDrop = 1.24f; // camera centers this far below the average torso — at the feet
+        // Scaled with the ring when it doubled (4.55 -> 9.1), so the same
+        // fraction of the mat stays visible at full separation. minOrtho is
+        // deliberately unchanged: close-quarters framing, where most of the bout
+        // happens, should look exactly as it did.
+        public float maxOrtho = 9.1f;
+        [Tooltip("Ortho for the wide establishing shot, used by both the walk-in and the post-match pull-back. Sized to hold the walk-in start marks: at portrait aspect ~0.462 this shows about +/-6.5 m, so fighters spawning at +/-6 are on screen from their first step.")]
+        public float wideOrtho = 14f;
+        // Camera centres this far below the average torso — roughly at the feet.
+        // Lowered 1.24 -> 0.95 to reclaim dead screen. Fitting a 5.5 m ring into a
+        // 0.46-aspect portrait viewport forces a ~3.7 m visible half-height for
+        // maybe 2 m of actual content, and the clamp below pins the mat feetDrop
+        // above the frame centre — so the larger this is, the higher the dohyo
+        // rides and the more pure black sits under it. A smaller value trades that
+        // black for the arena dressing above. It cannot go much lower without
+        // pushing the roof and banners off the top, and cropping WIDTH instead
+        // was already tried and reverted (see minOrtho/maxOrtho above).
+        public float feetDrop = 0.95f;
         public float horizontalMargin = 0.5f;
         public float smoothing = 4f;
         [Tooltip("Keep the dohyo in frame: the follow target is clamped to the ring plus this margin, so a fighter flung off the edge cannot drag the camera off the mat.")]
@@ -36,6 +51,7 @@ namespace PoSumo
         Transform _focus;
         float _focusOrtho;
         float _focusUntil;
+        float _wideUntil;
 
         /// Blend the camera toward `focus` at `ortho` for `realSeconds` of
         /// unscaled time. Used by the match presentation on round-deciding falls.
@@ -44,6 +60,26 @@ namespace PoSumo
             _focus = focus;
             _focusOrtho = ortho;
             _focusUntil = Time.realtimeSinceStartup + realSeconds;
+        }
+
+        /// Hold a wide establishing shot of the whole arena, centred on the ring
+        /// rather than on the fighters, for `realSeconds`.
+        ///
+        /// Separate from PunchIn because it has to beat the ring clamp and the
+        /// fighter-following entirely: after a match the interesting subject is
+        /// the arena, not the pair, and one of them is usually off the edge
+        /// dragging the midpoint with him.
+        public void PullBackWide(float realSeconds)
+        {
+            _wideUntil = Time.realtimeSinceStartup + realSeconds;
+        }
+
+        /// Cancels any active punch-in or wide shot and returns to normal follow.
+        public void ClearShots()
+        {
+            _focus = null;
+            _focusUntil = 0f;
+            _wideUntil = 0f;
         }
 
         void Awake()
@@ -56,6 +92,7 @@ namespace PoSumo
                 feetDrop = tuning.feetDrop;
                 horizontalMargin = tuning.horizontalMargin;
                 smoothing = tuning.smoothing;
+                wideOrtho = tuning.wideOrtho;
             }
         }
 
@@ -63,10 +100,13 @@ namespace PoSumo
         {
             if (_a == null || _b == null)
             {
-                var agents = FindObjectsByType<Agent_Biped>(FindObjectsSortMode.None);
+                var agents = FindObjectsByType<Agent_Biped>();
                 if (agents.Length >= 2) { _a = agents[0]; _b = agents[1]; }
                 else return;
             }
+
+            // Resolved up front: both the wide shot and the ring clamp need it.
+            if (_manager == null) _manager = FindAnyObjectByType<Systems_GameMatchManager>();
 
             float ax = _a.TorsoX, bx = _b.TorsoX;
             float mid = (ax + bx) * 0.5f;
@@ -76,8 +116,12 @@ namespace PoSumo
             float orthoNeeded = halfWidthNeeded / _cam.aspect;
             float targetOrtho = Mathf.Clamp(orthoNeeded, minOrtho, maxOrtho);
 
-            bool focusActive = _focus != null && Time.realtimeSinceStartup < _focusUntil;
+            // The wide shot outranks the punch-in: it is what the punch-in hands
+            // over to, so if both are somehow live the pull-back wins.
+            bool wideActive = Time.realtimeSinceStartup < _wideUntil;
+            bool focusActive = !wideActive && _focus != null && Time.realtimeSinceStartup < _focusUntil;
             if (focusActive) targetOrtho = Mathf.Min(targetOrtho, _focusOrtho);
+            if (wideActive) targetOrtho = wideOrtho;
 
             float t = 1f - Mathf.Exp(-smoothing * Time.deltaTime);
             _cam.orthographicSize = Mathf.Lerp(_cam.orthographicSize, targetOrtho, t);
@@ -91,12 +135,21 @@ namespace PoSumo
                 midY = Mathf.Lerp(midY, _focus.position.y, 0.75f);
             }
 
+            // The wide shot frames the ARENA, so it overrides the follow target
+            // outright — after a match one fighter is usually off the edge, and
+            // following the pair's midpoint would sit the establishing shot
+            // somewhere off the side of the dohyo.
+            if (wideActive && _manager != null)
+            {
+                mid = _manager.transform.position.x;
+                midY = _manager.transform.position.y;
+            }
+
             // Clamp LAST, after the punch-in blend: otherwise a slow-mo zoom on a
             // loser who has fallen off the edge still drags the camera clear of
             // the mat, which is exactly how the dohyo ended up out of frame.
-            if (clampToRing)
+            if (clampToRing && !wideActive)
             {
-                if (_manager == null) _manager = FindAnyObjectByType<Systems_GameMatchManager>();
                 if (_manager != null)
                 {
                     float centerX = _manager.transform.position.x;

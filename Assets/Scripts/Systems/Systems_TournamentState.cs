@@ -41,6 +41,16 @@ namespace PoSumo
         public static Agent_CharacterDefinition Champion => _winners[FINAL_MATCH];
         public static bool IsComplete => Champion != null;
 
+        /// Human-readable name of the round a match belongs to. Lives here rather
+        /// than on the bracket screen because the arena needs it too — a fighter
+        /// watching a bout could not tell a quarterfinal from the final.
+        public static string RoundName(int match)
+        {
+            if (match >= FINAL_MATCH) return "FINAL";
+            if (match >= 4) return "SEMIFINAL";
+            return "QUARTERFINAL";
+        }
+
         public static Agent_CharacterDefinition GetSeed(int slot) => _seeds[slot];
         public static Agent_CharacterDefinition GetWinner(int match) => _winners[match];
 

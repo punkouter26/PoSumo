@@ -27,6 +27,8 @@ namespace PoSumo
         public Agent_Biped opponent;         // null in Walk/Recover mode
         public float ringHalfWidth = 7f;
         public float arenaCenterX = 0f;
+        [Tooltip("World Y of the mat surface. Only used by the sumo stance shaping to tell a planted foot from a raised one, so both referees must set it or that reward reads against the wrong plane.")]
+        public float arenaGroundY = 0f;
 
         [Tooltip("Adds 3 opponent-state observations (uprightness, down flag, edge distance). Must match the assigned model's input size.")]
         public bool extendedObservations = false;
@@ -86,6 +88,11 @@ namespace PoSumo
         float _rImpact = 0.01f, _impactCap = 8f, _rKnee = 0.0004f, _rHips = 0.0003f;
         float _rCadence = 0.0015f, _rRise = 0.02f, _pEnergy = 0.0004f, _pJerk = 0.0003f;
         float _bendFloor = 0.3f;
+        // New in the realism pass. Unlike the coefficients above these do NOT
+        // default to the constant the branch used before, because there was no
+        // such constant — neither term existed. They are deliberate behavioural
+        // change and every fighter needs a corrective run to pick them up.
+        float _pEffort = 0.0015f, _rStance = 0.0009f;
 
         // Walk-school coefficients — defaults are the constants this branch used
         // before they became per-character, so an unassigned character trains the
@@ -116,6 +123,8 @@ namespace PoSumo
                 _rRise = character.riseReward;
                 _pEnergy = character.energyPenalty;
                 _pJerk = character.jerkPenalty;
+                _pEffort = character.effortPenalty;
+                _rStance = character.stanceReward;
                 _bendFloor = character.straightLegEarnFraction;
                 _wForward = character.walkForwardReward;
                 _wStanceFloor = character.walkStanceFloor;
@@ -307,6 +316,32 @@ namespace PoSumo
 
         float HipsLowFactor() => Mathf.Clamp01((0.95f - San(Torso.position.y)) / 0.3f);
 
+        /// How much this looks like a sumo stance, 0..1: both feet planted, and
+        /// planted APART. Multiplied by knee bend so it cannot be farmed by
+        /// standing straight-legged with the feet spread.
+        ///
+        /// Ground contact is judged against the mat plane rather than a collision
+        /// query so it costs nothing per step; a foot within ankle height of the
+        /// surface is planted. Spread saturates at SUMO_STANCE_WIDTH, roughly a
+        /// shoulder-and-a-half, past which wider is not better.
+        float StanceFactor()
+        {
+            const float PLANTED_HEIGHT = 0.12f;   // foot centre sits ~0.04 when flat
+            const float SUMO_STANCE_WIDTH = 0.55f;
+
+            float nearY = San(_b.FootNear.position.y) - arenaGroundY;
+            float farY = San(_b.FootFar.position.y) - arenaGroundY;
+            float nearDown = Mathf.Clamp01(1f - nearY / PLANTED_HEIGHT);
+            float farDown = Mathf.Clamp01(1f - farY / PLANTED_HEIGHT);
+            // Product, not average: one foot planted is standing, not a stance.
+            float grounded = nearDown * farDown;
+
+            float spread = Mathf.Abs(San(_b.FootNear.position.x) - San(_b.FootFar.position.x));
+            float wide = Mathf.Clamp01(spread / SUMO_STANCE_WIDTH);
+
+            return grounded * wide * KneeBendFactor();
+        }
+
         /// Step-cadence bonus: pays once per alternation of the single planted
         /// foot (near->far or far->near), i.e. actual stepping, not skating.
         void CadenceReward(float scale)
@@ -341,17 +376,25 @@ namespace PoSumo
                 return;
             }
             var a = actions.ContinuousActions;
-            float energy = 0f, jerk = 0f;
+            float energy = 0f, jerk = 0f, effort = 0f;
             for (int j = 0; j < ActionCount; j++)
             {
                 _b.ApplyMotor(j, a[j] * actionScale);
                 float clamped = Mathf.Clamp(a[j], -1f, 1f);
                 LastActions[j] = clamped;
                 energy += Mathf.Abs(clamped);
+                effort += clamped * clamped;
                 jerk += Mathf.Abs(clamped - _prevActions[j]);
                 _prevActions[j] = clamped;
             }
             energy /= ActionCount;
+            // QUADRATIC, unlike `energy`. An L1 cost has a constant gradient, so it
+            // shifts every action down uniformly and a policy can pay it off by
+            // being slightly less lazy everywhere. A squared cost rises steeply
+            // toward the rails, which is what actually discourages slamming a motor
+            // to full torque — and slamming is exactly what was measured: 7 to 12
+            // of the 13 motors sat above |0.9| with a mean magnitude of 0.75-0.91.
+            effort /= ActionCount;
             jerk /= ActionCount;
             _b.ClampAngularVelocities();
 
@@ -460,10 +503,24 @@ namespace PoSumo
                     AddReward((torsoY - _lastTorsoY) * _rRise);
                 }
 
+                // Sumo base: a wide, low, two-footed stance. Nothing rewarded this
+                // before, and it showed — the fighters were measured mid-bout with
+                // the chest 0.87 m above the mat at a 61-degree lean, and in
+                // another sample standing on one foot with the other 0.48 m in the
+                // air. That is a collapse, not a stance.
+                AddReward(StanceFactor() * _rStance);
+
                 // Useless effort costs; driving toward the opponent is cheap.
                 float useful = Mathf.Clamp01(Mathf.Abs(San(tv.x)) / 1.5f);
                 AddReward(-energy * _pEnergy * (1f - useful));
                 AddReward(-jerk * _pJerk);
+
+                // UNGATED, unlike the line above. That `(1f - useful)` gate makes
+                // effort free whenever the fighter is moving fast, which is the
+                // mechanism that produced the saturated motors: drive hard and the
+                // torque bill disappears. This term always applies, so full-power
+                // flailing costs something even mid-charge.
+                AddReward(-effort * _pEffort);
             }
 
             _lastTorsoY = torsoY;

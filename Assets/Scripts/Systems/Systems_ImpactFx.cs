@@ -17,17 +17,16 @@ namespace PoSumo
         public float minSpeed = 2.2f;
         [Tooltip("Relative speed treated as a maximum-strength hit.")]
         public float maxSpeed = 9f;
-        [Tooltip("Camera shake is off: it fought the follow camera's own framing and made the fight harder to read. Left as a dial rather than deleted, but 0 is the shipping value.")]
-        public float maxShake = 0f;
-        [Tooltip("Seconds a shake decays over.")]
-        public float shakeDecay = 0.28f;
         [Tooltip("Minimum gap between bursts, so a scrum does not spray dust every frame.")]
         public float cooldown = 0.12f;
 
-        private Transform _camera;
-        private Vector3 _cameraBase;
-        private float _shake;
-        private float _shakeLeft;
+        // Camera shake used to live here, permanently disabled (maxShake = 0) but
+        // still running a LateUpdate every frame and carrying four fields. It
+        // fought the follow camera's framing and made the fight harder to read, so
+        // it was never going to be switched on. Deleted rather than left as a dial.
+        // Impact weight is carried by Systems_PostFx (contrast/bloom/aberration
+        // punch) and Systems_MatchAudio (layered thud), which do not move the frame.
+
         private float _nextAllowed;
 
         private void OnEnable()
@@ -40,14 +39,6 @@ namespace PoSumo
             // Static event: leaking this subscription would keep a dead scene's FX
             // object alive across loads.
             Sensor_Impact.AnyImpact -= OnImpact;
-        }
-
-        private void Start()
-        {
-            if (Camera.main != null)
-            {
-                _camera = Camera.main.transform;
-            }
         }
 
         private void OnImpact(Sensor_Impact reporter, Collision2D collision)
@@ -83,37 +74,6 @@ namespace PoSumo
             {
                 Vector2 away = -collision.relativeVelocity.normalized;
                 Systems_DustPuff.SweatSpray(point, away, Mathf.RoundToInt(Mathf.Lerp(2f, 9f, strength)));
-            }
-
-            if (maxShake > 0f)
-            {
-                _shake = Mathf.Max(_shake, Mathf.Lerp(0.02f, maxShake, strength));
-                _shakeLeft = shakeDecay;
-            }
-        }
-
-        private void LateUpdate()
-        {
-            if (_camera == null)
-            {
-                if (Camera.main == null) return;
-                _camera = Camera.main.transform;
-            }
-            if (_shakeLeft <= 0f)
-            {
-                return;
-            }
-
-            // Runs in LateUpdate so it is applied on top of Systems_CameraFollow's
-            // position for the frame, and fully removed before the next one — the
-            // follow camera never sees the offset and cannot drift.
-            _shakeLeft -= Time.deltaTime;
-            float remaining = Mathf.Clamp01(_shakeLeft / shakeDecay);
-            float amount = _shake * remaining * remaining;
-            _camera.position += new Vector3(Random.Range(-amount, amount), Random.Range(-amount, amount), 0f);
-            if (_shakeLeft <= 0f)
-            {
-                _shake = 0f;
             }
         }
     }

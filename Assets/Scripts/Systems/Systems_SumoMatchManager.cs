@@ -13,7 +13,12 @@ namespace PoSumo
         public Agent_Biped wrestlerA;
         public Agent_Biped wrestlerB;
         public Systems_SumoArena arena;
-        public float ringHalfWidth = 2.75f;
+        // Matches Systems_GameMatchManager's ring. These two referees are kept in
+        // step on the rules a policy has to learn, and ring width is one of them:
+        // it is fed to the agent as a normalised edge-distance observation, so
+        // training on 2.75 and fighting on 5.5 hands the brain an input
+        // distribution it never saw.
+        public float ringHalfWidth = 5.5f;
         public float roundTimeoutSeconds = 30f;
         [Tooltip("Legacy rule: any non-foot ground contact loses. Off for game parity.")]
         public bool knockdownLoses = false;
@@ -23,7 +28,14 @@ namespace PoSumo
 
         [Header("Domain randomization")]
         public bool randomizeRounds = true;
-        public Vector2 startHalfRange = new Vector2(1.7f, 2.75f);
+        // Widened to span the new game ring. The upper bound used to be 2.75, the
+        // old fighting half-width, so every training round happened on a mat no
+        // wider than that — and the game ring is now 5.5. Edge distance reaches the
+        // policy normalised by ringHalfWidth, so a brain that only ever saw the
+        // narrow end reads the wide ring as a feature range it was never trained
+        // on. Spanning 1.7 to 5.5 teaches edge distance across scales instead of
+        // memorising one mat.
+        public Vector2 startHalfRange = new Vector2(1.7f, 5.5f);
         public Vector2 frictionRange = new Vector2(0.5f, 1.1f);
 
         [Header("Curriculum dials (overridden by trainer environment_parameters)")]
@@ -43,7 +55,7 @@ namespace PoSumo
         {
             if (wrestlerA == null || wrestlerB == null)
             {
-                var agents = FindObjectsByType<Agent_Biped>(FindObjectsSortMode.None);
+                var agents = FindObjectsByType<Agent_Biped>();
                 foreach (var a in agents)
                 {
                     if (a.teamId == 0) wrestlerA = a; else wrestlerB = a;
@@ -54,6 +66,11 @@ namespace PoSumo
             wrestlerB.opponent = wrestlerA;
             wrestlerA.ringHalfWidth = ringHalfWidth;
             wrestlerB.ringHalfWidth = ringHalfWidth;
+            // Must match Systems_GameMatchManager: the sumo stance shaping measures
+            // foot height against this plane, and training is where that reward is
+            // actually earned. Left unset it would read every foot as planted.
+            wrestlerA.arenaGroundY = transform.position.y;
+            wrestlerB.arenaGroundY = transform.position.y;
             wrestlerA.arenaCenterX = transform.position.x;
             wrestlerB.arenaCenterX = transform.position.x;
             _bodyA = wrestlerA.GetComponent<Agent_BipedBody>();

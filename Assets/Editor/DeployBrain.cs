@@ -141,7 +141,14 @@ namespace PoSumo.EditorTools
                 ? $"{agentFolder}/{behaviorName}Walk.onnx"
                 : $"{agentFolder}/{behaviorName}.onnx";
             File.Copy(source, destination, overwrite: true);
-            AssetDatabase.ImportAsset(destination, ImportAssetOptions.ForceUpdate);
+            // ForceSynchronousImport, not just ForceUpdate. The load below runs on
+            // the very next line, and a plain ForceUpdate import can still be
+            // queued at that point — so the ModelAsset comes back null and this
+            // reports a deploy failure for a file that is perfectly fine. It shows
+            // up whenever the editor is starved, which is exactly when you are
+            // deploying: mid-session with training envs saturating the machine.
+            AssetDatabase.ImportAsset(destination,
+                ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
 
             var model = AssetDatabase.LoadAssetAtPath<Unity.InferenceEngine.ModelAsset>(destination);
             if (model == null)

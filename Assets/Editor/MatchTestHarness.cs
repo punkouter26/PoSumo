@@ -28,7 +28,7 @@ namespace PoSumo.EditorTools
                 Debug.LogError("HARNESS: enter Play mode first.");
                 return;
             }
-            _manager = Object.FindFirstObjectByType<Systems_GameMatchManager>();
+            _manager = Object.FindAnyObjectByType<Systems_GameMatchManager>();
             if (_manager == null)
             {
                 Debug.LogError("HARNESS: no match manager in the open scene.");

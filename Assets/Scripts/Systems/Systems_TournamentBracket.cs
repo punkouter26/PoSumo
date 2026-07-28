@@ -17,6 +17,8 @@ namespace PoSumo
         [Tooltip("Characters available as entrants. With 4, each appears twice in the 8-slot bracket.")]
         [SerializeField] private Agent_CharacterDefinition[] _roster;
         [SerializeField] private PanelSettings _panelSettings;
+        [Tooltip("Shared match tuning. Only used to state the correct best-of on this screen, so the status line cannot drift from the rule the matches actually run.")]
+        [SerializeField] private Systems_GameTuning _tuning;
         [Tooltip("Arenas cycled through as the bracket progresses, so successive matches are fought on different surfaces.")]
         [SerializeField] private string[] _arenaScenes = { "SCN_SUMO", "SCN_SUMO_ICE", "SCN_SUMO_STICKY" };
         [Tooltip("Play the whole bracket unattended once it is seeded, pausing on this screen between matches.")]
@@ -26,26 +28,39 @@ namespace PoSumo
 
         private float _autoTimer;
 
-        private const int SLOT_SIZE = 116;
+        // Sized off the longest roster name. At the original 116 there was less
+        // room left after the 42pt portrait than "STANDARD" needed, and since the
+        // portrait was allowed to shrink, flexbox resolved the overflow by
+        // crushing it to zero width — Standard was the one fighter rendering with
+        // no portrait anywhere in the bracket, which read as missing art rather
+        // than a layout fault. With the portrait pinned (flexShrink 0) the name
+        // clipped instead, so the chip has to actually be wide enough: 164 leaves
+        // ~114pt for the name against ~92pt for "STANDARD" at FONT_SMALL bold.
+        // This is also the ceiling — the palette row puts four of them side by
+        // side with 4pt margins, and 4*164+32 = 688 is just inside the 696pt of
+        // usable width a 720pt panel has after its gutters.
+        private const int SLOT_SIZE = 164;
 
         private readonly List<VisualElement> _seedSlots = new List<VisualElement>();
         private readonly List<VisualElement> _winnerSlots = new List<VisualElement>();
         private VisualElement _root;
+        /// Everything on the screen except the drag ghost. The ghost stays on
+        /// `_root` so its absolute pointer coordinates are not offset by the
+        /// scroll position.
+        private VisualElement _content;
         private VisualElement _careerPanel;
         private VisualElement _dragGhost;
         private Label _statusLabel;
         private Button _actionButton;
+        private Button _resetButton;
+        private VisualElement _paletteRow;
+        private Label _hint;
 
         // Drag bookkeeping. _dragSeedIndex is -1 when dragging from the roster
         // palette instead of an existing seed slot.
         private bool _dragging;
         private int _dragSeedIndex = -1;
         private Agent_CharacterDefinition _dragCharacter;
-
-        private static readonly Color PanelBg = new Color(0.09f, 0.08f, 0.09f, 0.95f);
-        private static readonly Color SlotBg = new Color(0.16f, 0.14f, 0.15f, 1f);
-        private static readonly Color Gold = new Color(1f, 0.85f, 0.3f);
-        private static readonly Color TextDim = new Color(0.72f, 0.69f, 0.64f);
 
         private void Start()
         {
@@ -72,25 +87,46 @@ namespace PoSumo
             if (_panelSettings != null) doc.panelSettings = _panelSettings;
             _root = doc.rootVisualElement;
             _root.style.flexGrow = 1;
-            Systems_SafeArea.Attach(transform, _root);
             _root.style.backgroundColor = new Color(0.05f, 0.045f, 0.05f, 1f);
-            _root.style.paddingTop = 18;
-            _root.style.paddingLeft = 14;
-            _root.style.paddingRight = 14;
+            // Systems_SafeArea drives the ROOT's padding, so the screen's own
+            // gutters cannot live there — it overwrote all four of them, and on a
+            // device with no notch (every desktop, and the editor Game view) that
+            // meant zero padding on all sides. The gutters belong one level in.
+            Systems_SafeArea.Attach(transform, _root);
 
-            var title = new Label("TOURNAMENT");
+            // The bracket is taller than a phone screen once the career table is
+            // expanded, and there was nothing to scroll: the overflow was simply
+            // clipped, so the RESHUFFLE button and the standings could not be
+            // reached at all.
+            var scroll = new ScrollView(ScrollViewMode.Vertical);
+            scroll.style.flexGrow = 1;
+            // Vertical mode alone still leaves the horizontal scroller on Auto, so
+            // a row a few points too wide draws a bar across the bottom of the
+            // screen. Nothing here is meant to scroll sideways.
+            scroll.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
+            _root.Add(scroll);
+
+            _content = scroll.contentContainer;
+            // Fill the viewport when the bracket is shorter than the screen, so
+            // the spacer added below can push the action buttons down to the
+            // thumb instead of leaving 45% of a portrait screen empty. When the
+            // content IS taller — career table expanded — this costs nothing and
+            // the ScrollView takes over.
+            _content.style.flexGrow = 1;
+            _content.style.paddingTop = Systems_UiKit.SPACE_4;
+            _content.style.paddingLeft = Systems_UiKit.SPACE_3;
+            _content.style.paddingRight = Systems_UiKit.SPACE_3;
+            _content.style.paddingBottom = Systems_UiKit.SPACE_5;
+
+            Label title = Systems_UiKit.Text("TOURNAMENT", Systems_UiKit.FONT_HERO, Systems_UiKit.Gold, true);
             title.style.unityTextAlign = TextAnchor.MiddleCenter;
-            title.style.fontSize = 42;
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            title.style.color = Gold;
-            _root.Add(title);
+            _content.Add(title);
 
-            var hint = new Label("drag a fighter onto a slot to change it");
-            hint.style.unityTextAlign = TextAnchor.MiddleCenter;
-            hint.style.fontSize = 17;
-            hint.style.color = TextDim;
-            hint.style.marginBottom = 8;
-            _root.Add(hint);
+            _hint = Systems_UiKit.Text("drag a fighter onto a slot to change it",
+                                       Systems_UiKit.FONT_SMALL, Systems_UiKit.TextLow);
+            _hint.style.unityTextAlign = TextAnchor.MiddleCenter;
+            _hint.style.marginBottom = Systems_UiKit.SPACE_2;
+            _content.Add(_hint);
 
             BuildPalette();
 
@@ -110,31 +146,34 @@ namespace PoSumo
             AddRoundHeader("FINAL");
             AddResultRow(feederA: 4, feederB: 5, winnerMatch: Systems_TournamentState.FINAL_MATCH);
 
-            _statusLabel = new Label();
+            // Absorbs whatever vertical slack is left, so the bracket sits under
+            // the title and the controls sit at the bottom edge. Collapses to
+            // zero the moment the content needs the room.
+            var spacer = new VisualElement();
+            spacer.style.flexGrow = 1;
+            spacer.style.minHeight = Systems_UiKit.SPACE_3;
+            _content.Add(spacer);
+
+            _statusLabel = Systems_UiKit.Text("", Systems_UiKit.FONT_LEAD, Systems_UiKit.Gold);
             _statusLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
-            _statusLabel.style.fontSize = 24;
-            _statusLabel.style.color = Gold;
-            _statusLabel.style.marginTop = 10;
-            _root.Add(_statusLabel);
+            _statusLabel.style.whiteSpace = WhiteSpace.Normal;
+            _statusLabel.style.marginTop = Systems_UiKit.SPACE_3;
+            _content.Add(_statusLabel);
 
-            _actionButton = new Button(OnAction);
-            _actionButton.style.height = 74;
-            _actionButton.style.marginTop = 8;
-            _actionButton.style.fontSize = 30;
-            _actionButton.style.unityFontStyleAndWeight = FontStyle.Bold;
-            _actionButton.style.color = new Color(0.08f, 0.06f, 0.05f);
-            _actionButton.style.backgroundColor = Gold;
-            Round(_actionButton, 12);
-            _root.Add(_actionButton);
+            _actionButton = Systems_UiKit.PrimaryButton("", OnAction);
+            _actionButton.style.marginTop = Systems_UiKit.SPACE_2;
+            _content.Add(_actionButton);
 
-            var resetButton = new Button(OnReset) { text = "RESHUFFLE" };
-            resetButton.style.height = 50;
-            resetButton.style.marginTop = 6;
-            resetButton.style.fontSize = 20;
-            resetButton.style.color = TextDim;
-            resetButton.style.backgroundColor = new Color(0.18f, 0.16f, 0.17f);
-            Round(resetButton, 10);
-            _root.Add(resetButton);
+            // Only offered while the draw is still editable. It was previously
+            // always visible, which made it both redundant and dangerous: on a
+            // finished bracket it did exactly what NEW TOURNAMENT does (OnAction
+            // forwards to OnReset when complete), and between two matches of a
+            // running bracket — this screen is shown for _betweenMatchSeconds
+            // after every bout — one tap silently destroyed the tournament in
+            // progress with no confirmation.
+            _resetButton = Systems_UiKit.GhostButton("RESHUFFLE", OnReset);
+            _resetButton.style.marginTop = Systems_UiKit.SPACE_2;
+            _content.Add(_resetButton);
 
             BuildCareerTable();
 
@@ -154,36 +193,48 @@ namespace PoSumo
         /// focus on a phone screen.
         private void BuildCareerTable()
         {
-            var toggle = new Button { text = "CAREER RECORD  ▾" };
-            toggle.style.height = 44;
-            toggle.style.marginTop = 12;
-            toggle.style.fontSize = 18;
+            // The match count rides on the toggle rather than sitting in a footer
+            // row inside the table. It costs nothing here, it is readable while
+            // the table is still collapsed, and it buys back a whole line of
+            // vertical space in the panel for larger type.
+            var toggle = new Button { text = CareerToggleText(open: false) };
+            toggle.style.height = Systems_UiKit.TOUCH_MIN;
+            toggle.style.marginTop = Systems_UiKit.SPACE_3;
+            toggle.style.marginLeft = 0;
+            toggle.style.marginRight = 0;
+            toggle.style.fontSize = Systems_UiKit.FONT_SMALL;
             toggle.style.unityFontStyleAndWeight = FontStyle.Bold;
-            toggle.style.color = TextDim;
-            toggle.style.backgroundColor = new Color(0.13f, 0.12f, 0.13f);
-            Round(toggle, 10);
-            _root.Add(toggle);
+            toggle.style.color = Systems_UiKit.TextLow;
+            toggle.style.backgroundColor = Systems_UiKit.Chip;
+            toggle.style.borderTopWidth = 0;
+            toggle.style.borderBottomWidth = 0;
+            toggle.style.borderLeftWidth = 0;
+            toggle.style.borderRightWidth = 0;
+            toggle.Round(Systems_UiKit.RADIUS_SM);
+            _content.Add(toggle);
 
-            _careerPanel = new VisualElement();
-            _careerPanel.style.backgroundColor = PanelBg;
-            _careerPanel.style.paddingLeft = 12;
-            _careerPanel.style.paddingRight = 12;
-            _careerPanel.style.paddingTop = 8;
-            _careerPanel.style.paddingBottom = 10;
-            _careerPanel.style.marginTop = 4;
-            Round(_careerPanel, 10);
+            _careerPanel = Systems_UiKit.Card(Systems_UiKit.Ink, Systems_UiKit.RADIUS_SM);
+            _careerPanel.Pad(Systems_UiKit.SPACE_3, Systems_UiKit.SPACE_2);
+            _careerPanel.style.marginTop = Systems_UiKit.SPACE_1;
             _careerPanel.style.display = DisplayStyle.None;
-            _root.Add(_careerPanel);
+            _content.Add(_careerPanel);
 
             toggle.clicked += () =>
             {
                 bool open = _careerPanel.style.display == DisplayStyle.None;
                 _careerPanel.style.display = open ? DisplayStyle.Flex : DisplayStyle.None;
-                toggle.text = open ? "CAREER RECORD  ▴" : "CAREER RECORD  ▾";
                 if (open) RefreshCareerTable();
+                toggle.text = CareerToggleText(open);
             };
 
             RefreshCareerTable();
+        }
+
+        private static string CareerToggleText(bool open)
+        {
+            int played = Systems_CareerStats.MatchesPlayed;
+            string count = played > 0 ? $"  ·  {played} MATCHES" : string.Empty;
+            return $"CAREER RECORD{count}  {(open ? "▴" : "▾")}";
         }
 
         private void RefreshCareerTable()
@@ -194,15 +245,17 @@ namespace PoSumo
             var records = Systems_CareerStats.Ranked();
             if (records.Count == 0)
             {
-                var empty = new Label("no matches played yet");
-                empty.style.fontSize = 15;
-                empty.style.color = TextDim;
+                Label empty = Systems_UiKit.Text("no matches played yet",
+                                                 Systems_UiKit.FONT_SMALL, Systems_UiKit.TextLow);
                 empty.style.unityTextAlign = TextAnchor.MiddleCenter;
                 _careerPanel.Add(empty);
                 return;
             }
 
-            _careerPanel.Add(CareerRow("FIGHTER", "ELO", "W-L", "RDS", "TITLES", header: true));
+            _careerPanel.Add(CareerRow("FIGHTER", "ELO", "W-L", "TITLES", header: true));
+            // A rule under the header does the separating that the old layout
+            // asked a colour difference and a size difference to do at 14pt.
+            _careerPanel.Add(Systems_UiKit.Divider(Systems_UiKit.SPACE_1));
             for (int i = 0; i < records.Count; i++)
             {
                 Systems_CareerStats.Record r = records[i];
@@ -210,60 +263,88 @@ namespace PoSumo
                     r.fighter.ToUpperInvariant(),
                     Mathf.RoundToInt(r.elo).ToString(),
                     $"{r.matchWins}-{r.matchLosses}",
-                    $"{r.roundWins}-{r.roundLosses}",
                     r.titles > 0 ? new string('★', Mathf.Min(r.titles, 5)) : "—",
                     header: false));
             }
-
-            var footer = new Label($"{Systems_CareerStats.MatchesPlayed} matches on record");
-            footer.style.fontSize = 13;
-            footer.style.color = TextDim;
-            footer.style.unityTextAlign = TextAnchor.MiddleCenter;
-            footer.style.marginTop = 6;
-            _careerPanel.Add(footer);
         }
 
-        private static VisualElement CareerRow(string name, string elo, string wl, string rounds,
+        /// Round W-L used to sit between W-L and TITLES. It was dropped: match
+        /// W-L already says who wins, and the round tally repeated that shape in
+        /// bigger numbers for no extra read. The width it freed goes to the
+        /// fighter name.
+        private static VisualElement CareerRow(string name, string elo, string wl,
                                                string titles, bool header)
         {
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
-            row.style.marginTop = header ? 0 : 3;
-            Color colour = header ? TextDim : new Color(0.9f, 0.88f, 0.84f);
-            int size = header ? 13 : 16;
-            row.Add(CareerCell(name, 34, colour, size, TextAnchor.MiddleLeft));
-            row.Add(CareerCell(elo, 16, header ? TextDim : Gold, size, TextAnchor.MiddleRight));
-            row.Add(CareerCell(wl, 18, colour, size, TextAnchor.MiddleRight));
-            row.Add(CareerCell(rounds, 18, colour, size, TextAnchor.MiddleRight));
-            row.Add(CareerCell(titles, 14, header ? TextDim : Gold, size, TextAnchor.MiddleRight));
+            row.style.marginTop = header ? 0 : 2;
+            Color colour = header ? Systems_UiKit.TextLow : Systems_UiKit.TextHi;
+            // Two steps up the type scale from the old 14/17. The standings are
+            // the payoff for playing a bracket and were the smallest text on the
+            // screen; dropping the footer row paid for the extra height.
+            int size = header ? Systems_UiKit.FONT_SMALL : Systems_UiKit.FONT_BODY;
+            // Fixed-width numeric columns, with the name column absorbing the
+            // remainder. The five columns used to be percentages adding to exactly
+            // 100, which overflowed the panel and pushed TITLES off the right edge
+            // — percentages resolve before padding and rounding is not on your
+            // side. Fixed widths that add to less than the panel cannot overflow,
+            // and the numbers stay aligned whatever the panel width.
+            Color numberColour = header ? Systems_UiKit.TextLow : Systems_UiKit.Gold;
+            row.Add(CareerName(name, colour, size));
+            row.Add(CareerCell(elo, 100, numberColour, size));
+            row.Add(CareerCell(wl, 100, colour, size));
+            row.Add(CareerCell(titles, 92, numberColour, size));
             return row;
         }
 
-        private static Label CareerCell(string text, int widthPercent, Color colour, int fontSize,
-                                        TextAnchor align)
+        /// The one flexible column: takes whatever the numeric columns leave and
+        /// clips rather than pushing them off the row.
+        private static Label CareerName(string text, Color colour, int fontSize)
         {
             var label = new Label(text);
-            label.style.width = Length.Percent(widthPercent);
+            label.style.flexGrow = 1;
+            label.style.flexShrink = 1;
+            label.style.overflow = Overflow.Hidden;
             label.style.fontSize = fontSize;
             label.style.color = colour;
-            label.style.unityTextAlign = align;
+            label.style.unityTextAlign = TextAnchor.MiddleLeft;
+            return label;
+        }
+
+        /// A right-aligned numeric column of fixed width. flexShrink 0 so a long
+        /// fighter name can never squeeze the numbers.
+        private static Label CareerCell(string text, int width, Color colour, int fontSize)
+        {
+            var label = new Label(text);
+            label.style.width = width;
+            label.style.flexShrink = 0;
+            label.style.fontSize = fontSize;
+            label.style.color = colour;
+            label.style.unityTextAlign = TextAnchor.MiddleRight;
             return label;
         }
 
         private void BuildPalette()
         {
-            var row = new VisualElement();
-            row.style.flexDirection = FlexDirection.Row;
+            VisualElement row = Systems_UiKit.Row();
             row.style.justifyContent = Justify.Center;
-            row.style.marginBottom = 10;
-            _root.Add(row);
+            row.style.marginBottom = Systems_UiKit.SPACE_3;
+            _content.Add(row);
+            _paletteRow = row;
 
             for (int rosterIndex = 0; rosterIndex < _roster.Length; rosterIndex++)
             {
                 Agent_CharacterDefinition character = _roster[rosterIndex];
-                VisualElement chip = MakeChip(character, 88);
-                chip.style.marginLeft = 5;
-                chip.style.marginRight = 5;
+                // Same width as a bracket slot. At the old 88 the longest name on
+                // the roster — STANDARD — ran straight out of its chip and over
+                // the one beside it.
+                VisualElement chip = MakeChip(character, SLOT_SIZE);
+                // 2, not 4. Four chips at SLOT_SIZE came to 688pt against 696pt of
+                // usable width — inside the panel, but not inside it once the
+                // ScrollView reserves room for a scroller, which tipped the row
+                // into horizontal overflow and put a scrollbar across the screen.
+                chip.style.marginLeft = 2;
+                chip.style.marginRight = 2;
                 Agent_CharacterDefinition captured = character;
                 chip.RegisterCallback<PointerDownEvent>(evt => BeginDrag(evt, -1, captured));
                 row.Add(chip);
@@ -272,13 +353,10 @@ namespace PoSumo
 
         private void AddRoundHeader(string text)
         {
-            var header = new Label(text);
-            header.style.fontSize = 18;
-            header.style.color = TextDim;
-            header.style.unityFontStyleAndWeight = FontStyle.Bold;
-            header.style.marginTop = 10;
-            header.style.marginBottom = 3;
-            _root.Add(header);
+            Label header = Systems_UiKit.Text(text, Systems_UiKit.FONT_SMALL, Systems_UiKit.TextLow, true);
+            header.style.marginTop = Systems_UiKit.SPACE_3;
+            header.style.marginBottom = Systems_UiKit.SPACE_1;
+            _content.Add(header);
         }
 
         /// A quarterfinal row: two draggable seed slots plus the winner readout.
@@ -290,7 +368,7 @@ namespace PoSumo
             row.Add(MakeSeedSlot(seedB));
             row.Add(MakeArrow());
             row.Add(MakeWinnerSlot(winnerMatch));
-            _root.Add(row);
+            _content.Add(row);
         }
 
         /// A semifinal/final row: both entrants come from earlier winners, so
@@ -303,35 +381,29 @@ namespace PoSumo
             row.Add(MakeWinnerSlot(feederB));
             row.Add(MakeArrow());
             row.Add(MakeWinnerSlot(winnerMatch));
-            _root.Add(row);
+            _content.Add(row);
         }
 
         private static VisualElement MakeRow()
         {
-            var row = new VisualElement();
-            row.style.flexDirection = FlexDirection.Row;
-            row.style.alignItems = Align.Center;
-            row.style.marginBottom = 5;
+            VisualElement row = Systems_UiKit.Row();
+            row.style.marginBottom = Systems_UiKit.SPACE_1;
             return row;
         }
 
         private static Label MakeVs()
         {
-            var label = new Label("v");
-            label.style.fontSize = 16;
-            label.style.color = TextDim;
-            label.style.marginLeft = 4;
-            label.style.marginRight = 4;
+            Label label = Systems_UiKit.Text("v", Systems_UiKit.FONT_SMALL, Systems_UiKit.TextLow);
+            label.style.marginLeft = Systems_UiKit.SPACE_1;
+            label.style.marginRight = Systems_UiKit.SPACE_1;
             return label;
         }
 
         private static Label MakeArrow()
         {
-            var label = new Label("→");
-            label.style.fontSize = 20;
-            label.style.color = TextDim;
-            label.style.marginLeft = 6;
-            label.style.marginRight = 6;
+            Label label = Systems_UiKit.Text("→", Systems_UiKit.FONT_BODY, Systems_UiKit.TextLow);
+            label.style.marginLeft = Systems_UiKit.SPACE_2;
+            label.style.marginRight = Systems_UiKit.SPACE_2;
             return label;
         }
 
@@ -362,21 +434,27 @@ namespace PoSumo
         /// colour block (Standard ships without face art), plus the name.
         private static VisualElement MakeChip(Agent_CharacterDefinition character, int width)
         {
-            var chip = new VisualElement();
+            VisualElement chip = Systems_UiKit.Row();
             chip.style.width = width;
+            // Comfortably over TOUCH_MIN: these are drag handles, not just labels.
             chip.style.height = 54;
-            chip.style.flexDirection = FlexDirection.Row;
-            chip.style.alignItems = Align.Center;
-            chip.style.backgroundColor = SlotBg;
-            Round(chip, 8);
+            chip.style.backgroundColor = Systems_UiKit.Chip;
+            // Belt and braces against a name longer than the chip: clip it here
+            // rather than let it spill over the neighbouring slot.
+            chip.style.overflow = Overflow.Hidden;
+            chip.Round(Systems_UiKit.RADIUS_SM);
             chip.style.borderLeftWidth = 4;
-            chip.style.borderLeftColor = character != null ? character.teamColor : SlotBg;
-            chip.style.paddingLeft = 4;
+            chip.style.borderLeftColor = character != null ? character.teamColor : Systems_UiKit.Chip;
+            chip.style.paddingLeft = Systems_UiKit.SPACE_1;
 
             var icon = new VisualElement();
             icon.style.width = 42;
             icon.style.height = 42;
-            Round(icon, 21);
+            // The portrait is fixed furniture: it must never be the thing that
+            // gives way when a long name overflows the chip. Without this the
+            // name wins and the icon collapses to nothing.
+            icon.style.flexShrink = 0;
+            icon.Round(21);
             icon.style.backgroundColor = character != null
                 ? character.teamColor
                 : new Color(0.25f, 0.23f, 0.24f);
@@ -387,28 +465,31 @@ namespace PoSumo
             }
             chip.Add(icon);
 
-            var name = new Label(character != null ? character.behaviorName.ToUpperInvariant() : "—");
-            name.style.fontSize = 16;
-            name.style.unityFontStyleAndWeight = FontStyle.Bold;
-            name.style.color = character != null ? character.teamColor : TextDim;
-            name.style.marginLeft = 5;
+            Label name = Systems_UiKit.Text(
+                character != null ? character.behaviorName.ToUpperInvariant() : "—",
+                Systems_UiKit.FONT_SMALL,
+                character != null ? character.teamColor : Systems_UiKit.TextLow,
+                true);
+            name.style.marginLeft = Systems_UiKit.SPACE_1;
             chip.Add(name);
             return chip;
         }
 
-        private static void Round(VisualElement element, int radius)
-        {
-            element.style.borderTopLeftRadius = radius;
-            element.style.borderTopRightRadius = radius;
-            element.style.borderBottomLeftRadius = radius;
-            element.style.borderBottomRightRadius = radius;
-        }
-
         // --- drag and drop -------------------------------------------------
+
+        /// The draw can only be edited BEFORE a tournament starts.
+        ///
+        /// This used to test `Active` alone, but ReportWinner clears Active on the
+        /// final — so a finished bracket became editable again. Dropping a fighter
+        /// onto a quarterfinal then left the seed changed and the recorded winner
+        /// untouched, giving rows like "STANDARD v NICK -> MATT" with a champion
+        /// who was no longer in the draw.
+        private static bool BracketLocked =>
+            Systems_TournamentState.Active || Systems_TournamentState.IsComplete;
 
         private void BeginDrag(PointerDownEvent evt, int seedIndex, Agent_CharacterDefinition character)
         {
-            if (Systems_TournamentState.Active) return;   // bracket is locked once running
+            if (BracketLocked) return;
             if (character == null) return;
             _dragging = true;
             _dragSeedIndex = seedIndex;
@@ -492,6 +573,15 @@ namespace PoSumo
                 ApplyChip(_winnerSlots[i], Systems_TournamentState.GetWinner(matchIndex));
             }
 
+            // The seeding controls only exist while seeding is possible. Left up,
+            // they invited a drag that BeginDrag then silently ignored — a palette
+            // and a "drag a fighter onto a slot" instruction that do nothing are
+            // worse than no palette at all.
+            DisplayStyle seedingControls = BracketLocked ? DisplayStyle.None : DisplayStyle.Flex;
+            if (_hint != null) _hint.style.display = seedingControls;
+            if (_paletteRow != null) _paletteRow.style.display = seedingControls;
+            if (_resetButton != null) _resetButton.style.display = seedingControls;
+
             if (Systems_TournamentState.IsComplete)
             {
                 var champion = Systems_TournamentState.Champion;
@@ -513,7 +603,13 @@ namespace PoSumo
                 return;
             }
 
-            _statusLabel.text = "8 entrants · single elimination · best of 3 per match";
+            // Built from the same constants the bracket actually runs on. The
+            // entrant count and the best-of were a hardcoded sentence, so editing
+            // tournamentPointsToWin on GameTuning.asset — which is exactly what
+            // the project's tuning convention tells you to do — left this screen
+            // stating a rule the game no longer followed.
+            _statusLabel.text = $"{Systems_TournamentState.SEED_COUNT} entrants · single elimination"
+                                + BestOfClause();
             _actionButton.text = "START TOURNAMENT";
         }
 
@@ -523,7 +619,7 @@ namespace PoSumo
         {
             var icon = chip[0];
             var name = (Label)chip[1];
-            chip.style.borderLeftColor = character != null ? character.teamColor : SlotBg;
+            chip.style.borderLeftColor = character != null ? character.teamColor : Systems_UiKit.Chip;
             icon.style.backgroundColor = character != null && character.headSprite == null
                 ? character.teamColor
                 : (character != null ? Color.clear : new Color(0.25f, 0.23f, 0.24f));
@@ -531,7 +627,7 @@ namespace PoSumo
                 ? new StyleBackground(character.headSprite)
                 : new StyleBackground();
             name.text = character != null ? character.behaviorName.ToUpperInvariant() : "—";
-            name.style.color = character != null ? character.teamColor : TextDim;
+            name.style.color = character != null ? character.teamColor : Systems_UiKit.TextLow;
         }
 
         /// Once the bracket is seeded and running, matches chain on their own —
@@ -574,6 +670,17 @@ namespace PoSumo
             SceneManager.LoadScene(ArenaForMatch(Systems_TournamentState.CurrentMatch));
         }
 
+        /// " · best of N per match", derived from the tuning asset. Omitted rather
+        /// than guessed when no asset is assigned, so the line can never be wrong.
+        private string BestOfClause()
+        {
+            if (_tuning == null || _tuning.tournamentPointsToWin < 1)
+            {
+                return string.Empty;
+            }
+            return $" · best of {_tuning.tournamentPointsToWin * 2 - 1} per match";
+        }
+
         private string ArenaForMatch(int matchIndex)
         {
             if (_arenaScenes == null || _arenaScenes.Length == 0) return "SCN_SUMO";
@@ -583,6 +690,14 @@ namespace PoSumo
         private void OnReset()
         {
             Systems_TournamentState.ResetAll();
+            // Wipe accumulated bruises and KO blood so a new bracket starts on
+            // clean bodies. Systems_BodyDamage.ClearAll has documented that this
+            // is its call site since it was written, but nothing ever called it:
+            // damage is keyed by behaviour name in a static store that only clears
+            // at play-session start, so every fighter carried the previous
+            // tournament's blood into the next one — and into exhibition matches.
+            Systems_BodyDamage.ClearAll();
+            Systems_RingBlood.ClearAll();
             Systems_TournamentState.AutoSeed(_roster, Time.frameCount);
             Refresh();
         }
