@@ -15,6 +15,10 @@ MonoBehaviour:
   behaviorName: Standard
   teamColor: {r: 0.2, g: 0.5, b: 0.3, a: 1}
   headSprite: {fileID: 0}
+  faceArtFacesLeft: 0
+  faceNeutralName: 
+  faceHappyNames: []
+  faceSadNames: []
   massScale: 1
   widthScale: 1
   torqueScale: 1
@@ -32,6 +36,15 @@ MonoBehaviour:
   hipsLowReward: 0.0003
   cadenceReward: 0.0015
   riseReward: 0.02
+  effortPenalty: 0.0015
+  stanceReward: 0.0009
   energyPenalty: 0.0004
   jerkPenalty: 0.0003
   straightLegEarnFraction: 0.3
+  walkForwardReward: 0.004
+  walkStanceFloor: 0.15
+  walkBendReward: 0.0006
+  walkUprightReward: 0.001
+  walkCadenceReward: 0.002
+  walkEnergyPenalty: 0.0003
+  walkStallPenalty: 0.0008

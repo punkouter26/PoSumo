@@ -645,7 +645,12 @@ namespace PoSumo
         /// `top:10 right:10` from a different file and a different UIDocument.
         void BuildTopBar()
         {
-            _hud.TopBarLeft.Add(Systems_UiKit.ChipButton("❚❚", TogglePause, 60));
+            // No on-screen pause chip. Pause itself is NOT gone — TogglePause is
+            // still bound to escapeKey in Update, which is what Android maps its
+            // hardware back button to, so the pause card is reachable on the
+            // target platform without spending a corner of the HUD on it.
+            // TopBarLeft stays as an empty fixed-width slot: it and TopBarRight
+            // are what keep the scorebug optically centred.
 
             // Which bout of the bracket this is. The bracket screen announces
             // "MATCH 3 of 7 — KIM v NICK", then the arena showed two names and a
@@ -1084,8 +1089,15 @@ namespace PoSumo
             {
                 float matTop = transform.position.y;
                 float limit = matTop + footOffMatY;
-                if (body.FootNear != null && body.FootNear.position.y < limit) return true;
-                if (body.FootFar != null && body.FootFar.position.y < limit) return true;
+                // Only feet still joined to the body count. A leg torn off by
+                // Systems_BodyDamage is debris — it gets shoved around and will
+                // very likely slide off the edge, and losing the round because
+                // your severed leg fell off the mat is the opposite of what the
+                // blow that took it off earned.
+                if (body.FootNear != null && body.FootNearAttached
+                    && body.FootNear.position.y < limit) return true;
+                if (body.FootFar != null && body.FootFarAttached
+                    && body.FootFar.position.y < limit) return true;
             }
             return w.Torso.position.y < fallY;
         }

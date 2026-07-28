@@ -21,8 +21,6 @@ namespace PoSumo
     public sealed class Systems_MomentumGraph : MonoBehaviour
     {
         public PanelSettings panelSettings;
-        [Tooltip("Hide Systems_FightHud's stats table on start. It stays reachable from the STATS chip.")]
-        public bool hideDetailedStats = true;
 
         [Tooltip("Seconds of history shown. Matches the round timeout so a full round fills the width exactly.")]
         public float windowSeconds = 30f;
@@ -67,13 +65,8 @@ namespace PoSumo
             _manager.RoundStarted += ClearHistory;
             _manager.MatchReset += ClearHistory;
 
-            // The detailed panels are opt-IN now. Done through a method rather than
-            // the serialized startVisible flag, because a value already written into
-            // a scene ignores any later change to its code default.
-            if (hideDetailedStats && _hud != null)
-            {
-                _hud.SetStatsVisible(false);
-            }
+            // The stats table is no longer hidden on start — it is always on
+            // during a match, so this component leaves it alone.
         }
 
         private void OnDisable()

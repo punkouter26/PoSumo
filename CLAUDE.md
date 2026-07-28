@@ -93,12 +93,28 @@ while the trunk ran long. The joint anchors are *derived from* those lengths —
 segment and every anchor above it moves with it, or the chain comes apart. Verified by
 measuring anchor separation across all 13 joints: 0.0000 m.
 
-Knee (−150…0°), elbow (0…150°) and hip (−30…120°) limits are anatomically correct including
-the no-hyperextension stops. Ankle (±25°), the three spine joints (±20° each) and shoulder
-(±120°) are clamped to roughly human TOTAL range but remain **symmetric** — the sign
-convention for flexion differs per joint in this rig, so assigning asymmetry needs one
-visual check first. Leg torques are realistic (hip 300, knee 250, ankle 120 N·m); the upper
-body was 2-4× human and was brought back to spine 180 each / shoulder 80 / elbow 60.
+**The sign convention is measured, not guessable, and it bit this project hard.**
+`HingeJoint2D.jointAngle` here is the **negative** of the child segment's geometric rotation
+relative to its parent — probe it with
+`Vector2.SignedAngle(parent.transform.up, child.transform.up) * facingSign` and the ratio is
+−1.00 on every joint. Ranges written as if they were geometric therefore bend the limb
+*backwards*. For the whole life of the project the three asymmetric joints were inverted:
+the knee swung the shin **forward** and the elbow swung the forearm **backward** (a bird
+leg), and the hip had 120° of extension against only 30° of flexion, so no fighter could
+crouch and drive off a loaded leg. Corrected to hip (−120…30°), knee (0…150°), elbow
+(−150…0°) — flexion is *positive* jointAngle at the knee, *negative* at hip and elbow.
+`Agent_Biped.KneeBendFactor()` reads the knee as positive and must move with these.
+
+Ankle (±25°), the three spine joints (±20° each) and shoulder (±120°) are clamped to roughly
+human TOTAL range and are genuinely **symmetric**, so the sign error never touched them.
+Leg torques are realistic (hip 300, knee 250, ankle 120 N·m); the upper body was 2-4× human
+and was brought back to spine 180 each / shoulder 80 / elbow 60.
+
+When you change a joint range, verify it **parent-local**, never in world space: with gravity
+off the whole body counter-rotates to conserve angular momentum, so a world-space "is the
+foot behind the knee" test reads the body's drift, not the joint. Measure the child's centre
+via `parent.transform.InverseTransformPoint(...)` at rest and at full flexion and compare the
+delta — that is rotation-invariant and gave the unambiguous answer here.
 
 Joints carry **passive resistance** — a restoring torque at 6% of each joint's motor budget
 per 90°, plus 10% per 400°/s of damping, applied every physics step in
@@ -179,11 +195,16 @@ match, and `Refresh()` reads each chip's match from its `userData`. Keying that 
 match index silently orphans the duplicate chips and they never repaint.
 
 ### Scenes
-Build settings: `SCN_TOURNAMENT` (index 0), `SCN_SUMO`, `SCN_SUMO_ICE`, `SCN_SUMO_STICKY` —
-the three arenas differ only by `Systems_SumoArena.style`/friction and are cycled through
-by the bracket. `SCN_WALKVIEW` views a locomotion brain. Arena scenes are **baked**: an
-editor pass ran `Systems_SumoArena.Build()` and saved the children, so `Awake` only
-rebinds references.
+Build settings are exactly two scenes: `SCN_TOURNAMENT` (index 0) and `SCN_SUMO`. The game
+therefore always boots into the bracket, which loads `SCN_SUMO` for every bout and gets the
+winner back via `Systems_TournamentReporter`. `SCN_SUMO_ICE` and `SCN_SUMO_STICKY` were
+deleted (2026-07-28) and the bracket no longer rotates arenas — `Systems_TournamentBracket`
+holds a `const string ARENA_SCENE = "SCN_SUMO"` rather than a serialized array, precisely so
+SCN_TOURNAMENT's stale serialized copy of the old three-scene list cannot resurrect them.
+`Systems_SumoArena.style` still has the ice/sticky values; they are simply unused.
+`SCN_WALKVIEW` views a locomotion brain and is **not** in build settings. Arena scenes are
+**baked**: an editor pass ran `Systems_SumoArena.Build()` and saved the children, so `Awake`
+only rebinds references.
 
 Training scenes, one per surviving purpose — every one either produced a deployed brain or
 is the newest template for a training mode. Keep that rule when adding or retiring scenes:
@@ -266,8 +287,13 @@ shipped checkpoint, and run a short corrective pass at a reduced learning rate (
 against trunks of 12-45M) rather than retraining from scratch.
 
 Restart rules: physics/observation/action changes ⇒ new run-id or `--force` (cold);
-parameter-only tweaks ⇒ `--resume`. `--force` deletes the run dir — **restart TensorBoard
-afterward** (it holds a stale handle on Windows and shows an empty run).
+parameter-only tweaks ⇒ `--resume`. **Kill TensorBoard *before* launching with `--force`,
+and restart it after.** It holds handles on the run dirs on Windows, and a `--force` fired
+while it is live leaves the old contents *in place* — silently, with no error. That is not
+cosmetic: the surviving checkpoints outrank the new run's numerically for a long while, so
+`DeployBrain.DeployLatestCheckpoint` will ship a brain from the run you thought you deleted.
+`Deploy`/`DeployWalk` are safe because they read the top-level `<Behavior>.onnx`, which a run
+rewrites only when it finishes.
 
 To stop training: kill `mlagents-learn.exe` itself. Killing only the env worker EXEs does
 nothing — the trainer auto-respawns them. On any disconnect the trainer saves a final
@@ -319,10 +345,15 @@ is the way to drive the editor: `scene-*`, `gameobject-*`, `script-execute`,
 - To force import/recompile after writing files, call `assets-refresh` (ForceUpdate) —
   window-focus tricks are unreliable.
 - `script-execute` calls that block the main thread >~30 s (e.g. `BuildPipeline.BuildPlayer`)
-  return an MCP retry error **while still executing** — poll for the `BUILD RESULT:` line in
-  **`%LOCALAPPDATA%\Unity\Editor\Editor.log`**. The repo's own `Logs/Editor.log` is *not*
-  Unity's live log (it is stale, and its tail is VS Code output) — polling it waits forever.
-  `console-get-logs` is the other reliable source.
+  return an MCP retry error **while still executing** — poll for the `BUILD RESULT:` line.
+  **`console-get-logs` is the reliable source; prefer it.** Which *file* is the live log
+  depends on how the editor was launched, so check both before trusting either: on
+  2026-07-28 the repo's `Logs/Editor.log` was live (1.0 M lines, current mtime, all the
+  `BUILD RESULT` / `DEPLOY RESULT` / `HARNESS` lines) while
+  `%LOCALAPPDATA%\Unity\Editor\Editor.log` held 64 stale lines — the reverse of what this
+  file used to claim. Compare line count and mtime rather than assuming a path.
+  Note that a log file may not flush during Play mode, so `console-get-logs` is the only
+  dependable way to watch something like `MatchTestHarness` progress live.
 - Those MCP retries each **re-invoke** the call, so one blocking build actually runs several
   times back-to-back. Harmless for an idempotent build; do not use this pattern for anything
   that appends or increments.

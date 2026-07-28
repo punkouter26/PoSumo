@@ -19,8 +19,16 @@ namespace PoSumo
         [SerializeField] private PanelSettings _panelSettings;
         [Tooltip("Shared match tuning. Only used to state the correct best-of on this screen, so the status line cannot drift from the rule the matches actually run.")]
         [SerializeField] private Systems_GameTuning _tuning;
-        [Tooltip("Arenas cycled through as the bracket progresses, so successive matches are fought on different surfaces.")]
-        [SerializeField] private string[] _arenaScenes = { "SCN_SUMO", "SCN_SUMO_ICE", "SCN_SUMO_STICKY" };
+        // Every bout is fought in SCN_SUMO. The bracket used to rotate across
+        // SCN_SUMO / SCN_SUMO_ICE / SCN_SUMO_STICKY; the ice and sticky arenas are
+        // gone, so there is nothing to cycle.
+        //
+        // Deliberately a const and NOT a [SerializeField] string[]. SCN_TOURNAMENT
+        // serializes its own copy of every serialized field, and this project has
+        // been bitten three times by a stale scene value silently overriding the
+        // code default (enableWalkIn, maxOrtho, wideOrtho). A const cannot drift,
+        // and it makes the old serialized array in the scene file inert.
+        private const string ARENA_SCENE = "SCN_SUMO";
         [Tooltip("Play the whole bracket unattended once it is seeded, pausing on this screen between matches.")]
         [SerializeField] private bool _autoPlay = true;
         [Tooltip("Seconds the updated bracket is shown before the next match starts.")]
@@ -596,9 +604,9 @@ namespace PoSumo
                 Systems_TournamentState.GetEntrants(Systems_TournamentState.CurrentMatch, out var a, out var b);
                 string aName = a != null ? a.behaviorName.ToUpperInvariant() : "?";
                 string bName = b != null ? b.behaviorName.ToUpperInvariant() : "?";
-                string arena = ArenaForMatch(Systems_TournamentState.CurrentMatch)
-                    .Replace("SCN_SUMO_", "").Replace("SCN_SUMO", "CLAY");
-                _statusLabel.text = $"MATCH {Systems_TournamentState.CurrentMatch + 1} of 7 — {aName} v {bName}  ·  {arena}";
+                // No arena suffix any more: every bout is on the same clay, so
+                // naming it on every line was noise rather than information.
+                _statusLabel.text = $"MATCH {Systems_TournamentState.CurrentMatch + 1} of 7 — {aName} v {bName}";
                 _actionButton.text = _autoPlay ? "PLAYING…" : "PLAY MATCH";
                 return;
             }
@@ -663,11 +671,9 @@ namespace PoSumo
             LaunchCurrentMatch();
         }
 
-        /// Rotate arenas by match index so the bracket travels across surfaces
-        /// rather than fighting every bout on the same clay.
         private void LaunchCurrentMatch()
         {
-            SceneManager.LoadScene(ArenaForMatch(Systems_TournamentState.CurrentMatch));
+            SceneManager.LoadScene(ARENA_SCENE);
         }
 
         /// " · best of N per match", derived from the tuning asset. Omitted rather
@@ -679,12 +685,6 @@ namespace PoSumo
                 return string.Empty;
             }
             return $" · best of {_tuning.tournamentPointsToWin * 2 - 1} per match";
-        }
-
-        private string ArenaForMatch(int matchIndex)
-        {
-            if (_arenaScenes == null || _arenaScenes.Length == 0) return "SCN_SUMO";
-            return _arenaScenes[matchIndex % _arenaScenes.Length];
         }
 
         private void OnReset()

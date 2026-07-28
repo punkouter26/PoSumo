@@ -47,6 +47,16 @@ namespace PoSumo.EditorTools
         /// No menu item: the run id changes every run, so this is invoked by
         /// name through MCP `script-execute` while a run is in flight. Finished
         /// runs keep only their final export, so this finds nothing in them.
+        ///
+        /// Picks by WRITE TIME, not by step number, and the difference is not
+        /// academic. `--force` silently fails to clear a run directory when
+        /// TensorBoard is holding it open (see Training/README.md), which leaves
+        /// the discarded run's checkpoints sitting next to the new one's. Those
+        /// leftovers carry HIGHER step numbers than a restarted run reaches for
+        /// hours, so a highest-step rule ships a brain from the run you deleted —
+        /// trained on whatever physics you just changed. Write time is monotonic
+        /// within a run and always identifies the live one. Ties (the trainer
+        /// exports two checkpoints in the same instant on shutdown) break by step.
         public static void DeployLatestCheckpoint(string runId, string behaviorName, string agentFolder)
         {
             string dir = $"Training/results/{runId}/{behaviorName}";
@@ -58,14 +68,22 @@ namespace PoSumo.EditorTools
 
             string newest = null;
             long newestStep = -1;
+            System.DateTime newestWrite = System.DateTime.MinValue;
+            long highestStepSeen = -1;
+
             foreach (string file in Directory.GetFiles(dir, $"{behaviorName}-*.onnx"))
             {
                 string stem = Path.GetFileNameWithoutExtension(file);
                 int dash = stem.LastIndexOf('-');
                 if (dash < 0) continue;
                 if (!long.TryParse(stem.Substring(dash + 1), out long step)) continue;
-                if (step > newestStep)
+
+                if (step > highestStepSeen) highestStepSeen = step;
+
+                System.DateTime write = File.GetLastWriteTimeUtc(file);
+                if (write > newestWrite || (write == newestWrite && step > newestStep))
                 {
+                    newestWrite = write;
                     newestStep = step;
                     newest = file;
                 }
@@ -75,6 +93,15 @@ namespace PoSumo.EditorTools
             {
                 Debug.LogError($"DEPLOY RESULT: Failed — no {behaviorName}-<step>.onnx checkpoints in {dir}.");
                 return;
+            }
+
+            // Loud, because silence here is how a stale brain ships unnoticed.
+            if (highestStepSeen > newestStep)
+            {
+                Debug.LogWarning(
+                    $"DEPLOY: {dir} still holds checkpoints from a DISCARDED run — highest step on disk is " +
+                    $"{highestStepSeen:N0} but the live run has only reached {newestStep:N0}. Deploying the live " +
+                    "one by write time. Delete the leftovers, and kill TensorBoard before the next --force.");
             }
 
             CopyInto(newest, behaviorName, agentFolder, $"checkpoint @ {newestStep:N0} steps");
@@ -95,24 +122,32 @@ namespace PoSumo.EditorTools
             CopyInto(source, behaviorName, agentFolder, "final export");
         }
 
-        // matt_walk02, not 01: matt_walk01 is the baseline gait Standard still uses
-        // (deployed as Standard_v01/StandardWalk.onnx). 02 is Matt's restyled walk.
+        // Every fighter now owns a walk brain trained on the corrected skeleton
+        // (2026-07-28 joint-direction fix). Standard used to borrow matt_walk01's
+        // export; standard_walk02 replaces that, so all four are first-class runs
+        // and each entry below is pinned to the run backing its shipped brain.
         [MenuItem("PoSumo/Deploy Matt Walk Brain")]
         public static void DeployMattWalk()
         {
-            DeployWalk("matt_walk02", "Matt", "Assets/Agents/Matt_v01");
+            DeployWalk("matt_walk03", "Matt", "Assets/Agents/Matt_v01");
+        }
+
+        [MenuItem("PoSumo/Deploy Standard Walk Brain")]
+        public static void DeployStandardWalk()
+        {
+            DeployWalk("standard_walk02", "Standard", "Assets/Agents/Standard_v01");
         }
 
         [MenuItem("PoSumo/Deploy Kim Walk Brain")]
         public static void DeployKimWalk()
         {
-            DeployWalk("kim_walk01", "Kim", "Assets/Agents/Kim_v01");
+            DeployWalk("kim_walk03", "Kim", "Assets/Agents/Kim_v01");
         }
 
         [MenuItem("PoSumo/Deploy Nick Walk Brain")]
         public static void DeployNickWalk()
         {
-            DeployWalk("nick_walk01", "Nick", "Assets/Agents/Nick_v01");
+            DeployWalk("nick_walk03", "Nick", "Assets/Agents/Nick_v01");
         }
 
         /// Deploy a locomotion brain: the trainer exports it as `<Behavior>.onnx`

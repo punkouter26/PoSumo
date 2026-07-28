@@ -309,8 +309,8 @@ namespace PoSumo
         /// Mean knee flexion mapped to 0..1 (1 = both knees bent 60°+).
         float KneeBendFactor()
         {
-            float near = Mathf.Clamp01(-_b.JointAngleNorm(1) * 180f / 60f);
-            float far = Mathf.Clamp01(-_b.JointAngleNorm(4) * 180f / 60f);
+            float near = Mathf.Clamp01(_b.JointAngleNorm(1) * 180f / 60f);
+            float far = Mathf.Clamp01(_b.JointAngleNorm(4) * 180f / 60f);
             return (near + far) * 0.5f;
         }
 

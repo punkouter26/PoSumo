@@ -58,9 +58,82 @@ namespace PoSumo
         [Tooltip("Minimum gap between blood spots thrown onto this fighter by the other's spray. A KO throws 26 droplets at once, so without a gap one burst would spend the whole decal budget in a single frame.")]
         public float splashCooldown = 0.04f;
 
+        [Header("Region damage / dismemberment")]
+        [Tooltip("Summed mark strength at which a region reads fully RED on the HUD mannequin. Marks are 0..1 each and cooldown-limited, so this is roughly 'a handful of solid hits to the same limb'.")]
+        public float regionRedAt = 2.5f;
+        [Tooltip("Multiple of regionRedAt past which the limb tears off. Above 1 on purpose: red must be a WARNING the player can act on, not the same instant as losing the limb.")]
+        public float detachAtRedMultiple = 1.6f;
+        [Tooltip("Master switch for dismemberment. Turning this off leaves the mannequin colouring intact, which is the safe fallback if detachment ever proves too swingy.")]
+        public bool allowDetach = true;
+
+        /// Coarse body regions for the HUD mannequin. Six is the useful number on a
+        /// portrait phone — the body has 14 parts, but nobody can read 14 swatches.
+        public enum Region { Head, Torso, ArmNear, ArmFar, LegNear, LegFar }
+        public const int REGION_COUNT = 6;
+
+        /// PART_DEFS index -> region. Index -1 is the head (a compound collider on
+        /// Chest, not a part of its own).
+        public static Region RegionOf(int partIndex)
+        {
+            switch (partIndex)
+            {
+                case -1: return Region.Head;
+                case 1: case 2: case 3: return Region.LegNear;    // thigh, shin, foot
+                case 4: case 5: case 6: return Region.LegFar;
+                case 10: case 11: return Region.ArmNear;          // upper arm, forearm
+                case 12: case 13: return Region.ArmFar;
+                default: return Region.Torso;                     // pelvis, backs, chest
+            }
+        }
+
+        /// The part a region hangs from, or -1 if the region cannot be severed.
+        ///
+        /// Torso is the trunk — there is nothing to detach it from. The head has no
+        /// neck joint yet (it is a compound collider on Chest), so it cannot come off
+        /// until it is split onto its own rigidbody; that changes mass distribution
+        /// and therefore invalidates every brain, so it is deliberately a separate
+        /// piece of work rather than a line here.
+        private static int RootPartOf(Region region)
+        {
+            switch (region)
+            {
+                case Region.ArmNear: return 10;   // UArmNear, hangs off the near shoulder
+                case Region.ArmFar:  return 12;   // UArmFar
+                case Region.LegNear: return 1;    // ThighNear, hangs off the near hip
+                case Region.LegFar:  return 4;    // ThighFar
+                default: return -1;
+            }
+        }
+
+        // Kept in its own tournament-persistent store rather than summed from the
+        // mark list, because marks are RECYCLED past maxDecals — summing them would
+        // make a fighter's damage go DOWN as the oldest bruises scrolled off, and a
+        // limb could un-redden. Damage only ever accumulates.
+        private static readonly Dictionary<string, float[]> RegionStore =
+            new Dictionary<string, float[]>();
+
+        private float[] _regionDamage = new float[REGION_COUNT];
+
+        /// 0..1 for the HUD: 0 = untouched (green), 1 = fully red. Can exceed 1
+        /// internally before a limb tears off, so it is clamped here.
+        public float RegionDamage01(Region region) =>
+            Mathf.Clamp01(_regionDamage[(int)region] / Mathf.Max(0.01f, regionRedAt));
+
+        /// True once this region has been torn off.
+        public bool RegionDetached(Region region)
+        {
+            int rootPart = RootPartOf(region);
+            if (rootPart < 0 || body == null) return false;
+            int joint = Agent_BipedBody.JointIndexForChild(rootPart);
+            return joint >= 0 && body.IsDetached(joint);
+        }
+
         /// Fired when a fighter is knocked out by a head blow. Presentation only —
         /// no referee listens to this.
         public static event System.Action<Agent_BipedBody, Vector3> Knockout;
+
+        /// Fired when a limb is torn off. Presentation + HUD; no referee listens.
+        public static event System.Action<Agent_BipedBody, Region, Vector3> Dismembered;
 
         private struct Mark
         {
@@ -78,11 +151,19 @@ namespace PoSumo
             new Dictionary<string, List<Mark>>();
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        private static void ClearOnPlaySessionStart() => Store.Clear();
+        private static void ClearOnPlaySessionStart()
+        {
+            Store.Clear();
+            RegionStore.Clear();
+        }
 
         /// Wipe all accumulated damage. Called when a tournament is reset so a new
-        /// bracket starts on clean bodies.
-        public static void ClearAll() => Store.Clear();
+        /// bracket starts on clean bodies — and on whole limbs.
+        public static void ClearAll()
+        {
+            Store.Clear();
+            RegionStore.Clear();
+        }
 
         /// Live damage components, keyed by the body they mark. Systems_RingBlood
         /// needs to go from "a droplet hit this collider" to "paint that fighter",
@@ -118,7 +199,7 @@ namespace PoSumo
             // Droplet spots are small: a full-strength mark is the KO wound
             // itself, not the spatter thrown off it.
             AddMark(worldPoint, SplashPartIndex(worldPoint, hitPart),
-                    Random.Range(0.1f, 0.35f), blood: true);
+                    Random.Range(0.1f, 0.35f), blood: true, countsAsDamage: false);
         }
 
         /// Which part a droplet landed on. The head is a compound collider on the
@@ -172,12 +253,38 @@ namespace PoSumo
                 _marks = new List<Mark>();
                 Store[agent.behaviorName] = _marks;
             }
+            if (!RegionStore.TryGetValue(agent.behaviorName, out _regionDamage))
+            {
+                _regionDamage = new float[REGION_COUNT];
+                RegionStore[agent.behaviorName] = _regionDamage;
+            }
             Active[body] = this;
 
             // Replay everything this fighter has taken so far this tournament.
             for (int i = 0; i < _marks.Count; i++)
             {
                 Paint(_marks[i]);
+            }
+
+            // A limb lost in an earlier bout is still gone. Applied SILENTLY —
+            // no spray, no sound, no event — because the moment it came off
+            // belonged to the match where it happened; replaying the drama on
+            // every subsequent scene load would be absurd.
+            ReapplyStandingDismemberment();
+        }
+
+        /// Re-sever anything already past the threshold, without presentation.
+        private void ReapplyStandingDismemberment()
+        {
+            if (!allowDetach || body == null) return;
+            float limit = regionRedAt * detachAtRedMultiple;
+            for (int r = 0; r < REGION_COUNT; r++)
+            {
+                if (_regionDamage[r] < limit) continue;
+                int rootPart = RootPartOf((Region)r);
+                if (rootPart < 0) continue;
+                int joint = Agent_BipedBody.JointIndexForChild(rootPart);
+                if (joint >= 0) body.DetachJoint(joint);
             }
         }
 
@@ -275,11 +382,14 @@ namespace PoSumo
             // Stains: a heavy dark mark on the head plus spatter around it. These
             // are permanent for the tournament — the particles fall away, the
             // staining is what makes a KO still visible three matches later.
+            // The wound itself is the damage; the spatter around it is the same
+            // blow drawn wider, so only the first mark scores. Otherwise one KO
+            // would add ~3.4 to the head and redline it in a single hit.
             AddMark(point, -1, 1f, blood: true);
             for (int i = 0; i < 4; i++)
             {
                 Vector3 offset = point + (Vector3)(Random.insideUnitCircle * 0.12f);
-                AddMark(offset, -1, Random.Range(0.4f, 0.8f), blood: true);
+                AddMark(offset, -1, Random.Range(0.4f, 0.8f), blood: true, countsAsDamage: false);
             }
         }
 
@@ -340,7 +450,11 @@ namespace PoSumo
             return -1;
         }
 
-        private void AddMark(Vector3 worldPoint, int partIndex, float strength, bool blood)
+        /// countsAsDamage distinguishes a mark this fighter EARNED from one merely
+        /// painted on it. Blood thrown off the other fighter's knockout lands here
+        /// too, and being spattered by someone else's wound must not cost you a limb.
+        private void AddMark(Vector3 worldPoint, int partIndex, float strength, bool blood,
+                             bool countsAsDamage = true)
         {
             SpriteRenderer host = RendererFor(partIndex);
             if (host == null)
@@ -369,6 +483,33 @@ namespace PoSumo
                 _marks.RemoveAt(0);
             }
             Paint(mark);
+
+            if (countsAsDamage)
+            {
+                AccumulateDamage(RegionOf(partIndex), strength, worldPoint);
+            }
+        }
+
+        /// Add to a region's running total and tear the limb off if it goes past
+        /// the threshold.
+        private void AccumulateDamage(Region region, float strength, Vector3 worldPoint)
+        {
+            if (_regionDamage == null) return;
+            _regionDamage[(int)region] += Mathf.Clamp01(strength);
+
+            if (!allowDetach || body == null) return;
+            if (_regionDamage[(int)region] < regionRedAt * detachAtRedMultiple) return;
+
+            int rootPart = RootPartOf(region);
+            if (rootPart < 0) return;                       // torso and head cannot come off
+            int joint = Agent_BipedBody.JointIndexForChild(rootPart);
+            if (joint < 0 || !body.DetachJoint(joint)) return;   // false = already gone
+
+            // Sell it: the limb tears away in a spray and the HUD mannequin turns
+            // that region to a stump on its next repaint.
+            Systems_DustPuff.BloodSpray(worldPoint, Vector2.up, 18);
+            Dismembered?.Invoke(body, region, worldPoint);
+            Debug.Log($"[DAMAGE] {name} lost {region} at {_regionDamage[(int)region]:F1} damage");
         }
 
         /// Convert a world hit into the space the decal will be parented in.

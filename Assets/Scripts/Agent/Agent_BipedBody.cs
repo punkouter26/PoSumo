@@ -182,9 +182,7 @@ namespace PoSumo
 
         // child, parent, anchor(x,y in root space), min, max (deg), torque, speed
         //
-        // RANGES. Hip (-30..120), knee (-150..0) and elbow (0..150) are anatomically
-        // correct including the no-hyperextension stops, and are untouched. The
-        // ankle, the three spine joints and the shoulders were SYMMETRIC and bent
+        // RANGES. The ankle, the three spine joints and the shoulders were SYMMETRIC and bent
         // backwards far past human range — a fighter could hyperextend his spine
         // 75 degrees and throw an arm 160 degrees behind him, which is the single
         // largest "that is not a body" contributor after motor saturation. They are
@@ -192,11 +190,24 @@ namespace PoSumo
         //   ankle    +/-45 -> +/-25   (human ROM ~70 deg: 20 dorsi + 50 plantar)
         //   spine    +/-25 -> +/-20   each, so +/-60 over three (human ~120 total)
         //   shoulder +/-160 -> +/-120 (human ~240 total)
-        // They remain symmetric because the sign convention for flexion differs per
-        // joint in this rig and assigning asymmetry blind would risk inverting a
-        // usable range. Making them properly asymmetric needs one visual check of
-        // which sign is flexion per joint; the magnitudes above are the safe half
-        // of that fix and remove the gross over-rotation on their own.
+        //
+        // SIGN CONVENTION — measured, do not re-derive by eye. The three asymmetric
+        // joints (hip, knee, elbow) were inverted for the whole life of the project.
+        // HingeJoint2D.jointAngle here is the NEGATIVE of the geometric rotation of
+        // the child segment relative to its parent: measuring
+        //     Vector2.SignedAngle(parent.transform.up, child.transform.up) * facingSign
+        // against jointAngle gives a ratio of exactly -1.00 on every joint tested.
+        // So a range written as if it were geometric bends the limb the wrong way.
+        // The old values gave a bird leg — knee (-150..0) swung the shin FORWARD,
+        // elbow (0..150) swung the forearm BACKWARD, and hip (-30..120) gave 120
+        // degrees of extension with only 30 of flexion, so the fighter could neither
+        // crouch nor drive off a loaded leg. Negated and swapped:
+        //   hip   (-30..120) -> (-120..30)  120 flexion / 30 extension
+        //   knee  (-150..0)  -> (0..150)    150 flexion, hard stop at straight
+        //   elbow (0..150)   -> (-150..0)   150 flexion, hard stop at straight
+        // The symmetric joints are unaffected by the sign and keep their values.
+        // Agent_Biped.KneeBendFactor() reads knee flexion as POSITIVE jointAngle and
+        // must be flipped with these if they ever move again.
         //
         // TORQUE. Legs were already realistic (hip 300, knee 250, ankle 120 N-m
         // against human peaks of ~250-300 / ~250-300 / ~150-200). The upper body
@@ -208,19 +219,19 @@ namespace PoSumo
         //   elbow    100 -> 60  (human ~50-70)
         static readonly JointDef[] JOINT_DEFS =
         {
-            new JointDef(1, 0,  0f, 0.964f, -30f, 120f, 300f, 400f), // hip near
-            new JointDef(2, 1,  0f, 0.533f,-150f,   0f, 250f, 500f), // knee near
+            new JointDef(1, 0,  0f, 0.964f,-120f,  30f, 300f, 400f), // hip near
+            new JointDef(2, 1,  0f, 0.533f,   0f, 150f, 250f, 500f), // knee near
             new JointDef(3, 2,  0f, 0.10f,  -25f,  25f, 120f, 400f), // ankle near
-            new JointDef(4, 0,  0f, 0.964f, -30f, 120f, 300f, 400f), // hip far
-            new JointDef(5, 4,  0f, 0.533f,-150f,   0f, 250f, 500f), // knee far
+            new JointDef(4, 0,  0f, 0.964f,-120f,  30f, 300f, 400f), // hip far
+            new JointDef(5, 4,  0f, 0.533f,   0f, 150f, 250f, 500f), // knee far
             new JointDef(6, 5,  0f, 0.10f,  -25f,  25f, 120f, 400f), // ankle far
             new JointDef(7, 0,  0f, 1.130f, -20f,  20f, 180f, 250f), // spine 1 (pelvis->lower back)
             new JointDef(8, 7,  0f, 1.259f, -20f,  20f, 180f, 250f), // spine 2 (lower->upper back)
             new JointDef(9, 8,  0f, 1.388f, -20f,  20f, 180f, 250f), // spine 3 (upper back->chest)
             new JointDef(10, 9, 0f, 1.471f,-120f, 120f,  80f, 500f), // shoulder near (on chest)
-            new JointDef(11,10, 0f, 1.144f,   0f, 150f,  60f, 500f), // elbow near
+            new JointDef(11,10, 0f, 1.144f,-150f,   0f,  60f, 500f), // elbow near
             new JointDef(12, 9, 0f, 1.471f,-120f, 120f,  80f, 500f), // shoulder far (on chest)
-            new JointDef(13,12, 0f, 1.144f,   0f, 150f,  60f, 500f), // elbow far
+            new JointDef(13,12, 0f, 1.144f,-150f,   0f,  60f, 500f), // elbow far
         };
 
         void Awake()
@@ -648,6 +659,84 @@ namespace PoSumo
         /// True while the body is a limp ragdoll (motors disabled).
         public bool IsLimp { get; private set; }
 
+        /// True once this joint has been torn off by Systems_BodyDamage. The joint
+        /// component is destroyed, so every read of it must be guarded.
+        ///
+        /// Detachment is a GAME-LAYER effect only: Systems_BodyDamage is spawned by
+        /// Systems_GameMatchManager, and training runs under Systems_SumoMatchManager,
+        /// which never creates one. No policy has ever seen a missing limb, and none
+        /// needs re-training because of this.
+        public bool IsDetached(int jointIndex) =>
+            _detached != null && jointIndex >= 0 && jointIndex < _detached.Length && _detached[jointIndex];
+
+        private bool[] _detached;
+
+        /// Is this part still connected to the pelvis through unbroken joints?
+        ///
+        /// Walks the JOINT_DEFS parent chain rather than testing one joint, because
+        /// severing a hip orphans the shin and the foot too, not just the thigh.
+        ///
+        /// The referee needs this. Systems_GameMatchManager.OutOfRing loses the round
+        /// when FootNear or FootFar drops below the mat surface — sound while the foot
+        /// is load-bearing, but a SEVERED leg is debris that gets shoved around and
+        /// will very likely slide off the edge. Without this test, tearing off a
+        /// fighter's leg would hand the round away the instant that leg fell off the
+        /// platform, which is the opposite of what the blow earned.
+        public bool IsPartAttached(int partIndex)
+        {
+            if (_detached == null) return true;
+            int current = partIndex;
+            // Bounded: the chain can visit each joint at most once.
+            for (int guard = 0; current != 0 && guard <= JOINT_DEFS.Length; guard++)
+            {
+                int j = JointIndexForChild(current);
+                if (j < 0) return true;             // nothing feeds this part
+                if (_detached[j]) return false;     // severed somewhere above
+                current = JOINT_DEFS[j].parent;
+            }
+            return true;
+        }
+
+        /// The joint that attaches this part to its parent, or -1 for the pelvis
+        /// (the root, which hangs from nothing). Public so callers can name a limb
+        /// by its ROOT PART rather than memorising a joint index — the JOINT_DEFS
+        /// order has been reordered before and hardcoded indices went stale silently.
+        public static int JointIndexForChild(int childPart)
+        {
+            for (int j = 0; j < JOINT_DEFS.Length; j++)
+            {
+                if (JOINT_DEFS[j].child == childPart) return j;
+            }
+            return -1;
+        }
+
+        /// Feet still carrying the fighter. PART_DEFS indices 3 and 6.
+        public bool FootNearAttached => IsPartAttached(3);
+        public bool FootFarAttached => IsPartAttached(6);
+
+        /// Tear a limb off at the given joint. The severed parts keep their
+        /// rigidbodies and colliders, so the limb falls to the clay and is shoved
+        /// around like any other debris.
+        ///
+        /// Returns false if the joint was already gone, so callers can avoid
+        /// re-firing presentation for a limb that is already off.
+        public bool DetachJoint(int jointIndex)
+        {
+            if (Joints == null || jointIndex < 0 || jointIndex >= Joints.Length) return false;
+            if (_detached == null) _detached = new bool[Joints.Length];
+            if (_detached[jointIndex]) return false;
+
+            HingeJoint2D joint = Joints[jointIndex];
+            if (joint == null) return false;
+
+            _detached[jointIndex] = true;
+            // Destroy rather than disable: a disabled HingeJoint2D still reports
+            // jointAngle, so the observation guard below could not tell the two
+            // apart, and the limb would hang in place instead of falling.
+            Destroy(joint);
+            return true;
+        }
+
         /// action in [-1,1] -> motor target speed; sign mirrored with facing.
         public void ApplyMotor(int jointIndex, float action)
         {
@@ -657,6 +746,10 @@ namespace PoSumo
             if (IsLimp) return;
 
             var joint = Joints[jointIndex];
+            // Detached limbs have no joint to drive. The agent still emits 13
+            // actions every step — the action space is fixed — so this is the
+            // only place that absorbs the missing one.
+            if (joint == null) return;
             var m = joint.motor;
             m.motorSpeed = Mathf.Clamp(action, -1f, 1f) * _maxSpeed[jointIndex] * facingSign;
             m.maxMotorTorque = _maxTorque[jointIndex];
@@ -671,9 +764,23 @@ namespace PoSumo
                     Mathf.Clamp(Parts[i].angularVelocity, -MAX_ANGULAR_VELOCITY, MAX_ANGULAR_VELOCITY);
         }
 
-        public float JointAngleNorm(int j) => Joints[j].jointAngle * facingSign / 180f;
+        // A destroyed HingeJoint2D throws on every read, and Agent_Biped's
+        // observation loop calls both of these for all 13 joints every decision.
+        // Reporting a detached joint as a neutral 0 keeps the 44-observation
+        // vector the right SHAPE — which is what the brain contract requires —
+        // and reads as "that joint is at rest", which is the closest honest
+        // description of a limb lying on the clay.
+        public float JointAngleNorm(int j)
+        {
+            HingeJoint2D joint = Joints[j];
+            return joint == null ? 0f : joint.jointAngle * facingSign / 180f;
+        }
 
-        public float JointSpeedNorm(int j) => Joints[j].jointSpeed * facingSign / 600f;
+        public float JointSpeedNorm(int j)
+        {
+            HingeJoint2D joint = Joints[j];
+            return joint == null ? 0f : joint.jointSpeed * facingSign / 600f;
+        }
 
         /// Applies the passive restoring torque to every joint.
         ///

@@ -196,6 +196,67 @@ Training\venv\Scripts\mlagents-learn.exe Training/configs/MattSumo07.yaml `
   --env=Builds/MattAggrEnv/MattAggrEnv.exe --num-envs=3 --no-graphics --base-port 5600
 ```
 
+### Restarted 2026-07-28 — the leg and arm bent the wrong way
+
+All eight runs above (four fight, four walk) were **discarded and relaunched** from
+the same trunks. The fight runs lost ~1.44M steps each; the walk runs had already
+completed 2.5M and those brains were thrown away too.
+
+The three asymmetric joints — hip, knee, elbow — had inverted ranges. `jointAngle`
+on these `HingeJoint2D`s is the *negative* of the child segment's geometric
+rotation (ratio −1.00, measured on every joint), so ranges authored as if they
+were geometric bent the limb backwards. The knee swung the shin **forward** and the
+elbow swung the forearm **backward** — a bird leg — and the hip offered 120° of
+extension against 30° of flexion. No fighter could crouch and drive off a loaded
+leg, which is the single most basic thing a sumo does. Corrected to
+hip (−120…30), knee (0…150), elbow (−150…0); the symmetric joints were unaffected.
+
+Nothing already trained transfers cleanly, because the *sign of what every leg and
+arm action does* has flipped. These are still warm starts — the trunk carries
+balance, opponent tracking and edge awareness, all built on unchanged observations
+— but `learning_rate` was raised **1.5e-4 → 3.0e-4** in all eight configs for this
+restart only, so the wrong motor priors get overwritten at fresh-run speed rather
+than nudged. Walk runs use ports 5700/5710/5720/5730 to sit clear of the fight runs.
+
+Expect the early ELO/reward curve to look worse than the discarded runs did at the
+same step count; that is the policy unlearning the bird leg, not a regression.
+
+**Walk school finished 02:20 on the corrected body** and all four brains are deployed
+(`DeployWalk`, run ids updated in `DeployBrain.cs`). Every fighter now owns a walk
+brain for the first time — Standard previously borrowed `matt_walk01`'s export, and
+Kim and Nick had no `walkModel` at all, which is why their walk-in ceremony silently
+skipped.
+
+| Run | Final | Reward | Old-body reward |
+|---|---|---|---|
+| `kim_walk03` | 2.49M | **3.53** | 3.52 |
+| `matt_walk03` | 2.49M | **3.47** | 4.06 |
+| `standard_walk02` | 2.49M | **3.14** | 3.53 |
+| `nick_walk03` | 2.49M | **3.06** | 3.49 |
+
+Do **not** read the last column as a 10–15% regression. `KneeBendFactor()` changed
+meaning with the sign fix — it used to score the bird-leg bend and now scores true
+flexion — and it gates a term in the walk reward, so the two scales measure
+different things. What is comparable is the shape: all four climbed from about −0.9
+at 60k to positive by 700k and converged by 2.5M, i.e. the gait was re-learned from a
+trunk whose leg priors were wrong, which is the outcome the restart was betting on.
+
+### Trap: `--force` did not clear the run directories
+
+The restart left **106 files from the discarded runs** in `results/` — numbered
+checkpoints and, for the two walk runs still going at the time, a stale top-level
+`<Behavior>.onnx`. TensorBoard was still holding those directories open when the runs
+launched; it was killed a few minutes *after*, not before.
+
+This is a live deployment hazard, because the stale checkpoints outrank the new ones
+numerically — `matt_walk03` kept a discarded `Matt-2500071.onnx` while that night's run
+had only reached `Matt-2500037.onnx`, so `DeployLatestCheckpoint` would have shipped a
+bird-leg brain. `Deploy`/`DeployWalk` were safe only because they read the top-level
+`<Behavior>.onnx`, which each run rewrites when it finishes.
+
+**Kill TensorBoard before launching with `--force`, not after.** The note further up
+saying to restart it afterward is necessary but not sufficient.
+
 ### Known trap: SCN_TRAIN_STD has no character asset assigned
 
 `SCN_TRAIN_STD` contains **zero** references to `Standard_Character.asset` (8 fields

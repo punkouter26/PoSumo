@@ -42,6 +42,8 @@ MonoBehaviour:
   hipsLowReward: 0.0008
   cadenceReward: 0.0006
   riseReward: 0.015
+  effortPenalty: 0.0015
+  stanceReward: 0.0009
   energyPenalty: 0.0006
   jerkPenalty: 0.0005
   straightLegEarnFraction: 0.15

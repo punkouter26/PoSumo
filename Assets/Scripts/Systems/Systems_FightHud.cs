@@ -1,13 +1,10 @@
 using UnityEngine;
 using UnityEngine.UIElements;
-#if ENABLE_INPUT_SYSTEM
-using UnityEngine.InputSystem;
-#endif
 
 namespace PoSumo
 {
     /// Broadcast-style match stats, drawn as ONE comparison table in the HUD dock
-    /// and toggled with Tab or the STATS chip. Stats aggregate over the WHOLE
+    /// and always on during a match. Stats aggregate over the WHOLE
     /// match (reset on rematch), sampled only while a round is live:
     ///   DOMINANCE — pairwise-normalized composite (territory/KD/shoves/balance)
     ///   TERRITORY — % of time the fight's midpoint is on the opponent's half
@@ -32,11 +29,9 @@ namespace PoSumo
     {
         public Systems_GameMatchManager manager;
         public PanelSettings panelSettings;
-        // `startVisible` used to live here. It was dead: Systems_MomentumGraph
-        // calls SetStatsVisible(false) from its own Start regardless of what any
-        // scene had serialized, so the field could only ever mislead. The table
-        // now simply starts visible and the graph hides it when the graph exists —
-        // which means a build with the graph disabled still gets the stats.
+        // No visibility field. The table is always on during a match, so there is
+        // no `startVisible` to serialize, no chip to press and no state to get
+        // out of sync with the scene.
 
         const float AVG_PUSH_MAX = 500f;    // bar scale for contact-averaged push
         const float SHOVE_FORCE_N = 400f;   // momentum transfer that counts as a shove
@@ -93,7 +88,6 @@ namespace PoSumo
         BarPair _balance, _push;
         Label _footer;
 
-        bool _visible;
         Vector2 _prevVelA, _prevVelB;
         Agent_BipedBody _bodyA, _bodyB;
 
@@ -108,7 +102,6 @@ namespace PoSumo
             if (manager == null) manager = FindAnyObjectByType<Systems_GameMatchManager>();
             manager.MatchReset += ResetAggregates;
             manager.RoundStarted += OnRoundStarted;
-            _visible = true;
             BuildUi();
         }
 
@@ -159,6 +152,8 @@ namespace PoSumo
             _card.Add(Systems_UiKit.Divider());
             _balance = MirrorBarRow("BALANCE");
             _push = MirrorBarRow("PUSH IN CONTACT");
+            _card.Add(Systems_UiKit.Divider());
+            BuildDamageRow();
 
             // One footer for the whole table. The old layout printed this line in
             // both panels, and LONGEST RD is a property of the match, not of a
@@ -172,14 +167,6 @@ namespace PoSumo
             // Insert rather than Add so the order holds whichever of the two
             // components reaches the dock first.
             _hud.Dock.Insert(0, _card);
-
-            // Touch-friendly toggle in the top bar's right slot, beside the pause
-            // button in the left slot — Tab works too. It was a free-floating 34pt
-            // chip, under the 44pt minimum the pause button already honoured.
-            _hud.TopBarRight.Add(Systems_UiKit.ChipButton(
-                "STATS", () => { _visible = !_visible; ApplyVisibility(); }, 88));
-
-            ApplyVisibility();
         }
 
         void BuildHeader()
@@ -293,30 +280,10 @@ namespace PoSumo
             return fill;
         }
 
-        /// Show or hide the stats table from code.
-        ///
-        /// Systems_MomentumGraph hides it on start so the default HUD is one
-        /// readable graph, and the STATS chip brings it back.
-        public void SetStatsVisible(bool visible)
-        {
-            _visible = visible;
-            ApplyVisibility();
-        }
-
-        void ApplyVisibility()
-        {
-            if (_card == null) return;
-            _card.style.display = _visible ? DisplayStyle.Flex : DisplayStyle.None;
-        }
-
-        bool TabPressed()
-        {
-#if ENABLE_INPUT_SYSTEM
-            return Keyboard.current != null && Keyboard.current.tabKey.wasPressedThisFrame;
-#else
-            return Input.GetKeyDown(KeyCode.Tab);
-#endif
-        }
+        // The table used to be hideable — a STATS chip, a Tab shortcut and a
+        // SetStatsVisible() that Systems_MomentumGraph called on start to hide it.
+        // All of that is gone: the stats HUD is now always on during a match, so
+        // there is nothing to toggle and no state to track.
 
         // ---- Sampling ------------------------------------------------------
 
@@ -428,7 +395,6 @@ namespace PoSumo
 
         void Update()
         {
-            if (TabPressed()) { _visible = !_visible; ApplyVisibility(); }
             if (manager == null || manager.wrestlerA == null) return;
 
             float domA = RawDominance(_aggA, _aggB, _samples);
@@ -437,13 +403,122 @@ namespace PoSumo
             DominanceA = domA / domTotal * 100f;
             DominanceB = domB / domTotal * 100f;
 
-            if (!_visible || _card == null) return;
+            if (_card == null) return;
             UpdateTable();
+        }
+
+        // ---- Damage mannequin ----------------------------------------------
+        //
+        // A six-region stick figure per fighter: head, torso, both arms, both legs.
+        // Green when untouched, through amber, to red as Systems_BodyDamage
+        // accumulates hits on that region — and a hollow stump once the limb has
+        // actually been torn off.
+        //
+        // Six regions, not fourteen: the body has 14 parts, but this sits in the
+        // dock on a portrait phone during a 30-second round, and nobody can read
+        // fourteen swatches. Head/torso/arm/arm/leg/leg is the most detail that
+        // still reads at a glance.
+
+        VisualElement[] _mannA, _mannB;
+
+        static readonly Color DamageGreen = new Color(0.36f, 0.78f, 0.40f);
+        static readonly Color DamageAmber = new Color(0.94f, 0.72f, 0.22f);
+        static readonly Color DamageRed = new Color(0.88f, 0.22f, 0.18f);
+        static readonly Color DamageGone = new Color(0.20f, 0.20f, 0.24f, 0.45f);
+
+        void BuildDamageRow()
+        {
+            VisualElement row = Systems_UiKit.Row();
+            row.style.alignItems = Align.Center;
+            row.style.marginTop = Systems_UiKit.SPACE_1;
+
+            _mannA = BuildMannequin(out VisualElement figureA);
+            _mannB = BuildMannequin(out VisualElement figureB);
+
+            var left = new VisualElement().NoPick();
+            left.style.width = Length.Percent(SIDE_PERCENT);
+            left.style.alignItems = Align.Center;
+            left.Add(figureA);
+
+            Label title = Systems_UiKit.Text("DAMAGE", Systems_UiKit.FONT_MICRO, Systems_UiKit.TextLow);
+            title.style.width = Length.Percent(LABEL_PERCENT);
+            title.style.unityTextAlign = TextAnchor.MiddleCenter;
+
+            var right = new VisualElement().NoPick();
+            right.style.width = Length.Percent(SIDE_PERCENT);
+            right.style.alignItems = Align.Center;
+            right.Add(figureB);
+
+            row.Add(left);
+            row.Add(title);
+            row.Add(right);
+            _card.Add(row);
+        }
+
+        /// Indices match Systems_BodyDamage.Region: Head, Torso, ArmNear, ArmFar,
+        /// LegNear, LegFar.
+        VisualElement[] BuildMannequin(out VisualElement figure)
+        {
+            const float W = 56f, H = 78f;
+            figure = new VisualElement().NoPick();
+            figure.style.width = W;
+            figure.style.height = H;
+
+            var parts = new VisualElement[Systems_BodyDamage.REGION_COUNT];
+            parts[(int)Systems_BodyDamage.Region.Head]    = Piece(figure, 20f, 0f,  16f, 16f, 8);
+            parts[(int)Systems_BodyDamage.Region.Torso]   = Piece(figure, 19f, 18f, 18f, 30f, 3);
+            parts[(int)Systems_BodyDamage.Region.ArmNear] = Piece(figure, 8f,  20f,  8f, 26f, 4);
+            parts[(int)Systems_BodyDamage.Region.ArmFar]  = Piece(figure, 40f, 20f,  8f, 26f, 4);
+            parts[(int)Systems_BodyDamage.Region.LegNear] = Piece(figure, 19f, 50f,  8f, 28f, 4);
+            parts[(int)Systems_BodyDamage.Region.LegFar]  = Piece(figure, 29f, 50f,  8f, 28f, 4);
+            return parts;
+        }
+
+        static VisualElement Piece(VisualElement parent, float left, float top,
+                                   float w, float h, int radius)
+        {
+            var piece = new VisualElement().NoPick();
+            piece.style.position = Position.Absolute;
+            piece.style.left = left;
+            piece.style.top = top;
+            piece.style.width = w;
+            piece.style.height = h;
+            piece.style.backgroundColor = DamageGreen;
+            piece.Round(radius);
+            parent.Add(piece);
+            return piece;
+        }
+
+        void PaintMannequin(VisualElement[] parts, Agent_Biped fighter)
+        {
+            if (parts == null || fighter == null) return;
+            var body = fighter.GetComponent<Agent_BipedBody>();
+            Systems_BodyDamage damage = body != null ? Systems_BodyDamage.For(body) : null;
+            if (damage == null) return;
+
+            for (int r = 0; r < Systems_BodyDamage.REGION_COUNT; r++)
+            {
+                var region = (Systems_BodyDamage.Region)r;
+                if (damage.RegionDetached(region))
+                {
+                    parts[r].style.backgroundColor = DamageGone;
+                    continue;
+                }
+                float t = damage.RegionDamage01(region);
+                // Two-stop ramp so amber is a real waypoint rather than a colour
+                // the bar passes through in one frame.
+                parts[r].style.backgroundColor = t < 0.5f
+                    ? Color.Lerp(DamageGreen, DamageAmber, t * 2f)
+                    : Color.Lerp(DamageAmber, DamageRed, (t - 0.5f) * 2f);
+            }
         }
 
         void UpdateTable()
         {
             float n = Mathf.Max(1, _samples);
+
+            PaintMannequin(_mannA, manager.wrestlerA);
+            PaintMannequin(_mannB, manager.wrestlerB);
 
             _dominance.a.text = $"{DominanceA:F0}";
             _dominance.b.text = $"{DominanceB:F0}";
