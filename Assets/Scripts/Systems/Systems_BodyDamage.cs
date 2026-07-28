@@ -61,8 +61,10 @@ namespace PoSumo
         [Header("Region damage / dismemberment")]
         [Tooltip("Summed mark strength at which a region reads fully RED on the HUD mannequin. Marks are 0..1 each and cooldown-limited, so this is roughly 'a handful of solid hits to the same limb'.")]
         public float regionRedAt = 2.5f;
-        [Tooltip("Multiple of regionRedAt past which the limb tears off. Above 1 on purpose: red must be a WARNING the player can act on, not the same instant as losing the limb.")]
-        public float detachAtRedMultiple = 1.6f;
+        [Tooltip("Multiple of regionRedAt past which an ARM or LEG tears off. Above 1 on purpose: red must be a WARNING the player can act on, not the same instant as losing the limb.\n\nRaised from 1.6 to 8 — limbs are ~5x harder to remove. At 1.6 both fighters were routinely dismembered inside the first 15 seconds of a round, which is also what made them permanently 'down'.")]
+        public float detachAtRedMultiple = 8f;
+        [Tooltip("Same, for the HEAD. Deliberately far LOWER than the limb figure so decapitation is the spectacular, relatively common finish while arms and legs mostly stay on. 0.8 = a gate of 2.0 damage; at 1.2 (gate 3.0) a measured bout reached the low 2s and never crossed.")]
+        public float headDetachAtRedMultiple = 0.8f;
         [Tooltip("Master switch for dismemberment. Turning this off leaves the mannequin colouring intact, which is the safe fallback if detachment ever proves too swingy.")]
         public bool allowDetach = true;
 
@@ -98,11 +100,12 @@ namespace PoSumo
 
         /// The part a region hangs from, or -1 if the region cannot be severed.
         ///
-        /// Torso is the trunk — there is nothing to detach it from. The head has no
-        /// neck joint yet (it is a compound collider on Chest), so it cannot come off
-        /// until it is split onto its own rigidbody; that changes mass distribution
-        /// and therefore invalidates every brain, so it is deliberately a separate
-        /// piece of work rather than a line here.
+        /// Torso is the trunk — there is nothing to detach it from. The head is not
+        /// here either, but for a different reason: it has no neck joint (it is a
+        /// compound collider on Chest), so it does not detach by destroying a hinge.
+        /// Agent_BipedBody.DetachHead splits it onto a fresh rigidbody at the moment
+        /// of decapitation instead — which keeps an INTACT fighter's mass
+        /// distribution, and therefore every trained brain, untouched.
         private static int RootPartOf(Region region)
         {
             switch (region)
@@ -129,11 +132,18 @@ namespace PoSumo
         public float RegionDamage01(Region region) =>
             Mathf.Clamp01(_regionDamage[(int)region] / Mathf.Max(0.01f, regionRedAt));
 
-        /// True once this region has been torn off.
+        /// UNCLAMPED region damage. RegionDamage01 saturates at 1.0, which hid how
+        /// close the head actually was to its detach gate.
+        public float RegionDamageRaw(Region region) => _regionDamage[(int)region];
+
+        /// True once this region has been torn off. The head is not a jointed
+        /// part, so it answers from its own flag.
         public bool RegionDetached(Region region)
         {
+            if (body == null) return false;
+            if (region == Region.Head) return body.HeadDetached;
             int rootPart = RootPartOf(region);
-            if (rootPart < 0 || body == null) return false;
+            if (rootPart < 0) return false;
             int joint = Agent_BipedBody.JointIndexForChild(rootPart);
             return joint >= 0 && body.IsDetached(joint);
         }
@@ -510,10 +520,20 @@ namespace PoSumo
             _regionDamage[(int)region] += Mathf.Clamp01(strength);
 
             if (!allowDetach || body == null) return;
-            if (_regionDamage[(int)region] < regionRedAt * detachAtRedMultiple) return;
+
+            // The head has its own, much lower threshold: it is the showpiece
+            // finish, while arms and legs are meant to survive most bouts.
+            float multiple = region == Region.Head ? headDetachAtRedMultiple : detachAtRedMultiple;
+            if (_regionDamage[(int)region] < regionRedAt * multiple) return;
+
+            if (region == Region.Head)
+            {
+                DecapitateHead(worldPoint);
+                return;
+            }
 
             int rootPart = RootPartOf(region);
-            if (rootPart < 0) return;                       // torso and head cannot come off
+            if (rootPart < 0) return;                       // the torso cannot come off
             int joint = Agent_BipedBody.JointIndexForChild(rootPart);
             if (joint < 0) return;
 
@@ -542,6 +562,24 @@ namespace PoSumo
             Debug.Log($"[DAMAGE] {name} lost {region} at {_regionDamage[(int)region]:F1} damage — " +
                       $"bleeding from stump '{(parentPart == null ? "none" : parentPart.name)}' and " +
                       $"cut end '{(limbPart == null ? "none" : limbPart.name)}' at {breakPoint}");
+        }
+
+        /// Takes the head off and bleeds both the neck stump and the loose head.
+        private void DecapitateHead(Vector3 worldPoint)
+        {
+            Rigidbody2D head = body.DetachHead();
+            if (head == null) return;                       // already off
+
+            // The neck is where the head sat, not wherever the last punch landed.
+            Vector3 neck = body.Chest != null
+                ? body.Chest.transform.TransformPoint(new Vector3(0f, 0.25f, 0f))
+                : worldPoint;
+
+            OpenBleed(body.Chest, neck);                    // stump on the torso
+            OpenBleed(head, head.worldCenterOfMass);        // the head itself
+
+            Dismembered?.Invoke(body, Region.Head, neck);
+            Debug.Log($"[DAMAGE] {name} DECAPITATED at {_regionDamage[(int)Region.Head]:F1} damage — neck at {neck}");
         }
 
         /// One bleeding cut end. Stored in the PART's local space, not world space,

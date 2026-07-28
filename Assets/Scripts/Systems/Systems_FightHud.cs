@@ -153,6 +153,8 @@ namespace PoSumo
             _balance = MirrorBarRow("BALANCE");
             _push = MirrorBarRow("PUSH IN CONTACT");
             _card.Add(Systems_UiKit.Divider());
+            BuildDamageRow();
+            _card.Add(Systems_UiKit.Divider());
 
             // One footer for the whole table. The old layout printed this line in
             // both panels, and LONGEST RD is a property of the match, not of a
@@ -409,6 +411,108 @@ namespace PoSumo
         // ---- Damage mannequin ----------------------------------------------
         //
 
+        // A six-region stick figure per fighter: head, torso, both arms, both legs.
+        // Green when untouched, through amber, to red as Systems_BodyDamage
+        // accumulates hits — and a hollow stump once the part is actually gone.
+        // The head is in here because it can now be knocked off.
+        //
+        // Six regions, not fourteen: the body has 14 parts, but this sits in a dock
+        // on a portrait phone during a short round, and nobody can read fourteen
+        // swatches.
+        private VisualElement[] _mannA, _mannB;
+
+        private static readonly Color DamageGreen = new Color(0.36f, 0.78f, 0.40f);
+        private static readonly Color DamageAmber = new Color(0.94f, 0.72f, 0.22f);
+        private static readonly Color DamageRed = new Color(0.88f, 0.22f, 0.18f);
+        private static readonly Color DamageGone = new Color(0.20f, 0.20f, 0.24f, 0.45f);
+
+        private void BuildDamageRow()
+        {
+            VisualElement row = Systems_UiKit.Row();
+            row.style.alignItems = Align.Center;
+            row.style.marginTop = Systems_UiKit.SPACE_1;
+
+            _mannA = BuildMannequin(out VisualElement figureA);
+            _mannB = BuildMannequin(out VisualElement figureB);
+
+            var left = new VisualElement().NoPick();
+            left.style.width = Length.Percent(SIDE_PERCENT);
+            left.style.alignItems = Align.Center;
+            left.Add(figureA);
+
+            Label title = Systems_UiKit.Text("DAMAGE", Systems_UiKit.FONT_MICRO, Systems_UiKit.TextLow);
+            title.style.width = Length.Percent(LABEL_PERCENT);
+            title.style.unityTextAlign = TextAnchor.MiddleCenter;
+
+            var right = new VisualElement().NoPick();
+            right.style.width = Length.Percent(SIDE_PERCENT);
+            right.style.alignItems = Align.Center;
+            right.Add(figureB);
+
+            row.Add(left);
+            row.Add(title);
+            row.Add(right);
+            _card.Add(row);
+        }
+
+        /// Indices match Systems_BodyDamage.Region: Head, Torso, ArmNear, ArmFar,
+        /// LegNear, LegFar.
+        private VisualElement[] BuildMannequin(out VisualElement figure)
+        {
+            const float W = 56f, H = 78f;
+            figure = new VisualElement().NoPick();
+            figure.style.width = W;
+            figure.style.height = H;
+
+            var parts = new VisualElement[Systems_BodyDamage.REGION_COUNT];
+            parts[(int)Systems_BodyDamage.Region.Head] = Piece(figure, 20f, 0f, 16f, 16f, 8);
+            parts[(int)Systems_BodyDamage.Region.Torso] = Piece(figure, 19f, 18f, 18f, 30f, 3);
+            parts[(int)Systems_BodyDamage.Region.ArmNear] = Piece(figure, 8f, 20f, 8f, 26f, 4);
+            parts[(int)Systems_BodyDamage.Region.ArmFar] = Piece(figure, 40f, 20f, 8f, 26f, 4);
+            parts[(int)Systems_BodyDamage.Region.LegNear] = Piece(figure, 19f, 50f, 8f, 28f, 4);
+            parts[(int)Systems_BodyDamage.Region.LegFar] = Piece(figure, 29f, 50f, 8f, 28f, 4);
+            return parts;
+        }
+
+        private static VisualElement Piece(VisualElement parent, float left, float top,
+                                           float w, float h, int radius)
+        {
+            var piece = new VisualElement().NoPick();
+            piece.style.position = Position.Absolute;
+            piece.style.left = left;
+            piece.style.top = top;
+            piece.style.width = w;
+            piece.style.height = h;
+            piece.style.backgroundColor = DamageGreen;
+            piece.Round(radius);
+            parent.Add(piece);
+            return piece;
+        }
+
+        private void PaintMannequin(VisualElement[] parts, Agent_Biped fighter)
+        {
+            if (parts == null || fighter == null) return;
+            var body = fighter.GetComponent<Agent_BipedBody>();
+            Systems_BodyDamage damage = body != null ? Systems_BodyDamage.For(body) : null;
+            if (damage == null) return;
+
+            for (int regionIndex = 0; regionIndex < Systems_BodyDamage.REGION_COUNT; regionIndex++)
+            {
+                var region = (Systems_BodyDamage.Region)regionIndex;
+                if (damage.RegionDetached(region))
+                {
+                    parts[regionIndex].style.backgroundColor = DamageGone;
+                    continue;
+                }
+                float t = damage.RegionDamage01(region);
+                // Two-stop ramp so amber is a real waypoint rather than a colour the
+                // bar passes through in one frame.
+                parts[regionIndex].style.backgroundColor = t < 0.5f
+                    ? Color.Lerp(DamageGreen, DamageAmber, t * 2f)
+                    : Color.Lerp(DamageAmber, DamageRed, (t - 0.5f) * 2f);
+            }
+        }
+
         private void UpdateTable()
         {
             float n = Mathf.Max(1, _samples);
@@ -421,8 +525,11 @@ namespace PoSumo
 
             _territory.a.text = $"{_aggA.territorySamples / n * 100f:F0}%";
             _territory.b.text = $"{_aggB.territorySamples / n * 100f:F0}%";
-            _knockdowns.a.text = $"{_aggA.kdDealt}–{_aggA.kdSuffered}";
-            _knockdowns.b.text = $"{_aggB.kdDealt}–{_aggB.kdSuffered}";
+            // One number per side, not "dealt–suffered": A's dealt IS B's suffered,
+            // so the old pair printed the same two figures mirrored on both sides
+            // (2–3 on the left, 3–2 on the right) and read as four separate stats.
+            _knockdowns.a.text = $"{_aggA.kdDealt}";
+            _knockdowns.b.text = $"{_aggB.kdDealt}";
             _shoves.a.text = $"{_aggA.shoves} · {_aggA.bestPush:F0}N";
             _shoves.b.text = $"{_aggB.shoves} · {_aggB.bestPush:F0}N";
             _work.a.text = $"{_aggA.sumWork / n * 100f:F0}%";
@@ -436,8 +543,13 @@ namespace PoSumo
             float pushB = Mathf.Clamp(_aggB.sumPush / Mathf.Max(1, _aggB.touchSamples), 0f, AVG_PUSH_MAX);
             SetBar(_push, pushA, pushB, AVG_PUSH_MAX, "{0:F0} N");
 
-            _footer.text = $"MATCHES {manager.MatchWinsA}–{manager.MatchWinsB}" +
-                           $" · LONGEST RD {manager.LongestRound:F0}s";
+            PaintMannequin(_mannA, manager.wrestlerA);
+            PaintMannequin(_mannB, manager.wrestlerB);
+
+            // Was "MATCHES 0–0 · LONGEST RD 0s", which reset every match and so read
+            // 0–0 through the whole bout while the career screen said 68 matches.
+            // The round number and the target are what a viewer actually needs.
+            _footer.text = $"ROUND {manager.RoundNumber} · FIRST TO {manager.PointsToWin}";
         }
 
         private static Color DominanceColour(float dominance)

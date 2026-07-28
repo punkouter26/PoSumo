@@ -12,13 +12,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4d9004317199f8a4da7181d02831a31a, type: 3}
   m_Name: GameTuning
   m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Systems_GameTuning
-  minOrtho: 2.47
-  maxOrtho: 9.1
-  feetDrop: 0.95
-  horizontalMargin: 0.5
+  minOrtho: 2.8
+  maxOrtho: 7
+  feetDrop: 1.5
+  horizontalMargin: 0.8
   smoothing: 4
   wideOrtho: 14
-  ringHalfWidth: 5.5
+  ringHalfWidth: 4
+  neutralGapHalf: 2.5
+  surfaceFriction: 0.55
+  tawaraBandWidth: 0.7
+  tawaraFriction: 0.18
   enableWalkIn: 1
   walkInHalfWidth: 8
   walkInStartGapHalf: 3
@@ -26,10 +30,11 @@ MonoBehaviour:
   walkInTimeout: 12
   pointsToWin: 3
   tournamentPointsToWin: 2
-  roundTimeoutSeconds: 30
+  roundTimeoutSeconds: 20
   betweenRoundsPause: 2.5
   graceSeconds: 0.4
   downGraceSeconds: 0.2
+  downOutSeconds: 3
   knockdownLoses: 0
   knockoutsToLoseMatch: 3
   knockoutAnnounceSeconds: 2.2
@@ -39,8 +44,6 @@ MonoBehaviour:
   enableVoice: 1
   enableLighting: 1
   enableImpactFx: 1
-  enablePostFx: 1
   enableAtmosphere: 1
   enableMusic: 1
   enableBodyDamage: 1
-  enableMomentumGraph: 1

@@ -27,10 +27,10 @@ MonoBehaviour:
   inferenceModel: {fileID: 5022602860645237092, guid: 8f76568562941a345ae69c088f1518bf, type: 3}
   walkModel: {fileID: 5022602860645237092, guid: 95275fda98386c84b8cbb3bb41334205, type: 3}
   uprightReward: 0.0005
-  closingReward: 0.0006
-  lungeBonus: 0.001
+  closingReward: 0.003
+  lungeBonus: 0.003
   lungeThreshold: 1.5
-  impactReward: 0.01
+  impactReward: 0.0033333332
   impactCap: 8
   kneeBendReward: 0.0004
   hipsLowReward: 0.0003

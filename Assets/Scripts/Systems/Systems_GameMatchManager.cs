@@ -47,6 +47,8 @@ namespace PoSumo
         public float betweenRoundsPause = 2.5f;
         public float graceSeconds = 0.4f;
         public float downGraceSeconds = 0.2f;
+        [Tooltip("Seconds a fighter may lie down before the round goes to the opponent. GAME-ONLY — the training referee has no equivalent. 0 disables it.")]
+        public float downOutSeconds = 3f;
         public PanelSettings panelSettings;
         public Systems_GameTuning tuning;
         // Companion spawn toggles and knockdownLoses now live on GameTuning.asset
@@ -132,6 +134,13 @@ namespace PoSumo
         private Agent_BipedBody _bodyA, _bodyB;
 
         // Read-only stats for HUDs.
+        /// 1-based round number within the current match, for the HUD.
+        public int RoundNumber => _scoreA + _scoreB + 1;
+
+        /// Rounds needed to take this match — differs between exhibition and a
+        /// bracket bout, so the HUD must read it rather than assume.
+        public int PointsToWin => pointsToWin;
+
         public int ScoreA => _scoreA;
         public int ScoreB => _scoreB;
         /// Head knockouts each fighter has SUFFERED this match.
@@ -196,10 +205,12 @@ namespace PoSumo
                 betweenRoundsPause = tuning.betweenRoundsPause;
                 graceSeconds = tuning.graceSeconds;
                 downGraceSeconds = tuning.downGraceSeconds;
+                downOutSeconds = tuning.downOutSeconds;
                 knockdownLoses = tuning.knockdownLoses;
                 knockoutsToLoseMatch = tuning.knockoutsToLoseMatch;
                 knockoutAnnounceSeconds = tuning.knockoutAnnounceSeconds;
                 ringHalfWidth = tuning.ringHalfWidth;
+                neutralGapHalf = tuning.neutralGapHalf;
                 enableWalkIn = tuning.enableWalkIn;
                 walkInHalfWidth = tuning.walkInHalfWidth;
                 walkInStartGapHalf = tuning.walkInStartGapHalf;
@@ -235,6 +246,16 @@ namespace PoSumo
             // Baked scenes ship a 5.5 m-wide platform, so without this the
             // physical edge would ignore ringHalfWidth entirely.
             _arena = FindAnyObjectByType<Systems_SumoArena>();
+            if (_arena != null && tuning != null)
+            {
+                // Arena physics is tuned centrally, like everything else that the
+                // three arena scenes each used to serialize their own copy of.
+                _arena.tawaraBandWidth = tuning.tawaraBandWidth;
+                _arena.tawaraFriction = tuning.tawaraFriction;
+                _arena.SetSurfaceFriction(tuning.surfaceFriction);
+                _arena.SetPlatformHalfWidth(tuning.ringHalfWidth);
+                _arena.EnsureTawaraBands(tuning.ringHalfWidth);
+            }
             if (_arena != null)
             {
                 // SetPlatformHalfWidth clamps to groundWidth * 0.5, so a ring
@@ -1063,11 +1084,10 @@ namespace PoSumo
             _elapsed += Time.fixedDeltaTime;
             UpdateClock();
 
-            // Only accumulated when the rule that reads them is on. With
-            // knockdownLoses off (the shipping config) these fed one unreachable
-            // branch and were pure work every physics step. The HUD's KD stat does
-            // NOT come from here — Systems_FightHud tracks Agent_Biped.IsDown itself.
-            if (knockdownLoses)
+            // Accumulated whenever ANY rule reads them — the instant knockdown rule
+            // (off in the shipping config, kept in step with the training referee)
+            // or the game-only down-out below.
+            if (knockdownLoses || downOutSeconds > 0f)
             {
                 _downA = wrestlerA.IsDown ? _downA + Time.fixedDeltaTime : 0f;
                 _downB = wrestlerB.IsDown ? _downB + Time.fixedDeltaTime : 0f;
@@ -1080,12 +1100,34 @@ namespace PoSumo
             if (aOffMat) GoLimp(wrestlerA);
             if (bOffMat) GoLimp(wrestlerB);
 
-            bool aOut = aOffMat || (knockdownLoses && _downA >= downGraceSeconds);
-            bool bOut = bOffMat || (knockdownLoses && _downB >= downGraceSeconds);
+            // Down-out is GAME-ONLY and deliberately diverges from
+            // Systems_SumoMatchManager. Every other losing condition is mirrored
+            // there; this one is a spectacle rule in the same category as
+            // knockoutsToLoseMatch. Without it a dismembered fighter can never
+            // satisfy IsDown again and the round always runs the clock out.
+            bool aDownOut = downOutSeconds > 0f && _downA >= downOutSeconds;
+            bool bDownOut = downOutSeconds > 0f && _downB >= downOutSeconds;
 
-            if (aOut && bOut) EndRound(null, "DOUBLE OUT — DRAW");
-            else if (aOut) EndRound(wrestlerB, null);
-            else if (bOut) EndRound(wrestlerA, null);
+            bool aOut = aOffMat || (knockdownLoses && _downA >= downGraceSeconds) || aDownOut;
+            bool bOut = bOffMat || (knockdownLoses && _downB >= downGraceSeconds) || bDownOut;
+
+            if (aOut && bOut)
+            {
+                // Both finished in the same step. The one that went down FIRST
+                // stayed down longer, so award it against them rather than calling
+                // a draw that neither earned.
+                if (aDownOut && bDownOut && !Mathf.Approximately(_downA, _downB))
+                {
+                    EndRound(_downA > _downB ? wrestlerB : wrestlerA, null,
+                             _downA > _downB ? "COULD NOT CONTINUE" : "COULD NOT CONTINUE");
+                }
+                else
+                {
+                    EndRound(null, "DOUBLE OUT — DRAW");
+                }
+            }
+            else if (aOut) EndRound(wrestlerB, null, aDownOut ? "COULD NOT CONTINUE" : null);
+            else if (bOut) EndRound(wrestlerA, null, bDownOut ? "COULD NOT CONTINUE" : null);
             else if (_elapsed >= roundTimeoutSeconds) DecideOnTimeout();
         }
 

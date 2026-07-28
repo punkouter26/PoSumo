@@ -57,6 +57,8 @@ namespace PoSumo
             if (_baseLip != null)
                 _baseLip.localScale = new Vector3(width + 0.7f, 0.16f, 1f);
 
+            EnsureTawaraBands(half);
+
             float tawaraHalf = half - 0.3f; // bales stay on the clay, at the edge
             for (int tawaraIndex = 0; tawaraIndex < _tawara.Count; tawaraIndex++)
             {
@@ -134,6 +136,66 @@ namespace PoSumo
             if (_platform == null) return;
             var col = _platform.GetComponent<BoxCollider2D>();
             if (col != null && col.sharedMaterial != null) col.sharedMaterial.friction = friction;
+        }
+
+        [Tooltip("Width in metres of the slick tawara band at each rim. 0 disables it.")]
+        public float tawaraBandWidth = 0.7f;
+        [Tooltip("Friction inside the tawara band.")]
+        public float tawaraFriction = 0.18f;
+
+        private Transform _bandLeft, _bandRight;
+
+        /// The bales, as physics rather than decoration.
+        ///
+        /// A fighter driven to the rim used to plant on the same 0.9-friction clay
+        /// as the middle of the ring and simply stop, which is a large part of why
+        /// ring-outs never happened. These two strips sit 5 mm proud of the clay at
+        /// each edge, so a foot that reaches them contacts the slick material first
+        /// and the fighter slides out instead of gripping.
+        public void EnsureTawaraBands(float half)
+        {
+            if (tawaraBandWidth <= 0.001f)
+            {
+                if (_bandLeft != null) _bandLeft.gameObject.SetActive(false);
+                if (_bandRight != null) _bandRight.gameObject.SetActive(false);
+                return;
+            }
+            _bandLeft = Band(_bandLeft, "TawaraBandLeft", -1f, half);
+            _bandRight = Band(_bandRight, "TawaraBandRight", 1f, half);
+        }
+
+        private Transform Band(Transform existing, string name, float side, float half)
+        {
+            Transform t = existing;
+            if (t == null)
+            {
+                Transform found = transform.Find(name);
+                if (found != null)
+                {
+                    t = found;
+                }
+                else
+                {
+                    var go = new GameObject(name);
+                    go.transform.SetParent(transform, false);
+                    var col = go.AddComponent<BoxCollider2D>();
+                    col.size = Vector2.one;
+                    t = go.transform;
+                }
+            }
+            t.gameObject.SetActive(true);
+
+            var box = t.GetComponent<BoxCollider2D>();
+            if (box != null)
+            {
+                box.sharedMaterial = SourcePhysMat("Ground_Tawara", tawaraFriction, 0f);
+            }
+            // Centred on the outer band, top edge 5 mm above the clay so it wins the
+            // contact against the platform collider it overlaps.
+            float centre = side * (half - tawaraBandWidth * 0.5f);
+            t.localScale = new Vector3(tawaraBandWidth, 0.08f, 1f);
+            t.localPosition = new Vector3(centre, 0.005f - 0.04f, 0.01f);
+            return t;
         }
 
         private static Sprite Box() => SourceSprite("Box", 4f, false, new Vector2(0.5f, 0.5f), () =>

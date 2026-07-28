@@ -720,6 +720,65 @@ namespace PoSumo
         ///
         /// Returns false if the joint was already gone, so callers can avoid
         /// re-firing presentation for a limb that is already off.
+        /// Head mass folded into Chest's 13 kg by PART_DEFS. Pulled back out when
+        /// the head comes off so the remaining torso is not still carrying it.
+        private const float HEAD_MASS = 6f;
+
+        public bool HeadDetached { get; private set; }
+
+        /// Takes the head off.
+        ///
+        /// The head is NOT a separate body: it is a compound CircleCollider2D and a
+        /// sprite parented to Chest, with its 6 kg folded into Chest's 13. Giving it
+        /// a real rigidbody and neck hinge up front would redistribute mass on every
+        /// fighter and invalidate all eight trained brains — CLAUDE.md is explicit
+        /// that changing mass does that.
+        ///
+        /// So the split happens only at the moment of decapitation: an intact
+        /// fighter has byte-identical dynamics to before, and the change lands on a
+        /// body that has already lost the round. Returns the freed head, or null if
+        /// it is already off.
+        public Rigidbody2D DetachHead()
+        {
+            if (HeadDetached || Chest == null || HeadRenderer == null) return null;
+            HeadDetached = true;
+
+            Transform art = HeadRenderer.transform;
+            var free = new GameObject("HeadDetached");
+            free.transform.position = art.position;
+            free.transform.rotation = art.rotation;
+            free.transform.localScale = art.lossyScale;
+
+            var sr = free.AddComponent<SpriteRenderer>();
+            sr.sprite = HeadRenderer.sprite;
+            sr.color = HeadRenderer.color;
+            sr.sharedMaterial = HeadRenderer.sharedMaterial;
+            sr.sortingOrder = HeadRenderer.sortingOrder;
+            sr.flipX = HeadRenderer.flipX;
+
+            var rb = free.AddComponent<Rigidbody2D>();
+            rb.mass = HEAD_MASS * massScale;
+            rb.linearDamping = 0.25f;
+            rb.angularDamping = 0.8f;
+            // Carry the chest's motion plus an upward kick, so it visibly pops off
+            // rather than dropping straight down out of frame.
+            rb.linearVelocity = Chest.linearVelocity + new Vector2(Random.Range(-1.5f, 1.5f), Random.Range(2f, 4.5f));
+            rb.angularVelocity = Random.Range(-540f, 540f);
+
+            var col = free.AddComponent<CircleCollider2D>();
+            col.radius = 0.5f * headDiameter / Mathf.Max(0.0001f, art.lossyScale.x);
+            if (HeadCollider != null) col.sharedMaterial = HeadCollider.sharedMaterial;
+
+            // The stump: kill the hitbox, hide the attached art, and hand the mass
+            // back so the torso does not keep carrying a head it no longer has.
+            if (HeadCollider != null) HeadCollider.enabled = false;
+            HeadRenderer.enabled = false;
+            if (HeadMask != null) HeadMask.enabled = false;
+            Chest.mass = Mathf.Max(0.1f, Chest.mass - HEAD_MASS * massScale);
+
+            return rb;
+        }
+
         public bool DetachJoint(int jointIndex)
         {
             if (Joints == null || jointIndex < 0 || jointIndex >= Joints.Length) return false;

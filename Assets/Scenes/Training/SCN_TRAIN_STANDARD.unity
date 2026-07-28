@@ -154,8 +154,9 @@ MonoBehaviour:
   floorWidth: 22
   showPosts: 1
   deluxe: 0
-  style: 0
   surfaceFriction: 0.9
+  tawaraBandWidth: 0.7
+  tawaraFriction: 0.18
 --- !u!4 &727556764
 Transform:
   m_ObjectHideFlags: 0
@@ -210,7 +211,7 @@ MonoBehaviour:
   mode: 1
   teamId: 1
   opponent: {fileID: 0}
-  ringHalfWidth: 2.75
+  ringHalfWidth: 4
   arenaCenterX: 0
   arenaGroundY: 0
   extendedObservations: 0
@@ -374,15 +375,15 @@ MonoBehaviour:
   wrestlerA: {fileID: 937434524}
   wrestlerB: {fileID: 2016882950}
   arena: {fileID: 727556763}
-  ringHalfWidth: 5.5
-  roundTimeoutSeconds: 30
+  ringHalfWidth: 4
+  roundTimeoutSeconds: 20
   knockdownLoses: 0
   fallY: -0.2
   footOffMatY: -0.06
   randomizeRounds: 1
-  startHalfRange: {x: 1.7, y: 5.5}
+  startHalfRange: {x: 1.7, y: 4}
   frictionRange: {x: 0.5, y: 1.1}
-  spawnGapHalf: 1.2
+  spawnGapHalf: 2.5
   shoveImpulse: 0
   platformDifficulty: 1
 --- !u!1 &937434522
@@ -439,7 +440,7 @@ MonoBehaviour:
   mode: 1
   teamId: 0
   opponent: {fileID: 0}
-  ringHalfWidth: 2.75
+  ringHalfWidth: 4
   arenaCenterX: 0
   arenaGroundY: 0
   extendedObservations: 1
@@ -580,8 +581,9 @@ MonoBehaviour:
   floorWidth: 22
   showPosts: 1
   deluxe: 0
-  style: 0
   surfaceFriction: 0.9
+  tawaraBandWidth: 0.7
+  tawaraFriction: 0.18
 --- !u!4 &1174483765
 Transform:
   m_ObjectHideFlags: 0
@@ -644,15 +646,15 @@ MonoBehaviour:
   wrestlerA: {fileID: 1945028283}
   wrestlerB: {fileID: 736514951}
   arena: {fileID: 1174483764}
-  ringHalfWidth: 5.5
-  roundTimeoutSeconds: 30
+  ringHalfWidth: 4
+  roundTimeoutSeconds: 20
   knockdownLoses: 0
   fallY: -0.2
   footOffMatY: -0.06
   randomizeRounds: 1
-  startHalfRange: {x: 1.7, y: 5.5}
+  startHalfRange: {x: 1.7, y: 4}
   frictionRange: {x: 0.5, y: 1.1}
-  spawnGapHalf: 1.2
+  spawnGapHalf: 2.5
   shoveImpulse: 0
   platformDifficulty: 1
 --- !u!1 &1561904615
@@ -892,7 +894,7 @@ MonoBehaviour:
   mode: 1
   teamId: 0
   opponent: {fileID: 0}
-  ringHalfWidth: 2.75
+  ringHalfWidth: 4
   arenaCenterX: 0
   arenaGroundY: 0
   extendedObservations: 1
@@ -958,7 +960,7 @@ MonoBehaviour:
   mode: 1
   teamId: 1
   opponent: {fileID: 0}
-  ringHalfWidth: 2.75
+  ringHalfWidth: 4
   arenaCenterX: 0
   arenaGroundY: 0
   extendedObservations: 1

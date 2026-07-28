@@ -10,7 +10,7 @@ namespace PoSumo
     /// target: scoring a round targets happy3, losing one sad3, a knockdown
     /// sad2; a decided match holds the extreme until rematch. Dominance is
     /// smoothed (~2 s) so the face doesn't flicker. Sprites load from
-    /// Resources (Matt_neutral / Matt_happy1-3 / Matt_sad1-3). Spawned by
+    /// Resources/Faces (Matt_Neutral / Matt_Happy_1-3 / Matt_Sad_1-3). Spawned by
     /// Systems_GameMatchManager.
     public sealed class Systems_FaceMood : MonoBehaviour
     {
@@ -35,18 +35,18 @@ namespace PoSumo
 
         // Fallback for characters with no face names on their definition asset
         // (Matt predates the per-character face fields).
-        private const string FALLBACK_NEUTRAL = "Matt_neutral";
+        private const string FALLBACK_NEUTRAL = "Matt_Neutral";
         private static readonly string[] FallbackHappy =
         {
-            "Matt_happy1",
-            "Matt_happy2",
-            "Matt_happy3",
+            "Matt_Happy_1",
+            "Matt_Happy_2",
+            "Matt_Happy_3",
         };
         private static readonly string[] FallbackSad =
         {
-            "Matt_sad1",
-            "Matt_sad2",
-            "Matt_sad3",
+            "Matt_Sad_1",
+            "Matt_Sad_2",
+            "Matt_Sad_3",
         };
 
         private Systems_GameMatchManager _manager;

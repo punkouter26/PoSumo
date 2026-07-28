@@ -38,7 +38,7 @@ namespace PoSumo.EditorTools
         [MenuItem("PoSumo/Build Standard Training Env")]
         public static void BuildStandard()
         {
-            Build("Assets/Scenes/Training/SCN_TRAIN_STD.unity", "Builds/StandardEnv/StandardEnv.exe");
+            Build("Assets/Scenes/Training/SCN_TRAIN_STANDARD.unity", "Builds/StandardEnv/StandardEnv.exe");
         }
 
         // Per-fighter walk schools: the gait has to be learned on the physique it
@@ -67,7 +67,7 @@ namespace PoSumo.EditorTools
         [MenuItem("PoSumo/Build Standard Walk Env")]
         public static void BuildStandardWalk()
         {
-            Build("Assets/Scenes/Training/SCN_TRAIN_WALK_STD.unity", "Builds/StandardWalkEnv/StandardWalkEnv.exe");
+            Build("Assets/Scenes/Training/SCN_TRAIN_WALK_STANDARD.unity", "Builds/StandardWalkEnv/StandardWalkEnv.exe");
         }
 
         [MenuItem("PoSumo/Build Recover School Env")]

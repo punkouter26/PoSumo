@@ -23,8 +23,20 @@ namespace PoSumo
         // serialized into all three of them, and a public field already written
         // into a scene ignores any later change to its code default — the trap
         // this asset exists to avoid.
-        [Tooltip("Half-width of the FIGHTING ring in metres. This is also the physical platform half-width and is fed to the agents as an edge-distance observation, so changing it changes what every brain sees.")]
-        public float ringHalfWidth = 5.5f;
+        [Tooltip("Half-width of the FIGHTING ring in metres. This is also the physical platform half-width and is fed to the agents as an edge-distance observation, so changing it changes what every brain sees.\n\n4.0, down from 5.5. The 5.5 ring was the documented reason bouts stopped finishing: with the fighters starting 0.9 m apart there was 4.6 m of mat to drive an opponent across, and measured sustained push in contact was only 71-500 N against 614 N of static friction. Shrinking the ring and widening the stand-off cuts that distance to about 1.5 m.")]
+        public float ringHalfWidth = 4f;
+
+        [Tooltip("Half the gap the fighters stand at when a round opens. 2.5 (was 0.9): starting them near the tawara rather than nose-to-nose in the middle means a drive of ~1.5 m wins the round instead of ~4.6 m. Costs nothing in retraining — it is a spawn position, not an observation.")]
+        public float neutralGapHalf = 2.5f;
+
+        [Tooltip("Friction of the dohyo clay in the GAME. 0.55, down from 0.9.\n\nAt 0.9 the force to start sliding a 69.6 kg opponent is 0.9*69.6*9.81 = 614 N, and measured sustained push in contact was 71-500 N — so no fighter could move another at all. 0.55 drops the wall to ~375 N, which the harder pushes clear.\n\nSafe without retraining: Systems_SumoMatchManager already randomises friction over [0.5, 1.1] during training, so 0.55 is inside the distribution every brain has seen.")]
+        public float surfaceFriction = 0.55f;
+
+        [Tooltip("Width in metres of the low-friction tawara band at each rim. A fighter driven onto the bales loses grip and slides out instead of planting — which is what the bales physically do. 0 disables the band.")]
+        public float tawaraBandWidth = 0.7f;
+
+        [Tooltip("Friction inside the tawara band. Deliberately slick so 'almost out' becomes 'out'.")]
+        public float tawaraFriction = 0.18f;
         [Tooltip("Play the ceremonial walk-in at the start of each match. Lives here because the arena scenes each serialize their own copy of the flag, and SCN_SUMO had it switched OFF — so the ceremony was silently never running no matter what the code default said.")]
         public bool enableWalkIn = true;
         [Tooltip("Platform half-width during the ceremonial walk-in. The mat contracts to ringHalfWidth before the bell.")]
@@ -46,6 +58,8 @@ namespace PoSumo
         public float graceSeconds = 0.4f;
         [Tooltip("Non-foot ground contact must persist this long to count as a throw-down.")]
         public float downGraceSeconds = 0.2f;
+        [Tooltip("Seconds a fighter may lie down before the round is awarded to the opponent. 0 disables it.\n\nGAME-ONLY, like knockoutsToLoseMatch: Systems_SumoMatchManager has no equivalent, so the brains never train against it.\n\nThis exists because measured play had EVERY round expire on the 30 s clock — five of five across two matches, decided on position, with no ring-out. Once a fighter loses a leg its IsDown test (non-foot ground contact) can never clear again, so roughly half of each round was two motionless bodies waiting out the timer. Long enough that a genuine scramble back to the feet still counts, short enough that a fighter who cannot continue does not stall the round.")]
+        public float downOutSeconds = 3f;
         [Tooltip("Must stay false and match Systems_SumoMatchManager. Falling is not a loss in either referee — if you change it, change it in BOTH or trained brains face a rule they never saw.")]
         public bool knockdownLoses = false;
         [Tooltip("Head knockouts one fighter can suffer before losing the whole match on the spot — boxing's three-knockdown rule. 0 disables it. GAME-ONLY: Systems_SumoMatchManager has no equivalent, so the brains never train against it; it is a spectacle rule layered on top of the sumo rules, not one of them.")]

@@ -162,15 +162,30 @@ namespace PoSumo
             spacer.style.minHeight = Systems_UiKit.SPACE_3;
             _content.Add(spacer);
 
+            // The status line and the two action buttons live OUTSIDE the
+            // ScrollView, pinned to the bottom of the panel.
+            //
+            // Inside it they were the last thing in a 1409 px column. On the test
+            // device the viewport happened to be 1558 px so they fitted, but the
+            // panel scales on WIDTH (match=0) against a 720x1280 reference: on a
+            // 16:9 phone the viewport is 1280 px and START TOURNAMENT sat ~130 px
+            // below the fold, reachable only by scrolling a screen that otherwise
+            // looks complete. A primary action must not depend on the aspect ratio.
+            var footer = new VisualElement();
+            footer.style.paddingLeft = Systems_UiKit.SPACE_3;
+            footer.style.paddingRight = Systems_UiKit.SPACE_3;
+            footer.style.paddingBottom = Systems_UiKit.SPACE_3;
+            footer.style.flexShrink = 0;
+
             _statusLabel = Systems_UiKit.Text("", Systems_UiKit.FONT_LEAD, Systems_UiKit.Gold);
             _statusLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
             _statusLabel.style.whiteSpace = WhiteSpace.Normal;
-            _statusLabel.style.marginTop = Systems_UiKit.SPACE_3;
-            _content.Add(_statusLabel);
+            _statusLabel.style.marginTop = Systems_UiKit.SPACE_2;
+            footer.Add(_statusLabel);
 
             _actionButton = Systems_UiKit.PrimaryButton("", OnAction);
             _actionButton.style.marginTop = Systems_UiKit.SPACE_2;
-            _content.Add(_actionButton);
+            footer.Add(_actionButton);
 
             // Only offered while the draw is still editable. It was previously
             // always visible, which made it both redundant and dangerous: on a
@@ -181,9 +196,13 @@ namespace PoSumo
             // progress with no confirmation.
             _resetButton = Systems_UiKit.GhostButton("RESHUFFLE", OnReset);
             _resetButton.style.marginTop = Systems_UiKit.SPACE_2;
-            _content.Add(_resetButton);
+            footer.Add(_resetButton);
 
+            // Career table stays INSIDE the scroll — it is optional detail and is
+            // exactly the thing that makes the column overflow when expanded.
             BuildCareerTable();
+
+            _root.Add(footer);
 
             // Floating ghost that follows the pointer during a drag.
             _dragGhost = MakeChip(null, SLOT_SIZE);

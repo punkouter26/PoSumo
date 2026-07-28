@@ -118,16 +118,6 @@ namespace PoSumo
             {
                 _thudLow = LoadSet("SFX_Thud", 3);
             }
-            if (_scuffs.Length == 0)
-            {
-                AudioClip legacy = Resources.Load<AudioClip>(AUDIO_PATH + "SFX_Scuff");
-                _scuffs = legacy != null ? new[] { legacy } : new AudioClip[0];
-            }
-            if (_taikos.Length == 0)
-            {
-                AudioClip legacy = Resources.Load<AudioClip>(AUDIO_PATH + "SFX_Taiko");
-                _taikos = legacy != null ? new[] { legacy } : new AudioClip[0];
-            }
 
             _strain = Resources.Load<AudioClip>(AUDIO_PATH + "SFX_Strain");
             _murmur = Resources.Load<AudioClip>(AUDIO_PATH + "SFX_CrowdMurmur");

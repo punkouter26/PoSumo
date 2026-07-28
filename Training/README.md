@@ -262,9 +262,9 @@ bird-leg brain. `Deploy`/`DeployWalk` were safe only because they read the top-l
 **Kill TensorBoard before launching with `--force`, not after.** The note further up
 saying to restart it afterward is necessary but not sufficient.
 
-### Known trap: SCN_TRAIN_STD has no character asset assigned
+### Known trap: SCN_TRAIN_STANDARD has no character asset assigned
 
-`SCN_TRAIN_STD` contains **zero** references to `Standard_Character.asset` (8 fields
+`SCN_TRAIN_STANDARD` contains **zero** references to `Standard_Character.asset` (8 fields
 sit at `character: {fileID: 0}`), while the other seven training scenes reference
 theirs correctly. Verified by GUID-grepping the saved `.unity` files, which is the
 check CLAUDE.md mandates.

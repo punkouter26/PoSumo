@@ -9,9 +9,18 @@ wrestling via ML-Agents, then fight each other in a playable, presentation-dress
 match/tournament layer. Portrait orientation, Android target
 (`com.punkouter26.posumo`). `DESIGN.md` is the original approved spec and is now
 partly historical — where it disagrees with this file or the code, the code wins
-(notably: the ring is a raised dohyo, not `|x| > 7`; its half-width is **5.5 m**, doubled
-from 2.75 in the realism pass and now read from `GameTuning.asset` because all three arena
-scenes serialize their own copy).
+(notably: the ring is a raised dohyo, not `|x| > 7`; its half-width is **4.0 m** and is read
+from `GameTuning.asset` because the arena scenes serialize their own copy).
+
+The ring went 2.75 → 5.5 in the realism pass and back to **4.0** on 2026-07-28, because 5.5
+made a decisive finish impossible: with the fighters opening 0.9 m apart there was 4.6 m of
+mat to drive an opponent across, and at 0.9 friction the force to start sliding a 69.6 kg
+body is 614 N against a measured sustained push of 71-500 N. Measured play had **every**
+round expire on the clock and be settled on position — no ring-out at all. The 4.0 ring, a
+2.5 m opening stand-off and 0.55 friction cut the drive to 1.5 m against a 376 N wall.
+`Systems_SumoMatchManager` does **not** read `GameTuning` — it carries its own copy of the
+ring, spawn gap and timeout in every training scene, so a change here must be written into
+those scenes too or the brains train on an arena the game does not have.
 
 The roster is exactly four trained fighters — **Matt**, **Standard**, **Nick**,
 **Kim** — each with an `.onnx`, a `*_Character.asset` and a `MANIFEST.md`. The
@@ -212,8 +221,8 @@ a scene that produced a shipped brain is the only way to reproduce it.
 
 | Scene | Purpose |
 |---|---|
-| `SCN_TRAIN_MATT_AGGR` / `SCN_TRAIN_STD` / `SCN_TRAIN_NICK` / `SCN_TRAIN_KIM` | self-play sumo, one per fighter |
-| `SCN_TRAIN_WALK_MATT` / `_STD` / `_KIM` / `_NICK` | walk school, **one per fighter** — each assigns that fighter's character asset |
+| `SCN_TRAIN_MATT_AGGR` / `SCN_TRAIN_STANDARD` / `SCN_TRAIN_NICK` / `SCN_TRAIN_KIM` | self-play sumo, one per fighter |
+| `SCN_TRAIN_WALK_MATT` / `_STANDARD` / `_KIM` / `_NICK` | walk school, **one per fighter** — each assigns that fighter's character asset |
 | `SCN_TRAIN_RECOVER4` | recover school |
 
 **A walk brain is per-fighter**, for two independent reasons: a gait learned at mass 1.0

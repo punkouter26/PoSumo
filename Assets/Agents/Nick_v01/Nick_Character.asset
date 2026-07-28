@@ -16,15 +16,15 @@ MonoBehaviour:
   teamColor: {r: 0.25, g: 0.42, b: 0.72, a: 1}
   headSprite: {fileID: 21300000, guid: 7c697ab9c86d0f3469db2a68a058ed5b, type: 3}
   faceArtFacesLeft: 1
-  faceNeutralName: Nick_neutral
+  faceNeutralName: Nick_Neutral
   faceHappyNames:
-  - Nick_happy1
-  - Nick_happy2
-  - Nick_happy3
+  - Nick_Happy_1
+  - Nick_Happy_2
+  - Nick_Happy_3
   faceSadNames:
-  - Nick_sad1
-  - Nick_sad2
-  - Nick_sad3
+  - Nick_Sad_1
+  - Nick_Sad_2
+  - Nick_Sad_3
   massScale: 0.72
   widthScale: 0.82
   torqueScale: 0.85
@@ -33,10 +33,10 @@ MonoBehaviour:
   inferenceModel: {fileID: 5022602860645237092, guid: 1f15b9a7469d7cc4daafd2020713ebc9, type: 3}
   walkModel: {fileID: 5022602860645237092, guid: f6fc89253ba53af4caddacd958ba3b05, type: 3}
   uprightReward: 0.0008
-  closingReward: 0.0011
-  lungeBonus: 0.0024
+  closingReward: 0.0055
+  lungeBonus: 0.0072000003
   lungeThreshold: 1
-  impactReward: 0.011
+  impactReward: 0.0036666666
   impactCap: 8
   kneeBendReward: 0.0002
   hipsLowReward: 0.0001
