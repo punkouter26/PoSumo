@@ -24,7 +24,7 @@ namespace PoSumo
         // still running a LateUpdate every frame and carrying four fields. It
         // fought the follow camera's framing and made the fight harder to read, so
         // it was never going to be switched on. Deleted rather than left as a dial.
-        // Impact weight is carried by Systems_PostFx (contrast/bloom/aberration
+        // Impact weight used to be carried by Systems_PostFx (contrast/bloom/aberration
         // punch) and Systems_MatchAudio (layered thud), which do not move the frame.
 
         private float _nextAllowed;

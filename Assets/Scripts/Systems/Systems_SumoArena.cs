@@ -18,9 +18,6 @@ namespace PoSumo
     /// already exist; an empty arena object still builds itself as before.
     public sealed class Systems_SumoArena : MonoBehaviour
     {
-        /// Visual + physics preset for the dohyo top surface.
-        public enum SurfaceStyle { Clay = 0, Ice = 1, Sticky = 2 }
-
         // Widths doubled with the fighting ring. The dressing built from these
         // (roof, ridge, arena floor, crowd) is BAKED into the scene, so changing
         // them requires re-running Build() and re-saving — SetPlatformHalfWidth
@@ -31,9 +28,7 @@ namespace PoSumo
         public float floorWidth = 34f;       // lower arena floor span
         public bool showPosts = true;        // tawara + dressing on/off
         public bool deluxe = false;          // full-stadium dressing (SCN_SUMO)
-        [Tooltip("Surface preset: recolors the dohyo. Clay=warm, Ice=blue-white, Sticky=dark resin.")]
-        public SurfaceStyle style = SurfaceStyle.Clay;
-        [Tooltip("Dohyo top-surface friction. Clay 0.9, ice ~0.08, sticky ~1.3.")]
+        [Tooltip("Dohyo top-surface friction. Clay is 0.9; the training referee still randomises this per round.")]
         public float surfaceFriction = 0.9f;
 
         // Tawara bales, kept so width changes reposition them: (transform, side, index).
@@ -167,7 +162,7 @@ namespace PoSumo
         });
 
         private Sprite NoiseSprite(Color baseColor, float amount) =>
-            SourceSprite($"Noise_{style}", 256f, true, new Vector2(0.5f, 0.5f), () =>
+            SourceSprite("Noise_Clay", 256f, true, new Vector2(0.5f, 0.5f), () =>
         {
             const int S = 256;
             var tex = new Texture2D(S, S, TextureFormat.RGBA32, false);
@@ -300,18 +295,6 @@ namespace PoSumo
             var clay = new Color(0.72f, 0.57f, 0.4f);
             var clayLight = new Color(0.8f, 0.66f, 0.47f);
             var clayDark = new Color(0.55f, 0.42f, 0.3f);
-            if (style == SurfaceStyle.Ice)
-            {
-                clay = new Color(0.6f, 0.72f, 0.82f);
-                clayLight = new Color(0.8f, 0.9f, 0.97f);
-                clayDark = new Color(0.42f, 0.54f, 0.68f);
-            }
-            else if (style == SurfaceStyle.Sticky)
-            {
-                clay = new Color(0.45f, 0.32f, 0.2f);
-                clayLight = new Color(0.58f, 0.42f, 0.24f);
-                clayDark = new Color(0.32f, 0.22f, 0.13f);
-            }
 
             // --- Dohyo platform: top surface at y=0, sides slightly stepped.
             float half = groundWidth * 0.5f;
@@ -326,7 +309,7 @@ namespace PoSumo
             psr.color = deluxe ? Color.white : clay;
             psr.sortingOrder = -5;
             var pcol = platform.AddComponent<BoxCollider2D>();
-            pcol.sharedMaterial = SourcePhysMat($"Ground_{style}", surfaceFriction, 0f);
+            pcol.sharedMaterial = SourcePhysMat("Ground_Clay", surfaceFriction, 0f);
 
             // Slightly wider base lip to suggest the mound shape.
             var lip = new GameObject("DohyoBase");

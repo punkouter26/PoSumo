@@ -27,7 +27,7 @@ namespace PoSumo
         // scene on the global fill is what "well lit, no drop off" means here.
         //
         // The key and rim lights are still CREATED, at zero intensity, because
-        // Systems_PostFx and Systems_ArenaAtmosphere read KeyLight off Instance
+        // Systems_ArenaAtmosphere reads KeyLight off Instance
         // and a null there would be a new crash rather than a new look. Raise
         // keyIntensity above zero to get the old shaping back.
         [Header("Global fill")]
@@ -73,7 +73,7 @@ namespace PoSumo
         private static Shader _bodyShader;
         private static bool _bodyShaderMissingLogged;
 
-        /// The most recently built rig. Systems_PostFx and Systems_ArenaAtmosphere
+        /// The most recently built rig. Systems_ArenaAtmosphere
         /// read the lights and the volume from here rather than hunting for them.
         public static Systems_ArenaLighting Instance { get; private set; }
 
@@ -442,7 +442,8 @@ namespace PoSumo
             grainEffect.intensity.Override(grain);
             grainEffect.response.Override(0.7f);
 
-            // Impact effects, parked at zero. Systems_PostFx drives these two on
+            // Impact effects, parked at zero. Nothing drives these since Systems_PostFx
+            // was removed; kept because the volume profile still declares them.
             // hits and finishes; they are declared here so the profile layout never
             // changes at runtime.
             //

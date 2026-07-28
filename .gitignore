@@ -37,9 +37,11 @@ Thumbs.db
 /Training/logs/
 /Training/results_archive/
 
-# ML-Agents auto-generated profiling timers (regenerated every play/run)
-/Assets/ML-Agents/Timers/
-/Assets/ML-Agents/Timers.meta
+# ML-Agents auto-generated profiling output (regenerated every play/run).
+# The whole folder is generated — it was committed once and still listed retired
+# scenes (SCN_TRAIN_DAVE, SCN_SUMO_ICE, SCN_SUMO_STICKY) long after they were gone.
+/Assets/ML-Agents/
+/Assets/ML-Agents.meta
 
 # Editor crash-recovery scene backups
 /Assets/_Recovery/

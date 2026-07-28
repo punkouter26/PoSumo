@@ -7,7 +7,7 @@ namespace PoSumo
     /// layout every other HUD component attaches into.
     ///
     /// Why one document. Systems_GameMatchManager, Systems_FightHud and
-    /// Systems_MomentumGraph each used to add their own UIDocument against the
+    /// several HUD systems each used to add their own UIDocument against the
     /// same PanelSettings, all at sorting order 0. Three panels at equal sorting
     /// order have no defined draw or pick order, which produced two real defects:
     /// the match manager's dim backdrop could not darken the stat panels or the

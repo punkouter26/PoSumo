@@ -5,10 +5,10 @@ namespace PoSumo
     /// Spoken voice lines for one fighter: happy, sad and insults, each a set of
     /// five clips where 1 is the mildest read and 5 the strongest.
     ///
-    /// Clips live in Resources/ and are found by naming convention, so adding
+    /// Clips live in Resources/Audio/Voice/ and are found by naming convention, so adding
     /// Nick_Happy_1..5 / Nick_Sad1..5 / Nick_Insult_1..5 gives Nick a voice with
     /// no code change. A fighter with no clips is silent rather than an error —
-    /// only Matt is recorded today.
+    /// only Matt and Nick are recorded today.
     ///
     /// What drives each set:
     ///   sad     being hit (level from impact force), losing a round (4),
@@ -24,6 +24,10 @@ namespace PoSumo
     /// Spawned at runtime by Systems_GameMatchManager, one per fighter.
     public sealed class Systems_FighterVoice : MonoBehaviour
     {
+        // Voice clips live in Resources/Audio/Voice/. Kept as one constant so a
+        // future move touches a single line rather than a format string.
+        private const string VOICE_PATH = "Audio/Voice/";
+
         public string fighterBehaviorName = "Matt";
 
         [Tooltip("Pitch multiplier. The second of two identical fighters is dropped so a Matt-vs-Matt bout does not sound like one man arguing with himself.")]
@@ -165,7 +169,7 @@ namespace PoSumo
             for (int level = 0; level < LEVELS; level++)
             {
                 int n = level + 1;
-                AudioClip clip = Resources.Load<AudioClip>($"{fighterBehaviorName}_{kind}_{n}");
+                AudioClip clip = Resources.Load<AudioClip>($"{VOICE_PATH}{fighterBehaviorName}_{kind}_{n}");
                 clips[level] = clip;
                 if (clip != null)
                 {

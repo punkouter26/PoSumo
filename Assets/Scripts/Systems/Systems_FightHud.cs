@@ -93,7 +93,7 @@ namespace PoSumo
 
         /// Live pairwise-normalized dominance (0-100, the pair sums to 100).
         /// Consumed by Systems_FaceMood, Systems_FighterVoice and
-        /// Systems_MomentumGraph; updated even while the table is hidden.
+        /// the stats table; sampled every physics step.
         public float DominanceA { get; private set; } = 50f;
         public float DominanceB { get; private set; } = 50f;
 
@@ -153,7 +153,6 @@ namespace PoSumo
             _balance = MirrorBarRow("BALANCE");
             _push = MirrorBarRow("PUSH IN CONTACT");
             _card.Add(Systems_UiKit.Divider());
-            BuildDamageRow();
 
             // One footer for the whole table. The old layout printed this line in
             // both panels, and LONGEST RD is a property of the match, not of a
@@ -281,9 +280,9 @@ namespace PoSumo
         }
 
         // The table used to be hideable — a STATS chip, a Tab shortcut and a
-        // SetStatsVisible() that Systems_MomentumGraph called on start to hide it.
-        // All of that is gone: the stats HUD is now always on during a match, so
-        // there is nothing to toggle and no state to track.
+        // SetStatsVisible() the momentum graph called on start to hide it. All of
+        // that is gone: the stats HUD is always on during a match, so there is
+        // nothing to toggle and no state to track.
 
         // ---- Sampling ------------------------------------------------------
 
@@ -409,116 +408,11 @@ namespace PoSumo
 
         // ---- Damage mannequin ----------------------------------------------
         //
-        // A six-region stick figure per fighter: head, torso, both arms, both legs.
-        // Green when untouched, through amber, to red as Systems_BodyDamage
-        // accumulates hits on that region — and a hollow stump once the limb has
-        // actually been torn off.
-        //
-        // Six regions, not fourteen: the body has 14 parts, but this sits in the
-        // dock on a portrait phone during a 30-second round, and nobody can read
-        // fourteen swatches. Head/torso/arm/arm/leg/leg is the most detail that
-        // still reads at a glance.
-
-        private VisualElement[] _mannA, _mannB;
-
-        private static readonly Color DamageGreen = new Color(0.36f, 0.78f, 0.40f);
-        private static readonly Color DamageAmber = new Color(0.94f, 0.72f, 0.22f);
-        private static readonly Color DamageRed = new Color(0.88f, 0.22f, 0.18f);
-        private static readonly Color DamageGone = new Color(0.20f, 0.20f, 0.24f, 0.45f);
-
-        private void BuildDamageRow()
-        {
-            VisualElement row = Systems_UiKit.Row();
-            row.style.alignItems = Align.Center;
-            row.style.marginTop = Systems_UiKit.SPACE_1;
-
-            _mannA = BuildMannequin(out VisualElement figureA);
-            _mannB = BuildMannequin(out VisualElement figureB);
-
-            var left = new VisualElement().NoPick();
-            left.style.width = Length.Percent(SIDE_PERCENT);
-            left.style.alignItems = Align.Center;
-            left.Add(figureA);
-
-            Label title = Systems_UiKit.Text("DAMAGE", Systems_UiKit.FONT_MICRO, Systems_UiKit.TextLow);
-            title.style.width = Length.Percent(LABEL_PERCENT);
-            title.style.unityTextAlign = TextAnchor.MiddleCenter;
-
-            var right = new VisualElement().NoPick();
-            right.style.width = Length.Percent(SIDE_PERCENT);
-            right.style.alignItems = Align.Center;
-            right.Add(figureB);
-
-            row.Add(left);
-            row.Add(title);
-            row.Add(right);
-            _card.Add(row);
-        }
-
-        /// Indices match Systems_BodyDamage.Region: Head, Torso, ArmNear, ArmFar,
-        /// LegNear, LegFar.
-        private VisualElement[] BuildMannequin(out VisualElement figure)
-        {
-            const float W = 56f, H = 78f;
-            figure = new VisualElement().NoPick();
-            figure.style.width = W;
-            figure.style.height = H;
-
-            var parts = new VisualElement[Systems_BodyDamage.REGION_COUNT];
-            parts[(int)Systems_BodyDamage.Region.Head]    = Piece(figure, 20f, 0f,  16f, 16f, 8);
-            parts[(int)Systems_BodyDamage.Region.Torso]   = Piece(figure, 19f, 18f, 18f, 30f, 3);
-            parts[(int)Systems_BodyDamage.Region.ArmNear] = Piece(figure, 8f,  20f,  8f, 26f, 4);
-            parts[(int)Systems_BodyDamage.Region.ArmFar]  = Piece(figure, 40f, 20f,  8f, 26f, 4);
-            parts[(int)Systems_BodyDamage.Region.LegNear] = Piece(figure, 19f, 50f,  8f, 28f, 4);
-            parts[(int)Systems_BodyDamage.Region.LegFar]  = Piece(figure, 29f, 50f,  8f, 28f, 4);
-            return parts;
-        }
-
-        private static VisualElement Piece(VisualElement parent, float left, float top,
-                                   float w, float h, int radius)
-        {
-            var piece = new VisualElement().NoPick();
-            piece.style.position = Position.Absolute;
-            piece.style.left = left;
-            piece.style.top = top;
-            piece.style.width = w;
-            piece.style.height = h;
-            piece.style.backgroundColor = DamageGreen;
-            piece.Round(radius);
-            parent.Add(piece);
-            return piece;
-        }
-
-        private void PaintMannequin(VisualElement[] parts, Agent_Biped fighter)
-        {
-            if (parts == null || fighter == null) return;
-            var body = fighter.GetComponent<Agent_BipedBody>();
-            Systems_BodyDamage damage = body != null ? Systems_BodyDamage.For(body) : null;
-            if (damage == null) return;
-
-            for (int r = 0; r < Systems_BodyDamage.REGION_COUNT; r++)
-            {
-                var region = (Systems_BodyDamage.Region)r;
-                if (damage.RegionDetached(region))
-                {
-                    parts[r].style.backgroundColor = DamageGone;
-                    continue;
-                }
-                float t = damage.RegionDamage01(region);
-                // Two-stop ramp so amber is a real waypoint rather than a colour
-                // the bar passes through in one frame.
-                parts[r].style.backgroundColor = t < 0.5f
-                    ? Color.Lerp(DamageGreen, DamageAmber, t * 2f)
-                    : Color.Lerp(DamageAmber, DamageRed, (t - 0.5f) * 2f);
-            }
-        }
 
         private void UpdateTable()
         {
             float n = Mathf.Max(1, _samples);
 
-            PaintMannequin(_mannA, manager.wrestlerA);
-            PaintMannequin(_mannB, manager.wrestlerB);
 
             _dominance.a.text = $"{DominanceA:F0}";
             _dominance.b.text = $"{DominanceB:F0}";

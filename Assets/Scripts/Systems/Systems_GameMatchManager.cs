@@ -62,9 +62,8 @@ namespace PoSumo
         // no tuning asset is assigned.
         private bool enablePresentation = true, enableAudio = true, enableFaceMood = true;
         private bool enableVoice = true, enableLighting = true, enableImpactFx = true;
-        private bool enablePostFx = true, enableAtmosphere = true, enableMusic = true;
+        private bool enableAtmosphere = true, enableMusic = true;
         private bool enableBodyDamage = true;
-        private bool enableMomentumGraph = true;
         [Tooltip("Round-opening countdown length; physics and brains are held until it finishes.")]
         public int countdownSeconds = 3;
         [Tooltip("Camera ortho when the countdown punches in on a fighter's head.")]
@@ -212,11 +211,9 @@ namespace PoSumo
                 enableVoice = tuning.enableVoice;
                 enableLighting = tuning.enableLighting;
                 enableImpactFx = tuning.enableImpactFx;
-                enablePostFx = tuning.enablePostFx;
                 enableAtmosphere = tuning.enableAtmosphere;
                 enableMusic = tuning.enableMusic;
                 enableBodyDamage = tuning.enableBodyDamage;
-                enableMomentumGraph = tuning.enableMomentumGraph;
             }
 
             ResolveWrestlers();
@@ -586,12 +583,6 @@ namespace PoSumo
                 SpawnFaceMood(wrestlerA);
                 SpawnFaceMood(wrestlerB);
             }
-            if (enableMomentumGraph && FindAnyObjectByType<Systems_MomentumGraph>() == null)
-            {
-                var go = new GameObject("MomentumGraph");
-                go.transform.SetParent(transform, false);
-                go.AddComponent<Systems_MomentumGraph>().panelSettings = panelSettings;
-            }
             if (enableBodyDamage && FindAnyObjectByType<Systems_BodyDamage>() == null)
             {
                 SpawnBodyDamage(wrestlerA);
@@ -624,15 +615,6 @@ namespace PoSumo
                 var go = new GameObject("CareerRecorder");
                 go.transform.SetParent(transform, false);
                 go.AddComponent<Systems_CareerRecorder>();
-            }
-            // PostFx binds to the volume Systems_ArenaLighting builds, so it must
-            // be spawned after it — SpawnCompanionSystems runs in declaration order
-            // and lighting is created above.
-            if (enablePostFx && FindAnyObjectByType<Systems_PostFx>() == null)
-            {
-                var go = new GameObject("PostFx");
-                go.transform.SetParent(transform, false);
-                go.AddComponent<Systems_PostFx>();
             }
             if (enableAtmosphere && FindAnyObjectByType<Systems_ArenaAtmosphere>() == null)
             {

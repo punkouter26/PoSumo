@@ -32,22 +32,27 @@ they are ~140 MB per run and nothing ever deploys from them.
 **Everything below was re-tuned onto the current capsule-limb physics** (see
 "The capsule-limb re-tune"). The lineage column is the trunk each run continued.
 
-| Config | Behavior | Run | Env | Deployed as |
+| Config | Behavior | Run | Env | Backs |
 |---|---|---|---|---|
-| `MattSumo06.yaml` | Matt | `matt_sumo06` (3.0M, ← `matt_sumo05`) | MattAggrEnv | `Matt_v01/Matt.onnx` |
-| `StandardSumo02.yaml` | Standard | `standard_sumo02` (3.0M, ← `standard_sumo01`) | StandardEnv | `Standard_v01/Standard.onnx` |
-| `KimSumo02.yaml` | Kim | `kim_sumo02` (3.0M, ← `kim_sumo01`) | KimEnv | `Kim_v01/Kim.onnx` |
-| `NickSumo04.yaml` | Nick | `nick_sumo04` (1.2M, ← `nick_sumo02`) | NickEnv | `Nick_v01/Nick.onnx` |
-| `MattSumo05.yaml` | Matt | `matt_sumo05` (8.0M) | MattAggrEnv | superseded — trunk for `matt_sumo06` |
-| `StandardSumo01.yaml` | Standard | `standard_sumo01` (45.0M) | StandardEnv | superseded — trunk for `standard_sumo02` |
-| `KimSumo01.yaml` | Kim | `kim_sumo01` (12.0M) | KimEnv | superseded — trunk for `kim_sumo02` |
-| `NickSumo01/02.yaml` | Nick | `nick_sumo01` (12.0M) → `nick_sumo02` (4.0M) | NickEnv | superseded — trunk for `nick_sumo04` |
-| `NickSumo03.yaml` | Nick | `nick_sumo03` (3.0M) | NickEnv | **REJECTED — regressed, see below** |
-| `MattWalk01.yaml` | Matt | `matt_walk01` (12.0M) | MattWalkEnv | `Standard_v01/StandardWalk.onnx` (baseline gait, kept by Standard) |
-| `MattWalk02.yaml` | Matt | `matt_walk02` (2.0M) | MattWalkEnv | `Matt_v01/MattWalk.onnx` (restyled, aggressive) |
-| `KimWalk01.yaml` | Kim | `kim_walk01` (4.0M) | KimWalkEnv | `Kim_v01/KimWalk.onnx` |
-| `NickWalk01.yaml` | Nick | `nick_walk01` (4.0M) | NickWalkEnv | `Nick_v01/NickWalk.onnx` |
-| `StandardWalk01.yaml` | Standard | *(not run)* | StandardWalkEnv | — Standard still uses `matt_walk01`'s export; this exists so that gait stays reproducible |
+| `MattSumo07.yaml` | Matt | `matt_sumo07` (6.0M target, ← `matt_sumo06`) | MattAggrEnv | **paused at 5,749,739** — resumable |
+| `StandardSumo03.yaml` | Standard | `standard_sumo03` (6.0M, ← `standard_sumo02`) | StandardEnv | complete — `Standard_v01/Standard.onnx` |
+| `KimSumo03.yaml` | Kim | `kim_sumo03` (6.0M target, ← `kim_sumo02`) | KimEnv | **paused at 5,499,625** — resumable |
+| `NickSumo05.yaml` | Nick | `nick_sumo05` (6.0M target, ← `nick_sumo04`) | NickEnv | **paused at 5,499,945** — resumable |
+| `MattWalk03.yaml` | Matt | `matt_walk03` (← `matt_walk02`) | MattWalkEnv | `Matt_v01/MattWalk.onnx` |
+| `KimWalk03.yaml` | Kim | `kim_walk03` (← `kim_walk02`) | KimWalkEnv | `Kim_v01/KimWalk.onnx` |
+| `NickWalk03.yaml` | Nick | `nick_walk03` (← `nick_walk02`) | NickWalkEnv | `Nick_v01/NickWalk.onnx` |
+| `StandardWalk02.yaml` | Standard | `standard_walk02` (← `standard_walk01`) | StandardWalkEnv | `Standard_v01/StandardWalk.onnx` |
+| `MattSumo06.yaml` | Matt | — | — | trunk only (weights for `matt_sumo07`) |
+| `StandardSumo02.yaml` | Standard | — | — | trunk only |
+| `KimSumo02.yaml` | Kim | — | — | trunk only |
+| `NickSumo04.yaml` | Nick | — | — | trunk only |
+| `MattWalk01.yaml` | Matt | — | — | trunk only — the **baseline gait** every walk brain descends from |
+| `MattWalk02.yaml` / `KimWalk02.yaml` / `NickWalk02.yaml` / `StandardWalk01.yaml` | — | — | — | trunk only |
+| `MattRecover05.yaml` | Matt | *(not run)* | — | template for `SCN_TRAIN_RECOVER4`, the surviving recover-school scene |
+
+Retired on 2026-07-28 (backed no surviving run or trunk): `KimSumo01`, `KimWalk01`,
+`MattSumo05`, `NickSumo01`, `NickSumo02`, `NickSumo03` (the rejected regression),
+`NickWalk01`, `StandardSumo01`.
 
 Every fighter owns a walk brain, and all of them descend from `matt_walk01` — the
 baseline gait, trained on the shared 1.0 body under behavior name `Matt`.

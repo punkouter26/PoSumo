@@ -73,15 +73,11 @@ namespace PoSumo
         public bool enableLighting = true;
         [Tooltip("Dust and sweat bursts scaled by hit strength.")]
         public bool enableImpactFx = true;
-        [Tooltip("Post-processing that reacts to hits, match point and finishes.")]
-        public bool enablePostFx = true;
         [Tooltip("Backdrop parallax, haze tinting, crowd sway, light shafts.")]
         public bool enableAtmosphere = true;
         [Tooltip("Adaptive layered score.")]
         public bool enableMusic = true;
         [Tooltip("Bruise decals where a fighter is hit, plus the bloody head KO. Presentation only — no referee reads it.")]
         public bool enableBodyDamage = true;
-        [Tooltip("Live momentum graph as the default HUD. Hides the 14-number stat panels behind the STATS chip.")]
-        public bool enableMomentumGraph = true;
     }
 }
