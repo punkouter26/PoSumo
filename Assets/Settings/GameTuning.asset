@@ -17,9 +17,30 @@ MonoBehaviour:
   feetDrop: 0.95
   horizontalMargin: 0.5
   smoothing: 4
+  wideOrtho: 14
+  ringHalfWidth: 5.5
+  enableWalkIn: 1
+  walkInHalfWidth: 8
+  walkInStartGapHalf: 3
+  walkInTouchGap: 0.05
+  walkInTimeout: 12
   pointsToWin: 3
   tournamentPointsToWin: 2
   roundTimeoutSeconds: 30
   betweenRoundsPause: 2.5
   graceSeconds: 0.4
   downGraceSeconds: 0.2
+  knockdownLoses: 0
+  knockoutsToLoseMatch: 3
+  knockoutAnnounceSeconds: 2.2
+  enablePresentation: 1
+  enableAudio: 1
+  enableFaceMood: 1
+  enableVoice: 1
+  enableLighting: 1
+  enableImpactFx: 1
+  enablePostFx: 1
+  enableAtmosphere: 1
+  enableMusic: 1
+  enableBodyDamage: 1
+  enableMomentumGraph: 1

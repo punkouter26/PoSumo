@@ -29,10 +29,12 @@ namespace PoSumo
         public bool enableWalkIn = true;
         [Tooltip("Platform half-width during the ceremonial walk-in. The mat contracts to ringHalfWidth before the bell.")]
         public float walkInHalfWidth = 8f;
-        [Tooltip("Half the gap the fighters start the walk-in from. The difference between this and the stand-off gap is how far each one actually walks.")]
-        public float walkInStartGapHalf = 6f;
-        [Tooltip("Hard cap on the walk-in, in seconds. Must cover the actual walk: (walkInStartGapHalf - neutralGapHalf) metres at the measured ~1.4 m/s, plus margin. Too low and a fighter is parked mid-stride.")]
-        public float walkInTimeout = 5f;
+        [Tooltip("Half the gap the fighters start the walk-in from. They walk all the way to contact now, and the measured closing rate is only ~1 m/s for the PAIR, so this is 3 and not 6: from 6 m apart they meet in about 4 s. At 6 (12 m apart) the approach ran past 9 s and never finished.")]
+        public float walkInStartGapHalf = 3f;
+        [Tooltip("Surface gap in metres between the two fighters' colliders at which they count as having met — 0 is literal contact. This is the moment the walk brains hand off to the fight brains. Measured body-to-body rather than torso-to-torso, because limb pose swings torso-separation-at-contact between about 0.9 m and 1.8 m.")]
+        public float walkInTouchGap = 0.05f;
+        [Tooltip("Hard cap on the walk-in, in seconds. Must cover the full approach: roughly walkInStartGapHalf metres each at the measured ~1.4 m/s, plus margin for a stumble. On timeout the fighters are parked at the stand-off and the round opens with the normal countdown instead.")]
+        public float walkInTimeout = 12f;
 
         [Header("Match")]
         [Tooltip("Round wins needed in a standalone exhibition match.")]

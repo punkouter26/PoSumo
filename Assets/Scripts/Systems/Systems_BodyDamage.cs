@@ -66,6 +66,16 @@ namespace PoSumo
         [Tooltip("Master switch for dismemberment. Turning this off leaves the mannequin colouring intact, which is the safe fallback if detachment ever proves too swingy.")]
         public bool allowDetach = true;
 
+        [Header("Dismemberment bleeding")]
+        [Tooltip("Droplets in the opening spray from EACH end of the break — the stump left on the body and the cut end of the severed limb.")]
+        public int severBurstDroplets = 24;
+        [Tooltip("Seconds each cut end keeps bleeding after the limb comes off. The droplets that land are what dirties the mat and the bodies, so this is how much blood the break contributes over time.")]
+        public float bleedSeconds = 7f;
+        [Tooltip("Seconds between droplet puffs while a cut end bleeds.")]
+        public float bleedInterval = 0.1f;
+        [Tooltip("Droplets per puff while bleeding. Small — the accumulation over bleedSeconds is what reads, not any single puff.")]
+        public int bleedDroplets = 3;
+
         /// Coarse body regions for the HUD mannequin. Six is the useful number on a
         /// portrait phone — the body has 14 parts, but nobody can read 14 swatches.
         public enum Region { Head, Torso, ArmNear, ArmFar, LegNear, LegFar }
@@ -303,6 +313,8 @@ namespace PoSumo
 
         private void Update()
         {
+            TickBleeders();
+
             if (_knockedOut && Time.time >= _koUntil)
             {
                 _knockedOut = false;
@@ -503,13 +515,99 @@ namespace PoSumo
             int rootPart = RootPartOf(region);
             if (rootPart < 0) return;                       // torso and head cannot come off
             int joint = Agent_BipedBody.JointIndexForChild(rootPart);
-            if (joint < 0 || !body.DetachJoint(joint)) return;   // false = already gone
+            if (joint < 0) return;
 
-            // Sell it: the limb tears away in a spray and the HUD mannequin turns
-            // that region to a stump on its next repaint.
-            Systems_DustPuff.BloodSpray(worldPoint, Vector2.up, 18);
-            Dismembered?.Invoke(body, region, worldPoint);
-            Debug.Log($"[DAMAGE] {name} lost {region} at {_regionDamage[(int)region]:F1} damage");
+            // Resolve the break geometry BEFORE detaching: DetachJoint destroys the
+            // HingeJoint2D, and the joint is the only thing that knows where the two
+            // parts were actually joined and which bodies they were. Afterwards
+            // there is nothing left to ask.
+            Rigidbody2D limbPart = null, parentPart = null;
+            Vector3 breakPoint = worldPoint;
+            HingeJoint2D hinge = (body.Joints != null && joint < body.Joints.Length) ? body.Joints[joint] : null;
+            if (hinge != null)
+            {
+                limbPart = hinge.attachedRigidbody;      // the piece that comes away
+                parentPart = hinge.connectedBody;        // the piece it hung from
+                breakPoint = hinge.transform.TransformPoint(hinge.anchor);
+            }
+
+            if (!body.DetachJoint(joint)) return;               // false = already gone
+
+            // Sell it: blood out of BOTH ends of the break, and both ends keep
+            // bleeding for a few seconds as they move. The HUD mannequin turns that
+            // region to a stump on its next repaint.
+            OpenBleed(parentPart, breakPoint);
+            OpenBleed(limbPart, breakPoint);
+            Dismembered?.Invoke(body, region, breakPoint);
+            Debug.Log($"[DAMAGE] {name} lost {region} at {_regionDamage[(int)region]:F1} damage — " +
+                      $"bleeding from stump '{(parentPart == null ? "none" : parentPart.name)}' and " +
+                      $"cut end '{(limbPart == null ? "none" : limbPart.name)}' at {breakPoint}");
+        }
+
+        /// One bleeding cut end. Stored in the PART's local space, not world space,
+        /// so the spray origin rides the stump as the fighter moves and rides the
+        /// severed limb as it tumbles away — a world-space origin would leave both
+        /// jets hanging in the air where the limb used to be.
+        private struct Bleeder
+        {
+            public Rigidbody2D part;
+            public Vector2 localPoint;
+            public Vector2 localDir;
+            public float until;
+            public float nextEmit;
+        }
+
+        private readonly List<Bleeder> _bleeders = new List<Bleeder>();
+
+        /// Opens one end of a break: an immediate spray, then a timed bleed.
+        ///
+        /// Direction is centre-of-mass -> break point, so each end sprays AWAY from
+        /// its own body. Applied to the stump and the severed limb separately, that
+        /// gives the two opposed jets: the body sprays out of its socket, the loose
+        /// limb sprays out of its cut.
+        private void OpenBleed(Rigidbody2D part, Vector3 breakPoint)
+        {
+            if (part == null) return;
+
+            Vector2 outward = (Vector2)breakPoint - part.worldCenterOfMass;
+            if (outward.sqrMagnitude < 1e-6f) outward = Vector2.up;
+            outward.Normalize();
+
+            Systems_DustPuff.BloodSpray(breakPoint, outward, severBurstDroplets);
+
+            _bleeders.Add(new Bleeder
+            {
+                part = part,
+                localPoint = part.transform.InverseTransformPoint(breakPoint),
+                localDir = part.transform.InverseTransformDirection(outward),
+                until = Time.time + bleedSeconds,
+                nextEmit = Time.time + bleedInterval,
+            });
+        }
+
+        /// Drives every open cut end. Droplets that land are stamped permanently by
+        /// Systems_RingBlood — on the mat if they hit the clay, on the struck part
+        /// via SplashAt if they hit a fighter — so the mess accumulates on both.
+        private void TickBleeders()
+        {
+            for (int bleederIndex = _bleeders.Count - 1; bleederIndex >= 0; bleederIndex--)
+            {
+                Bleeder bleeder = _bleeders[bleederIndex];
+                if (bleeder.part == null || Time.time >= bleeder.until)
+                {
+                    _bleeders.RemoveAt(bleederIndex);
+                    continue;
+                }
+                if (Time.time < bleeder.nextEmit) continue;
+
+                bleeder.nextEmit = Time.time + bleedInterval;
+                _bleeders[bleederIndex] = bleeder;
+
+                Transform partTransform = bleeder.part.transform;
+                Systems_DustPuff.BloodSpray(partTransform.TransformPoint(bleeder.localPoint),
+                                            partTransform.TransformDirection(bleeder.localDir),
+                                            bleedDroplets);
+            }
         }
 
         /// Convert a world hit into the space the decal will be parented in.

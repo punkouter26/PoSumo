@@ -77,12 +77,12 @@ namespace PoSumo
         public bool enableWalkIn = true;
         [Tooltip("Platform half-width during the walk-in. The mat contracts back to ringHalfWidth before the fight, so the FIGHTING ring is unchanged and the fight brains never see a size they were not trained on.")]
         public float walkInHalfWidth = 4f;
-        [Tooltip("Half the gap the fighters start from. 3.0 against a 1.2 stand-off = 1.8 m of walking each, about two strides at the measured 1.4 m/s.")]
+        [Tooltip("Half the gap the fighters start from. They walk from here all the way to contact, so this is the full approach distance each fighter covers minus half a body.")]
         public float walkInStartGapHalf = 3f;
-        [Tooltip("Distance from its mark at which a fighter counts as arrived.")]
-        public float walkInArriveTolerance = 0.3f;
-        [Tooltip("Hard cap on the walk-in. Only a backstop: the walk takes ~1.3 s, so this should never be reached unless a fighter stumbles.")]
-        public float walkInTimeout = 2.5f;
+        [Tooltip("Surface gap (m) between the two fighters' colliders at which they count as having touched — 0 is literal contact. Measured body-to-body, NOT torso-to-torso: limb pose moves torso separation at contact between roughly 0.9 m (arms down) and 1.8 m (arms extended), so a torso-distance threshold fires at the wrong moment in one pose or the other.")]
+        public float walkInTouchGap = 0.05f;
+        [Tooltip("Hard cap on the walk-in. Backstop only: covers walkInStartGapHalf metres each at the measured ~1.4 m/s, plus margin for a stumble. On timeout the fighters are parked at the stand-off and the round opens the old way.")]
+        public float walkInTimeout = 12f;
         [Tooltip("Seconds over which the fight brains ramp from openingActionScale back to full power once the round opens. Stops the round starting with an all-out lunge from a dead stop.")]
         public float minSettleSeconds = 1f;
         [Tooltip("Motor authority the fight brains get on the first frame of a round, ramped to 1 over minSettleSeconds. Low = the fighters visibly settle before committing.")]
@@ -113,7 +113,9 @@ namespace PoSumo
         /// countdown from the stand-off. Cleared by ResetMatch so a rematch — and
         /// every fresh bracket match, which loads the scene again — gets its own.
         private bool _walkInPlayed;
-        private bool _parkedA, _parkedB;
+        // Cached for WalkInTouched: GetComponentsInChildren allocates, and the touch
+        // test runs every physics step of the approach.
+        private Collider2D[] _walkInColsA, _walkInColsB;
         private Systems_SumoArena _arena;
         private Systems_CameraFollow _camFollow;
 
@@ -202,6 +204,7 @@ namespace PoSumo
                 enableWalkIn = tuning.enableWalkIn;
                 walkInHalfWidth = tuning.walkInHalfWidth;
                 walkInStartGapHalf = tuning.walkInStartGapHalf;
+                walkInTouchGap = tuning.walkInTouchGap;
                 walkInTimeout = tuning.walkInTimeout;
                 enablePresentation = tuning.enablePresentation;
                 enableAudio = tuning.enableAudio;
@@ -334,7 +337,6 @@ namespace PoSumo
                 _arena.groundWidth = Mathf.Max(_savedGroundWidth, walkInHalfWidth * 2f + 0.8f);
                 _arena.SetPlatformHalfWidth(walkInHalfWidth);
             }
-            _parkedA = _parkedB = false;
             float centre = transform.position.x;
 
             // Order matters. Swap the brain FIRST, then EndEpisode so
@@ -342,8 +344,13 @@ namespace PoSumo
             // the policy that is about to drive, and only then place the body.
             // Handing the walk brain a body still carrying the fight brain's
             // leftover state is what made the fighters collapse on the first stride.
-            wrestlerA.BeginWalkIn(centre - neutralGapHalf);
-            wrestlerB.BeginWalkIn(centre + neutralGapHalf);
+            // Both aim at the CENTRE, not at their own stand-off mark, so they walk
+            // into each other rather than halting a stand-off apart. The walk brain
+            // never stops on its own — with episode control suppressed it strides
+            // straight through its target — so contact, not arrival, is what ends
+            // the approach. See WalkInTouched.
+            wrestlerA.BeginWalkIn(centre);
+            wrestlerB.BeginWalkIn(centre);
             wrestlerA.EndEpisode();
             wrestlerB.EndEpisode();
 
@@ -351,6 +358,10 @@ namespace PoSumo
             PoseForWalkIn(wrestlerB, +walkInStartGapHalf);
             wrestlerA.actionScale = 1f;
             wrestlerB.actionScale = 1f;
+            // Cached after PoseForWalkIn, so the ragdolls are built and their
+            // colliders exist. Allocating here keeps the per-step touch test clean.
+            _walkInColsA = wrestlerA.GetComponentsInChildren<Collider2D>();
+            _walkInColsB = wrestlerB.GetComponentsInChildren<Collider2D>();
             _walkInLeft = walkInTimeout;
         }
 
@@ -374,35 +385,83 @@ namespace PoSumo
             w.actionsEnabled = true;
         }
 
-        /// Parks each fighter the instant IT reaches its own mark, and reports when
-        /// both are parked.
+        /// True once the two fighters' bodies actually meet.
         ///
-        /// The walk brain does not stop: it is trained to reach a target and have
-        /// the episode end there, so with episode control suppressed it strides
-        /// straight past. Waiting for both to be near their marks at the same
-        /// moment therefore never fires — the first arrival has already overshot
-        /// by the time the second gets there.
-        private bool TickWalkInArrivals()
+        /// Measured as the surface gap between A's rightmost collider edge and B's
+        /// leftmost, because torso separation is not a usable proxy: measured on a
+        /// live pair, one fighter's collider span in x runs to ~2.0 m with the limbs
+        /// extended and ~0.5 m with them down, which moves torso-separation-at-contact
+        /// between roughly 1.8 m and 0.9 m. A fixed torso threshold therefore either
+        /// fires while they are still a stride apart or never fires at all — the
+        /// latter is what made the approach run to its timeout every time.
+        ///
+        /// Colliders are cached at BeginWalkInPhase; this runs every physics step of
+        /// the walk-in and must not allocate.
+        private bool WalkInTouched() => WalkInSurfaceGap() <= walkInTouchGap;
+
+        /// Signed gap in metres between A's rightmost collider edge and B's
+        /// leftmost. Negative means they already overlap. PositiveInfinity when the
+        /// colliders could not be resolved at all.
+        private float WalkInSurfaceGap()
         {
-            float centre = transform.position.x;
-            ParkIfArrived(wrestlerA, centre - neutralGapHalf, ref _parkedA);
-            ParkIfArrived(wrestlerB, centre + neutralGapHalf, ref _parkedB);
-            return _parkedA && _parkedB;
+            if (_walkInColsA == null || _walkInColsB == null) return float.PositiveInfinity;
+
+            float aMax = float.NegativeInfinity;
+            for (int colliderIndex = 0; colliderIndex < _walkInColsA.Length; colliderIndex++)
+            {
+                Collider2D c = _walkInColsA[colliderIndex];
+                if (c == null) continue;
+                float x = c.bounds.max.x;
+                if (x > aMax) aMax = x;
+            }
+
+            float bMin = float.PositiveInfinity;
+            for (int colliderIndex = 0; colliderIndex < _walkInColsB.Length; colliderIndex++)
+            {
+                Collider2D c = _walkInColsB[colliderIndex];
+                if (c == null) continue;
+                float x = c.bounds.min.x;
+                if (x < bMin) bMin = x;
+            }
+
+            if (float.IsInfinity(aMax) || float.IsInfinity(bMin)) return float.PositiveInfinity;
+            return bMin - aMax;
         }
 
-        private void ParkIfArrived(Agent_Biped w, float mark, ref bool parked)
+        /// Hands both bodies to the fight brains at the moment of contact and opens
+        /// the round from exactly where they met.
+        ///
+        /// Deliberately does NOT reposition: HoldUpright would teleport the pair
+        /// back to the stand-off marks, undoing the approach the walk-in just
+        /// played. They are already upright, simulating and balanced, so the fight
+        /// brains inherit a settled body — the same handoff BeginSimulation makes
+        /// at FIGHT!, just triggered by contact instead of a countdown.
+        private void EngageFromWalkIn()
         {
-            if (parked || w == null) return;
-            // Park on arrival OR on overshoot — a fighter that has passed its mark
-            // is only getting further away.
-            float toMark = (mark - w.TorsoX) * (w.TorsoX < mark ? 1f : -1f);
-            bool reached = Mathf.Abs(w.TorsoX - mark) <= walkInArriveTolerance;
-            bool overshot = (w == wrestlerA && w.TorsoX > mark) || (w == wrestlerB && w.TorsoX < mark);
-            if (!reached && !overshot) return;
+            Debug.Log($"WALK-IN RESULT: contact after {(walkInTimeout - _walkInLeft):F2}s — fight brains engaged");
+            EndWalkInPhase();      // both bodies back on their fight brain
+            ContractMat();
+            if (_camFollow != null) _camFollow.ClearShots();
 
-            w.EndWalkIn();                       // hand the body back off the walk brain
-            PoseNeutral(w, mark - transform.position.x);   // snap to the mark, physics off
-            parked = true;
+            _braceStarted = Time.time;
+            _phase = Phase.Fighting;
+            _elapsed = 0f;
+            _downA = _downB = 0f;
+            _countdownLeft = 0f;   // contact IS the start; no freeze, no reposition
+            BeginSimulation();
+            FlashFight();
+            RoundStarted?.Invoke();
+        }
+
+        /// "FIGHT!" without the preceding count — the fighters have already engaged,
+        /// so the banner marks the handoff rather than counting down to it.
+        private void FlashFight()
+        {
+            if (_hud == null || _countdown == null) return;
+            _countdown.style.fontSize = Systems_UiKit.FONT_HERO;
+            _countdown.text = "FIGHT!";
+            _hud.ShowCentre(_countdown);
+            _countdown.schedule.Execute(HideCountdown).StartingIn(600);
         }
 
         /// Hands both fighters back to their fight brains and shrinks the mat to
@@ -961,21 +1020,34 @@ namespace PoSumo
                     return;
 
                 case Phase.WalkIn:
-                    // Locomotion brains drive both fighters to their marks. No
+                    // Locomotion brains walk both fighters in towards each other. No
                     // scoring, no clock — Agent_Biped.suppressEpisodeControl keeps
                     // the walk policy from ending episodes while it owns the body.
                     _walkInLeft -= Time.fixedDeltaTime;
-                    if (TickWalkInArrivals() || _walkInLeft <= 0f)
+
+                    // Normal path: they meet in the middle and the fight brains take
+                    // over on the spot.
+                    if (WalkInTouched())
                     {
-                        // Contract the mat, but leave the LOCOMOTION brain driving
-                        // through the countdown. It actively balances, so the
-                        // fighters stand on their marks under their own control
-                        // instead of being frozen — and the fight brain then
-                        // inherits a settled, upright, already-simulating body
-                        // rather than one that snaps from kinematic to dynamic and
-                        // flops. BeginSimulation performs the handoff at FIGHT!.
-                        // Anyone still walking when the timeout hit gets parked too,
-                        // so the countdown always starts from both marks.
+                        EngageFromWalkIn();
+                        return;
+                    }
+
+                    // Backstop only — a fighter stumbled or never got walking. Fall
+                    // back to the old opening so a bad walk-in cannot hang the match.
+                    if (_walkInLeft <= 0f)
+                    {
+                        Debug.LogWarning($"WALK-IN RESULT: timed out after {walkInTimeout:F1}s with no contact — " +
+                                         $"surfaceGap={WalkInSurfaceGap():F2} (need <= {walkInTouchGap:F2}), " +
+                                         $"cols A={(_walkInColsA == null ? -1 : _walkInColsA.Length)} " +
+                                         $"B={(_walkInColsB == null ? -1 : _walkInColsB.Length)}, " +
+                                         $"Ax={wrestlerA.TorsoX:F2} Bx={wrestlerB.TorsoX:F2} " +
+                                         $"startGapHalf={walkInStartGapHalf:F1} — " +
+                                         "parking at the stand-off and opening with the countdown instead");
+                        // They never made contact. Put them on the stand-off marks
+                        // and open the round the pre-walk-in way, countdown and all,
+                        // so a failed approach degrades to a normal round start
+                        // instead of stranding the match in this phase.
                         HoldUpright();
                         EndWalkInPhase();
                         ContractMat();
