@@ -78,6 +78,16 @@ namespace PoSumo
         [Tooltip("Droplets per puff while bleeding. Small — the accumulation over bleedSeconds is what reads, not any single puff.")]
         public int bleedDroplets = 3;
 
+        [Header("Decapitation bleeding")]
+        [Tooltip("Opening burst from EACH wound the instant the head comes off — the neck stump and the cut face of the head.")]
+        public int decapBurstDroplets = 40;
+        [Tooltip("Seconds the two wounds pour for. Flow decays as (1-t)^2, so it is a hard pour at the start and a trickle by the end.")]
+        public float decapBleedSeconds = 5f;
+        [Tooltip("Droplets per puff at full flow. Decays to 1 by decapBleedSeconds.")]
+        public int decapPeakDroplets = 12;
+        [Tooltip("Seconds between puffs at full flow. Stretches to 4x this as the flow dies.")]
+        public float decapPeakInterval = 0.045f;
+
         /// Coarse body regions for the HUD mannequin. Six is the useful number on a
         /// portrait phone — the body has 14 parts, but nobody can read 14 swatches.
         public enum Region { Head, Torso, ArmNear, ArmFar, LegNear, LegFar }
@@ -575,8 +585,23 @@ namespace PoSumo
                 ? body.Chest.transform.TransformPoint(new Vector3(0f, 0.25f, 0f))
                 : worldPoint;
 
-            OpenBleed(body.Chest, neck);                    // stump on the torso
-            OpenBleed(head, head.worldCenterOfMass);        // the head itself
+            // Both wounds pour: the neck stump on the body, and the CUT FACE of the
+            // head — the bottom of the sphere, not its centre. Stored in each part's
+            // local space, so the head's jet stays pointed out of its own neck-hole
+            // however it tumbles.
+            // Built in WORLD units on purpose. DetachHead gives the freed head the
+            // art transform's lossyScale, so TransformPoint(0, -r, 0) would scale
+            // the offset and put the jet somewhere inside the skull instead of on
+            // its bottom edge. Stepping down the head's own up-axis by the real
+            // radius is scale-independent; OpenBleed converts to local space itself.
+            float headRadius = 0.5f * body.headDiameter;
+            Vector3 headCut = head.transform.position - head.transform.up * headRadius;
+            Vector2 headCutDir = -head.transform.up;
+
+            OpenBleed(body.Chest, neck, Vector2.up,
+                      decapBurstDroplets, decapBleedSeconds, decapPeakDroplets, decapPeakInterval);
+            OpenBleed(head, headCut, headCutDir,
+                      decapBurstDroplets, decapBleedSeconds, decapPeakDroplets, decapPeakInterval);
 
             Dismembered?.Invoke(body, Region.Head, neck);
             Debug.Log($"[DAMAGE] {name} DECAPITATED at {_regionDamage[(int)Region.Head]:F1} damage — neck at {neck}");
@@ -591,8 +616,11 @@ namespace PoSumo
             public Rigidbody2D part;
             public Vector2 localPoint;
             public Vector2 localDir;
-            public float until;
+            public float startTime;
+            public float duration;
             public float nextEmit;
+            public int peakDroplets;    // per puff at t=0
+            public float peakInterval;  // seconds between puffs at t=0
         }
 
         private readonly List<Bleeder> _bleeders = new List<Bleeder>();
@@ -605,21 +633,41 @@ namespace PoSumo
         /// limb sprays out of its cut.
         private void OpenBleed(Rigidbody2D part, Vector3 breakPoint)
         {
+            OpenBleed(part, breakPoint, Vector2.zero, severBurstDroplets, bleedSeconds,
+                      bleedDroplets, bleedInterval);
+        }
+
+        /// Opens one cut end: an immediate burst, then a bleed that DECAYS from a
+        /// hard pour to a trickle over `duration`.
+        ///
+        /// `dirOverride` is for cuts whose outward direction is not simply
+        /// centre-of-mass -> break point — a severed head's wound faces its own
+        /// local down, wherever the head has tumbled to.
+        private void OpenBleed(Rigidbody2D part, Vector3 breakPoint, Vector2 dirOverride,
+                               int burst, float duration, int peakDroplets, float peakInterval)
+        {
             if (part == null) return;
 
-            Vector2 outward = (Vector2)breakPoint - part.worldCenterOfMass;
-            if (outward.sqrMagnitude < 1e-6f) outward = Vector2.up;
+            Vector2 outward = dirOverride;
+            if (outward.sqrMagnitude < 1e-6f)
+            {
+                outward = (Vector2)breakPoint - part.worldCenterOfMass;
+                if (outward.sqrMagnitude < 1e-6f) outward = Vector2.up;
+            }
             outward.Normalize();
 
-            Systems_DustPuff.BloodSpray(breakPoint, outward, severBurstDroplets);
+            Systems_DustPuff.BloodSpray(breakPoint, outward, burst);
 
             _bleeders.Add(new Bleeder
             {
                 part = part,
                 localPoint = part.transform.InverseTransformPoint(breakPoint),
                 localDir = part.transform.InverseTransformDirection(outward),
-                until = Time.time + bleedSeconds,
-                nextEmit = Time.time + bleedInterval,
+                startTime = Time.time,
+                duration = duration,
+                nextEmit = Time.time + peakInterval,
+                peakDroplets = peakDroplets,
+                peakInterval = peakInterval,
             });
         }
 
@@ -631,20 +679,32 @@ namespace PoSumo
             for (int bleederIndex = _bleeders.Count - 1; bleederIndex >= 0; bleederIndex--)
             {
                 Bleeder bleeder = _bleeders[bleederIndex];
-                if (bleeder.part == null || Time.time >= bleeder.until)
+                float age = Time.time - bleeder.startTime;
+                if (bleeder.part == null || age >= bleeder.duration)
                 {
                     _bleeders.RemoveAt(bleederIndex);
                     continue;
                 }
                 if (Time.time < bleeder.nextEmit) continue;
 
-                bleeder.nextEmit = Time.time + bleedInterval;
+                // Squared falloff: it pours hard, drops off fast, then tails to a
+                // trickle rather than stopping dead. Linear decay still read as a
+                // steady leak for most of its life.
+                float t = Mathf.Clamp01(age / Mathf.Max(0.01f, bleeder.duration));
+                float flow = (1f - t) * (1f - t);
+
+                int droplets = Mathf.Max(1, Mathf.RoundToInt(Mathf.Lerp(1f, bleeder.peakDroplets, flow)));
+                // Puffs also thin out, so the very end is the odd drop, not a
+                // metronome of one-droplet bursts.
+                float interval = Mathf.Lerp(bleeder.peakInterval * 4f, bleeder.peakInterval, flow);
+
+                bleeder.nextEmit = Time.time + interval;
                 _bleeders[bleederIndex] = bleeder;
 
                 Transform partTransform = bleeder.part.transform;
                 Systems_DustPuff.BloodSpray(partTransform.TransformPoint(bleeder.localPoint),
                                             partTransform.TransformDirection(bleeder.localDir),
-                                            bleedDroplets);
+                                            droplets);
             }
         }
 

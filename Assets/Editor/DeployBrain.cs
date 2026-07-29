@@ -15,28 +15,38 @@ namespace PoSumo.EditorTools
     {
         // Run ids below are the runs that currently back each deployed brain —
         // re-deploying from them reproduces exactly what ships in Assets/Agents.
+        //
+        // These are the UNIFIED runs: since the walk and fight brains were merged
+        // there is one run and one ONNX per fighter, not two. The pre-merge
+        // *_sumo0N and *_walk0N runs are retired and their checkpoints no longer
+        // fit the 45-slot observation vector.
+        //
+        // Matt is on 02: matt_unified01's walk lane was broken (every walker faced
+        // away from its target and banked the +3 graduation on its first decision),
+        // and because walk and fight share one network that free reward
+        // contaminated the whole policy, so it was restarted rather than resumed.
         [MenuItem("PoSumo/Deploy Matt Brain")]
         public static void DeployMatt()
         {
-            Deploy("matt_sumo05", "Matt", "Assets/Agents/Matt_v01");
+            Deploy("matt_unified02", "Matt", "Assets/Agents/Matt_v01");
         }
 
         [MenuItem("PoSumo/Deploy Standard Brain")]
         public static void DeployStandard()
         {
-            Deploy("standard_sumo01", "Standard", "Assets/Agents/Standard_v01");
+            Deploy("standard_unified01", "Standard", "Assets/Agents/Standard_v01");
         }
 
         [MenuItem("PoSumo/Deploy Nick Brain")]
         public static void DeployNick()
         {
-            Deploy("nick_sumo02", "Nick", "Assets/Agents/Nick_v01");
+            Deploy("nick_unified01", "Nick", "Assets/Agents/Nick_v01");
         }
 
         [MenuItem("PoSumo/Deploy Kim Brain")]
         public static void DeployKim()
         {
-            Deploy("kim_sumo01", "Kim", "Assets/Agents/Kim_v01");
+            Deploy("kim_unified01", "Kim", "Assets/Agents/Kim_v01");
         }
 
         /// Deploy the newest numbered checkpoint of a RUNNING training run, so a
@@ -122,59 +132,15 @@ namespace PoSumo.EditorTools
             CopyInto(source, behaviorName, agentFolder, "final export");
         }
 
-        // Every fighter now owns a walk brain trained on the corrected skeleton
-        // (2026-07-28 joint-direction fix). Standard used to borrow matt_walk01's
-        // export; standard_walk02 replaces that, so all four are first-class runs
-        // and each entry below is pinned to the run backing its shipped brain.
-        [MenuItem("PoSumo/Deploy Matt Walk Brain")]
-        public static void DeployMattWalk()
-        {
-            DeployWalk("matt_walk03", "Matt", "Assets/Agents/Matt_v01");
-        }
+        // The separate "Deploy <X> Walk Brain" entries are gone. Walk and fight
+        // are one policy per fighter now, told apart by the task flag in the
+        // observation vector, so there is a single brain to deploy per fighter and
+        // a single slot on the character sheet to point at it.
 
-        [MenuItem("PoSumo/Deploy Standard Walk Brain")]
-        public static void DeployStandardWalk()
-        {
-            DeployWalk("standard_walk02", "Standard", "Assets/Agents/Standard_v01");
-        }
-
-        [MenuItem("PoSumo/Deploy Kim Walk Brain")]
-        public static void DeployKimWalk()
-        {
-            DeployWalk("kim_walk03", "Kim", "Assets/Agents/Kim_v01");
-        }
-
-        [MenuItem("PoSumo/Deploy Nick Walk Brain")]
-        public static void DeployNickWalk()
-        {
-            DeployWalk("nick_walk03", "Nick", "Assets/Agents/Nick_v01");
-        }
-
-        /// Deploy a locomotion brain: the trainer exports it as `<Behavior>.onnx`
-        /// like any other run, but it lands as `<Name>Walk.onnx` and wires to the
-        /// character's `walkModel` — the brain Agent_Biped.BeginWalkIn borrows for
-        /// the round-opening walk-in. Deploying it over `inferenceModel` would
-        /// replace the fighter's fight brain with a walker.
-        public static void DeployWalk(string runId, string behaviorName, string agentFolder)
-        {
-            string source = $"Training/results/{runId}/{behaviorName}.onnx";
-            if (!File.Exists(source))
-            {
-                Debug.LogError($"DEPLOY RESULT: Failed — no ONNX at {source}. " +
-                               "The run must have finished (or been stopped) so the trainer exported it.");
-                return;
-            }
-
-            CopyInto(source, behaviorName, agentFolder, "walk brain", walkSlot: true);
-        }
-
-        private static void CopyInto(string source, string behaviorName, string agentFolder, string note,
-                             bool walkSlot = false)
+        private static void CopyInto(string source, string behaviorName, string agentFolder, string note)
         {
             Directory.CreateDirectory(agentFolder);
-            string destination = walkSlot
-                ? $"{agentFolder}/{behaviorName}Walk.onnx"
-                : $"{agentFolder}/{behaviorName}.onnx";
+            string destination = $"{agentFolder}/{behaviorName}.onnx";
             File.Copy(source, destination, overwrite: true);
             // ForceSynchronousImport, not just ForceUpdate. The load below runs on
             // the very next line, and a plain ForceUpdate import can still be
@@ -200,11 +166,6 @@ namespace PoSumo.EditorTools
                 return;
             }
 
-            if (walkSlot)
-            {
-                character.walkModel = model;
-            }
-            else
             {
                 character.inferenceModel = model;
             }
@@ -214,7 +175,7 @@ namespace PoSumo.EditorTools
             var info = new FileInfo(destination);
             Debug.Log($"DEPLOY RESULT: Succeeded | {behaviorName} | {note} | {info.Length / 1024}KB | " +
                       $"{source} -> {destination} | " +
-                      $"character.{(walkSlot ? "walkModel" : "inferenceModel")} set");
+                      "character.inferenceModel set");
         }
     }
 }

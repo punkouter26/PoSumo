@@ -221,22 +221,52 @@ a scene that produced a shipped brain is the only way to reproduce it.
 
 | Scene | Purpose |
 |---|---|
-| `SCN_TRAIN_MATT_AGGR` / `SCN_TRAIN_STANDARD` / `SCN_TRAIN_NICK` / `SCN_TRAIN_KIM` | self-play sumo, one per fighter |
-| `SCN_TRAIN_WALK_MATT` / `_STANDARD` / `_KIM` / `_NICK` | walk school, **one per fighter** — each assigns that fighter's character asset |
-| `SCN_TRAIN_RECOVER4` | recover school |
+| `SCN_TRAIN_MATT_AGGR` / `SCN_TRAIN_STANDARD` / `SCN_TRAIN_NICK` / `SCN_TRAIN_KIM` | **unified** self-play sumo + walk, one per fighter |
 
-**A walk brain is per-fighter**, for two independent reasons: a gait learned at mass 1.0
-does not transfer to Kim's 1.45, *and* walk reward shaping is read from the character sheet,
-so two fighters on the same body still walk differently. Each therefore gets its own scene,
-config and run, warm-started from the baseline `matt_walk01`.
-`Agent_Biped.BeginWalkIn` borrows the character's `walkModel` for the round-opening walk-in;
-a character with no `walkModel` silently skips the walk-in rather than erroring, which is
-exactly how Kim and Nick went unnoticed without one.
+**One brain per fighter, trained on both tasks at once (2026-07-28).** Walk and fight used
+to be separate policies with separate scenes, and `BeginWalkIn` hot-swapped the model
+mid-match. They are now a single policy told apart by a task flag in the observation
+vector — `1` in a real bout, `0` when the four "opponent" slots carry a virtual walk
+target instead. That flag took the vector from 44 to 45 slots and invalidated every brain
+trained before it.
+
+Each unified scene therefore holds two populations under ONE behavior name:
+- 4 sumo agents on two self-play arenas;
+- 6 walk agents on a lane 60 m below, `mode = Walk`, no opponent.
+
+Walk agents are over-provisioned 6-vs-4 on purpose: self-play periodically freezes one
+team as the ghost and DISCARDS its experience, and walk agents sit on a team like anyone
+else, so an even split would quietly halve the walk sample rate.
+
+The retired `SCN_TRAIN_WALK_*` and `SCN_TRAIN_RECOVER4` scenes, their env build entries and
+their configs are gone. `Mode.Recover` still exists in `Agent_Biped` but nothing references
+it — the walk-in used to set it and now sets `Mode.Walk`. It is kept only because folding
+get-up training back in as a third lane is the obvious next use for it.
+
+A gait still has to be learned on the physique it runs on — Kim's 1.45 mass does not accept
+a gait learned at 1.0 — which is why the walk lane lives in each fighter's own scene rather
+than in one shared walk scene.
 
 **Verify a scene's character assignment by reading the saved `.unity` file, not the script
 log.** A wiring pass once reported "4 walkers -> Matt" while the scene on disk still held
 `character: {fileID: 0}`, and the resulting env trained the wrong policy for 1.5M steps
 before the mismatch was spotted. Grep for `character: {fileID: 11400000` and check the guid.
+
+**A walk agent's `facingSign` must point AT its target, and the only safe test is the sign
+of `xLocal` at spawn.** Walk progress and graduation are both measured in the facing-local
+frame — `xLocal = (Torso.x - arenaCenterX) * facingSign`, graduating at `xLocal > -0.3` —
+so a walker whose target is 5 m to the right but whose `facingSign` is `-1` reads its start
+line as *5 m past the finish*. It banks the hardcoded +3, ends the episode on its first
+decision, respawns, and repeats forever: never a step of travel, never a step of learning,
+and a torrent of free reward. It is invisible from the outside — the ragdoll stands there
+looking merely untrained, and the console is silent.
+
+It cost 2.6M steps of `matt_unified01` before it was caught (2026-07-28); Matt, Kim and Nick
+were all built with the wrong sign and only Standard was correct. **On TensorBoard the tell
+is a mean reward pinned just under the graduation bonus with near-zero variance** — Matt sat
+at `2.999 ± 0.015`, which is not a policy converging but one terminal firing every episode.
+After any change to the walk lane, assert every walker spawns at `xLocal < -0.3`; if
+`StepCount` stays 0 while `CompletedEpisodes` climbs by one per decision period, this is why.
 
 ### Conventions
 - Scene hierarchy rule: every environment root has exactly 7 groups

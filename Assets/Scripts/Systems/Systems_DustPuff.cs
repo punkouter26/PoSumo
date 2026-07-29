@@ -322,7 +322,11 @@ namespace PoSumo
 
         private ParticleSystem BuildBlood()
         {
-            ParticleSystem system = CreateSystem("Blood", 200, 7);
+            // 200 was sized for impact spatter. A decapitation pours from two wounds
+            // at once — ~12 droplets per puff every 45 ms each, which is ~530/s at
+            // full flow, and at a 0.5-1.3 s lifetime that is ~480 alive at the peak.
+            // At 200 the pour would silently starve and read as a dribble.
+            ParticleSystem system = CreateSystem("Blood", 800, 7);
             ParticleSystem.MainModule main = system.main;
             main.startLifetime = new ParticleSystem.MinMaxCurve(0.5f, 1.3f);
             main.startSize = new ParticleSystem.MinMaxCurve(0.02f, 0.055f);

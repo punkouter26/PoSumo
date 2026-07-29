@@ -154,19 +154,18 @@ MonoBehaviour:
     maxStep: 0
   hasUpgradedFromAgentParameters: 1
   MaxStep: 0
-  character: {fileID: 0}
+  character: {fileID: 11400000, guid: 385d01880fa1e394d9a85ae625be52ac, type: 2}
   mode: 1
   teamId: 1
   opponent: {fileID: 0}
   ringHalfWidth: 4
   arenaCenterX: 0
   arenaGroundY: 0
-  extendedObservations: 0
-  decisionPeriod: 5
-  inferenceOnly: 1
+  extendedObservations: 1
+  decisionPeriod: 3
+  inferenceOnly: 0
   recoverShoveChance: 0.7
-  inferenceModel: {fileID: 5022602860645237092, guid: 8f76568562941a345ae69c088f1518bf, type: 3}
-  walkModel: {fileID: 0}
+  inferenceModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
   behaviorName: Standard
@@ -244,6 +243,130 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1146319501}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &119336993
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 119336994}
+  - component: {fileID: 119336997}
+  - component: {fileID: 119336996}
+  - component: {fileID: 119336995}
+  m_Layer: 0
+  m_Name: Walker_4
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &119336994
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 119336993}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 16.5, y: -60, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1146319501}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &119336995
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 119336993}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 04ad55409f9c0c54c9c50ae798a52a4f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Agent_Biped
+  agentParameters:
+    maxStep: 0
+  hasUpgradedFromAgentParameters: 1
+  MaxStep: 0
+  character: {fileID: 11400000, guid: 385d01880fa1e394d9a85ae625be52ac, type: 2}
+  mode: 0
+  teamId: 0
+  opponent: {fileID: 0}
+  ringHalfWidth: 10
+  arenaCenterX: 21.5
+  arenaGroundY: -60
+  extendedObservations: 1
+  decisionPeriod: 3
+  inferenceOnly: 0
+  recoverShoveChance: 0.7
+  inferenceModel: {fileID: 0}
+  NonFootGroundContacts: 0
+  actionsEnabled: 1
+  behaviorName: Standard
+--- !u!114 &119336996
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 119336993}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5d1c4e0b1822b495aa52bc52839ecb30, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.ML-Agents::Unity.MLAgents.Policies.BehaviorParameters
+  m_BrainParameters:
+    VectorObservationSize: 1
+    NumStackedVectorObservations: 1
+    m_ActionSpec:
+      m_NumContinuousActions: 0
+      BranchSizes: 01000000
+    VectorActionSize: 01000000
+    VectorActionDescriptions: []
+    VectorActionSpaceType: 0
+    hasUpgradedBrainParametersWithActionSpec: 1
+  m_Model: {fileID: 0}
+  m_InferenceDevice: 0
+  m_BehaviorType: 0
+  m_BehaviorName: My Behavior
+  TeamId: 0
+  m_UseChildSensors: 1
+  m_UseChildActuators: 1
+  m_DeterministicInference: 0
+  m_ObservableAttributeHandling: 0
+--- !u!114 &119336997
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 119336993}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b24980fb881ebcf418846e3d7a13dde8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Agent_BipedBody
+  character: {fileID: 11400000, guid: 385d01880fa1e394d9a85ae625be52ac, type: 2}
+  facingSign: 1
+  teamColor: {r: 0.2, g: 0.5, b: 0.3, a: 1}
+  massScale: 1
+  widthScale: 1
+  torqueScale: 1
+  headSprite: {fileID: 0}
+  headDiameter: 0.5
+  enableJiggle: 1
+  Torso: {fileID: 0}
+  Chest: {fileID: 0}
+  HeadRenderer: {fileID: 0}
+  HeadMask: {fileID: 0}
+  Joints: []
+  Parts: []
+  AllColliders: []
 --- !u!1 &186417204
 GameObject:
   m_ObjectHideFlags: 0
@@ -297,6 +420,130 @@ Transform:
   m_Children: []
   m_Father: {fileID: 356447884}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &213285506
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 213285507}
+  - component: {fileID: 213285510}
+  - component: {fileID: 213285509}
+  - component: {fileID: 213285508}
+  m_Layer: 0
+  m_Name: Walker_3
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &213285507
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 213285506}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 5.5, y: -60, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1146319501}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &213285508
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 213285506}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 04ad55409f9c0c54c9c50ae798a52a4f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Agent_Biped
+  agentParameters:
+    maxStep: 0
+  hasUpgradedFromAgentParameters: 1
+  MaxStep: 0
+  character: {fileID: 11400000, guid: 385d01880fa1e394d9a85ae625be52ac, type: 2}
+  mode: 0
+  teamId: 0
+  opponent: {fileID: 0}
+  ringHalfWidth: 10
+  arenaCenterX: 10.5
+  arenaGroundY: -60
+  extendedObservations: 1
+  decisionPeriod: 3
+  inferenceOnly: 0
+  recoverShoveChance: 0.7
+  inferenceModel: {fileID: 0}
+  NonFootGroundContacts: 0
+  actionsEnabled: 1
+  behaviorName: Standard
+--- !u!114 &213285509
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 213285506}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5d1c4e0b1822b495aa52bc52839ecb30, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.ML-Agents::Unity.MLAgents.Policies.BehaviorParameters
+  m_BrainParameters:
+    VectorObservationSize: 1
+    NumStackedVectorObservations: 1
+    m_ActionSpec:
+      m_NumContinuousActions: 0
+      BranchSizes: 01000000
+    VectorActionSize: 01000000
+    VectorActionDescriptions: []
+    VectorActionSpaceType: 0
+    hasUpgradedBrainParametersWithActionSpec: 1
+  m_Model: {fileID: 0}
+  m_InferenceDevice: 0
+  m_BehaviorType: 0
+  m_BehaviorName: My Behavior
+  TeamId: 0
+  m_UseChildSensors: 1
+  m_UseChildActuators: 1
+  m_DeterministicInference: 0
+  m_ObservableAttributeHandling: 0
+--- !u!114 &213285510
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 213285506}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b24980fb881ebcf418846e3d7a13dde8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Agent_BipedBody
+  character: {fileID: 11400000, guid: 385d01880fa1e394d9a85ae625be52ac, type: 2}
+  facingSign: 1
+  teamColor: {r: 0.2, g: 0.5, b: 0.3, a: 1}
+  massScale: 1
+  widthScale: 1
+  torqueScale: 1
+  headSprite: {fileID: 0}
+  headDiameter: 0.5
+  enableJiggle: 1
+  Torso: {fileID: 0}
+  Chest: {fileID: 0}
+  HeadRenderer: {fileID: 0}
+  HeadMask: {fileID: 0}
+  Joints: []
+  Parts: []
+  AllColliders: []
 --- !u!1 &226316957
 GameObject:
   m_ObjectHideFlags: 0
@@ -394,6 +641,378 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &482970061
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 482970062}
+  - component: {fileID: 482970065}
+  - component: {fileID: 482970064}
+  - component: {fileID: 482970063}
+  m_Layer: 0
+  m_Name: Walker_1
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &482970062
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 482970061}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -16.5, y: -60, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1146319501}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &482970063
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 482970061}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 04ad55409f9c0c54c9c50ae798a52a4f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Agent_Biped
+  agentParameters:
+    maxStep: 0
+  hasUpgradedFromAgentParameters: 1
+  MaxStep: 0
+  character: {fileID: 11400000, guid: 385d01880fa1e394d9a85ae625be52ac, type: 2}
+  mode: 0
+  teamId: 0
+  opponent: {fileID: 0}
+  ringHalfWidth: 10
+  arenaCenterX: -11.5
+  arenaGroundY: -60
+  extendedObservations: 1
+  decisionPeriod: 3
+  inferenceOnly: 0
+  recoverShoveChance: 0.7
+  inferenceModel: {fileID: 0}
+  NonFootGroundContacts: 0
+  actionsEnabled: 1
+  behaviorName: Standard
+--- !u!114 &482970064
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 482970061}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5d1c4e0b1822b495aa52bc52839ecb30, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.ML-Agents::Unity.MLAgents.Policies.BehaviorParameters
+  m_BrainParameters:
+    VectorObservationSize: 1
+    NumStackedVectorObservations: 1
+    m_ActionSpec:
+      m_NumContinuousActions: 0
+      BranchSizes: 01000000
+    VectorActionSize: 01000000
+    VectorActionDescriptions: []
+    VectorActionSpaceType: 0
+    hasUpgradedBrainParametersWithActionSpec: 1
+  m_Model: {fileID: 0}
+  m_InferenceDevice: 0
+  m_BehaviorType: 0
+  m_BehaviorName: My Behavior
+  TeamId: 0
+  m_UseChildSensors: 1
+  m_UseChildActuators: 1
+  m_DeterministicInference: 0
+  m_ObservableAttributeHandling: 0
+--- !u!114 &482970065
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 482970061}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b24980fb881ebcf418846e3d7a13dde8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Agent_BipedBody
+  character: {fileID: 11400000, guid: 385d01880fa1e394d9a85ae625be52ac, type: 2}
+  facingSign: 1
+  teamColor: {r: 0.2, g: 0.5, b: 0.3, a: 1}
+  massScale: 1
+  widthScale: 1
+  torqueScale: 1
+  headSprite: {fileID: 0}
+  headDiameter: 0.5
+  enableJiggle: 1
+  Torso: {fileID: 0}
+  Chest: {fileID: 0}
+  HeadRenderer: {fileID: 0}
+  HeadMask: {fileID: 0}
+  Joints: []
+  Parts: []
+  AllColliders: []
+--- !u!1 &521943653
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 521943654}
+  - component: {fileID: 521943657}
+  - component: {fileID: 521943656}
+  - component: {fileID: 521943655}
+  m_Layer: 0
+  m_Name: Walker_2
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &521943654
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 521943653}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -5.5, y: -60, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1146319501}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &521943655
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 521943653}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 04ad55409f9c0c54c9c50ae798a52a4f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Agent_Biped
+  agentParameters:
+    maxStep: 0
+  hasUpgradedFromAgentParameters: 1
+  MaxStep: 0
+  character: {fileID: 11400000, guid: 385d01880fa1e394d9a85ae625be52ac, type: 2}
+  mode: 0
+  teamId: 0
+  opponent: {fileID: 0}
+  ringHalfWidth: 10
+  arenaCenterX: -0.5
+  arenaGroundY: -60
+  extendedObservations: 1
+  decisionPeriod: 3
+  inferenceOnly: 0
+  recoverShoveChance: 0.7
+  inferenceModel: {fileID: 0}
+  NonFootGroundContacts: 0
+  actionsEnabled: 1
+  behaviorName: Standard
+--- !u!114 &521943656
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 521943653}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5d1c4e0b1822b495aa52bc52839ecb30, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.ML-Agents::Unity.MLAgents.Policies.BehaviorParameters
+  m_BrainParameters:
+    VectorObservationSize: 1
+    NumStackedVectorObservations: 1
+    m_ActionSpec:
+      m_NumContinuousActions: 0
+      BranchSizes: 01000000
+    VectorActionSize: 01000000
+    VectorActionDescriptions: []
+    VectorActionSpaceType: 0
+    hasUpgradedBrainParametersWithActionSpec: 1
+  m_Model: {fileID: 0}
+  m_InferenceDevice: 0
+  m_BehaviorType: 0
+  m_BehaviorName: My Behavior
+  TeamId: 0
+  m_UseChildSensors: 1
+  m_UseChildActuators: 1
+  m_DeterministicInference: 0
+  m_ObservableAttributeHandling: 0
+--- !u!114 &521943657
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 521943653}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b24980fb881ebcf418846e3d7a13dde8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Agent_BipedBody
+  character: {fileID: 11400000, guid: 385d01880fa1e394d9a85ae625be52ac, type: 2}
+  facingSign: 1
+  teamColor: {r: 0.2, g: 0.5, b: 0.3, a: 1}
+  massScale: 1
+  widthScale: 1
+  torqueScale: 1
+  headSprite: {fileID: 0}
+  headDiameter: 0.5
+  enableJiggle: 1
+  Torso: {fileID: 0}
+  Chest: {fileID: 0}
+  HeadRenderer: {fileID: 0}
+  HeadMask: {fileID: 0}
+  Joints: []
+  Parts: []
+  AllColliders: []
+--- !u!1 &522423981
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 522423982}
+  - component: {fileID: 522423985}
+  - component: {fileID: 522423984}
+  - component: {fileID: 522423983}
+  m_Layer: 0
+  m_Name: Walker_5
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &522423982
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 522423981}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 27.5, y: -60, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1146319501}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &522423983
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 522423981}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 04ad55409f9c0c54c9c50ae798a52a4f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Agent_Biped
+  agentParameters:
+    maxStep: 0
+  hasUpgradedFromAgentParameters: 1
+  MaxStep: 0
+  character: {fileID: 11400000, guid: 385d01880fa1e394d9a85ae625be52ac, type: 2}
+  mode: 0
+  teamId: 0
+  opponent: {fileID: 0}
+  ringHalfWidth: 10
+  arenaCenterX: 32.5
+  arenaGroundY: -60
+  extendedObservations: 1
+  decisionPeriod: 3
+  inferenceOnly: 0
+  recoverShoveChance: 0.7
+  inferenceModel: {fileID: 0}
+  NonFootGroundContacts: 0
+  actionsEnabled: 1
+  behaviorName: Standard
+--- !u!114 &522423984
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 522423981}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5d1c4e0b1822b495aa52bc52839ecb30, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.ML-Agents::Unity.MLAgents.Policies.BehaviorParameters
+  m_BrainParameters:
+    VectorObservationSize: 1
+    NumStackedVectorObservations: 1
+    m_ActionSpec:
+      m_NumContinuousActions: 0
+      BranchSizes: 01000000
+    VectorActionSize: 01000000
+    VectorActionDescriptions: []
+    VectorActionSpaceType: 0
+    hasUpgradedBrainParametersWithActionSpec: 1
+  m_Model: {fileID: 0}
+  m_InferenceDevice: 0
+  m_BehaviorType: 0
+  m_BehaviorName: My Behavior
+  TeamId: 0
+  m_UseChildSensors: 1
+  m_UseChildActuators: 1
+  m_DeterministicInference: 0
+  m_ObservableAttributeHandling: 0
+--- !u!114 &522423985
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 522423981}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b24980fb881ebcf418846e3d7a13dde8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Agent_BipedBody
+  character: {fileID: 11400000, guid: 385d01880fa1e394d9a85ae625be52ac, type: 2}
+  facingSign: 1
+  teamColor: {r: 0.2, g: 0.5, b: 0.3, a: 1}
+  massScale: 1
+  widthScale: 1
+  torqueScale: 1
+  headSprite: {fileID: 0}
+  headDiameter: 0.5
+  enableJiggle: 1
+  Torso: {fileID: 0}
+  Chest: {fileID: 0}
+  HeadRenderer: {fileID: 0}
+  HeadMask: {fileID: 0}
+  Joints: []
+  Parts: []
+  AllColliders: []
 --- !u!1 &687244889
 GameObject:
   m_ObjectHideFlags: 0
@@ -456,7 +1075,6 @@ MonoBehaviour:
   inferenceOnly: 0
   recoverShoveChance: 0.7
   inferenceModel: {fileID: 0}
-  walkModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
   behaviorName: Kim
@@ -610,6 +1228,12 @@ Transform:
   - {fileID: 1476417985}
   - {fileID: 1646994348}
   - {fileID: 4392842}
+  - {fileID: 2092236686}
+  - {fileID: 482970062}
+  - {fileID: 521943654}
+  - {fileID: 213285507}
+  - {fileID: 119336994}
+  - {fileID: 522423982}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1297123064
@@ -789,7 +1413,6 @@ MonoBehaviour:
   inferenceOnly: 0
   recoverShoveChance: 0.7
   inferenceModel: {fileID: 0}
-  walkModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
   behaviorName: Kim
@@ -852,6 +1475,59 @@ MonoBehaviour:
   Joints: []
   Parts: []
   AllColliders: []
+--- !u!1 &1580834841
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1580834843}
+  - component: {fileID: 1580834842}
+  m_Layer: 0
+  m_Name: WalkLane
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1580834842
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1580834841}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7315fcacf8971c045823adda39f342cd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: PoSumo.Runtime::PoSumo.Systems_SumoArena
+  ringHalfWidth: 10
+  groundWidth: 70
+  platformDrop: 0.6
+  floorWidth: 34
+  showPosts: 0
+  deluxe: 0
+  surfaceFriction: 0.55
+  tawaraBandWidth: 0
+  tawaraFriction: 0.18
+--- !u!4 &1580834843
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1580834841}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: -60, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1646994347
 GameObject:
   m_ObjectHideFlags: 0
@@ -973,7 +1649,6 @@ MonoBehaviour:
   inferenceOnly: 0
   recoverShoveChance: 0.7
   inferenceModel: {fileID: 0}
-  walkModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
   behaviorName: Kim
@@ -1066,6 +1741,130 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &2092236685
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2092236686}
+  - component: {fileID: 2092236689}
+  - component: {fileID: 2092236688}
+  - component: {fileID: 2092236687}
+  m_Layer: 0
+  m_Name: Walker_0
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &2092236686
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2092236685}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -27.5, y: -60, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1146319501}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2092236687
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2092236685}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 04ad55409f9c0c54c9c50ae798a52a4f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Agent_Biped
+  agentParameters:
+    maxStep: 0
+  hasUpgradedFromAgentParameters: 1
+  MaxStep: 0
+  character: {fileID: 11400000, guid: 385d01880fa1e394d9a85ae625be52ac, type: 2}
+  mode: 0
+  teamId: 0
+  opponent: {fileID: 0}
+  ringHalfWidth: 10
+  arenaCenterX: -22.5
+  arenaGroundY: -60
+  extendedObservations: 1
+  decisionPeriod: 3
+  inferenceOnly: 0
+  recoverShoveChance: 0.7
+  inferenceModel: {fileID: 0}
+  NonFootGroundContacts: 0
+  actionsEnabled: 1
+  behaviorName: Standard
+--- !u!114 &2092236688
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2092236685}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5d1c4e0b1822b495aa52bc52839ecb30, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.ML-Agents::Unity.MLAgents.Policies.BehaviorParameters
+  m_BrainParameters:
+    VectorObservationSize: 1
+    NumStackedVectorObservations: 1
+    m_ActionSpec:
+      m_NumContinuousActions: 0
+      BranchSizes: 01000000
+    VectorActionSize: 01000000
+    VectorActionDescriptions: []
+    VectorActionSpaceType: 0
+    hasUpgradedBrainParametersWithActionSpec: 1
+  m_Model: {fileID: 0}
+  m_InferenceDevice: 0
+  m_BehaviorType: 0
+  m_BehaviorName: My Behavior
+  TeamId: 0
+  m_UseChildSensors: 1
+  m_UseChildActuators: 1
+  m_DeterministicInference: 0
+  m_ObservableAttributeHandling: 0
+--- !u!114 &2092236689
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2092236685}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b24980fb881ebcf418846e3d7a13dde8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Agent_BipedBody
+  character: {fileID: 11400000, guid: 385d01880fa1e394d9a85ae625be52ac, type: 2}
+  facingSign: 1
+  teamColor: {r: 0.2, g: 0.5, b: 0.3, a: 1}
+  massScale: 1
+  widthScale: 1
+  torqueScale: 1
+  headSprite: {fileID: 0}
+  headDiameter: 0.5
+  enableJiggle: 1
+  Torso: {fileID: 0}
+  Chest: {fileID: 0}
+  HeadRenderer: {fileID: 0}
+  HeadMask: {fileID: 0}
+  Joints: []
+  Parts: []
+  AllColliders: []
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -1077,3 +1876,4 @@ SceneRoots:
   - {fileID: 1297123065}
   - {fileID: 1359480527}
   - {fileID: 356447884}
+  - {fileID: 1580834843}

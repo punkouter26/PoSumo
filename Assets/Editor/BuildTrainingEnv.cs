@@ -41,40 +41,10 @@ namespace PoSumo.EditorTools
             Build("Assets/Scenes/Training/SCN_TRAIN_STANDARD.unity", "Builds/StandardEnv/StandardEnv.exe");
         }
 
-        // Per-fighter walk schools: the gait has to be learned on the physique it
-        // will run on, so a heavyweight and a lightweight each get their own.
-        // Matt's is the 1.0-baseline body, which Standard shares — both fighters
-        // run the brain this scene produces.
-        [MenuItem("PoSumo/Build Matt Walk Env")]
-        public static void BuildMattWalk()
-        {
-            Build("Assets/Scenes/Training/SCN_TRAIN_WALK_MATT.unity", "Builds/MattWalkEnv/MattWalkEnv.exe");
-        }
-        [MenuItem("PoSumo/Build Kim Walk Env")]
-        public static void BuildKimWalk()
-        {
-            Build("Assets/Scenes/Training/SCN_TRAIN_WALK_KIM.unity", "Builds/KimWalkEnv/KimWalkEnv.exe");
-        }
-
-        [MenuItem("PoSumo/Build Nick Walk Env")]
-        public static void BuildNickWalk()
-        {
-            Build("Assets/Scenes/Training/SCN_TRAIN_WALK_NICK.unity", "Builds/NickWalkEnv/NickWalkEnv.exe");
-        }
-
-        // Standard shares Matt's 1.0 body but not his walk shaping, so it needs its
-        // own scene: re-running Matt's would now train Matt's aggressive gait.
-        [MenuItem("PoSumo/Build Standard Walk Env")]
-        public static void BuildStandardWalk()
-        {
-            Build("Assets/Scenes/Training/SCN_TRAIN_WALK_STANDARD.unity", "Builds/StandardWalkEnv/StandardWalkEnv.exe");
-        }
-
-        [MenuItem("PoSumo/Build Recover School Env")]
-        public static void BuildRecover()
-        {
-            Build("Assets/Scenes/Training/SCN_TRAIN_RECOVER4.unity", "Builds/RecoverEnv/RecoverEnv.exe");
-        }
+        // The walk-school and recover-school env entries are gone. Walking is
+        // trained inside each fighter's unified scene now — a lane of walk-mode
+        // agents sharing the fighter's behavior name — so there is one env per
+        // fighter covering both tasks, not one per task per fighter.
 
         public static void Build(string scenePath, string outputPath)
         {

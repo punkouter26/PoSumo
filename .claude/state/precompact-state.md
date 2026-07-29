@@ -1,24 +1,52 @@
 # Pre-Compaction Session State
-**Saved:** 2026-07-27 23:43:10
+**Saved:** 2026-07-28 19:16:07
 **Branch:** main
 
-## Modified Files (4 C# files)
+## Modified Files (10 C# files)
 ```
-Assets/Agents/Kim_v01/Kim.onnx
-Assets/Agents/Kim_v01/KimWalk.onnx
 Assets/Agents/Kim_v01/Kim_Character.asset
-Assets/Agents/Matt_v01/Matt.onnx
-Assets/Agents/Matt_v01/MattWalk.onnx
-Assets/Agents/Nick_v01/Nick.onnx
-Assets/Agents/Nick_v01/NickWalk.onnx
+Assets/Agents/Matt_v01/Matt_Character.asset
 Assets/Agents/Nick_v01/Nick_Character.asset
-Assets/Agents/Standard_v01/Standard.onnx
-Assets/Agents/Standard_v01/StandardWalk.onnx
 Assets/Agents/Standard_v01/Standard_Character.asset
-Assets/Scripts/Agent/Agent_BipedBody.cs
-Assets/Scripts/Systems/Systems_FightHud.cs
+Assets/Editor/BuildTrainingEnv.cs
+Assets/Editor/DeployBrain.cs
+Assets/Scenes/Training/SCN_TRAIN_KIM.unity
+Assets/Scenes/Training/SCN_TRAIN_MATT_AGGR.unity
+Assets/Scenes/Training/SCN_TRAIN_NICK.unity
+Assets/Scenes/Training/SCN_TRAIN_RECOVER4.unity
+Assets/Scenes/Training/SCN_TRAIN_RECOVER4.unity.meta
+Assets/Scenes/Training/SCN_TRAIN_STANDARD.unity
+Assets/Scenes/Training/SCN_TRAIN_WALK_KIM.unity
+Assets/Scenes/Training/SCN_TRAIN_WALK_KIM.unity.meta
+Assets/Scenes/Training/SCN_TRAIN_WALK_MATT.unity
+Assets/Scenes/Training/SCN_TRAIN_WALK_MATT.unity.meta
+Assets/Scenes/Training/SCN_TRAIN_WALK_NICK.unity
+Assets/Scenes/Training/SCN_TRAIN_WALK_NICK.unity.meta
+Assets/Scenes/Training/SCN_TRAIN_WALK_STANDARD.unity
+Assets/Scenes/Training/SCN_TRAIN_WALK_STANDARD.unity.meta
+Assets/Scripts/Agent/Agent_Biped.cs
+Assets/Scripts/Agent/Agent_CharacterDefinition.cs
+Assets/Scripts/Systems/Systems_BodyDamage.cs
+Assets/Scripts/Systems/Systems_DustPuff.cs
 Assets/Scripts/Systems/Systems_GameMatchManager.cs
-Assets/Scripts/Systems/Systems_MomentumGraph.cs
+Assets/Scripts/Systems/Systems_GameTuning.cs
+Assets/Scripts/Systems/Systems_MatchRoster.cs
+Assets/Scripts/Systems/Systems_RingBlood.cs
+CLAUDE.md
+ProjectSettings/Physics2DSettings.asset
+ProjectSettings/QualitySettings.asset
+ProjectSettings/TimeManager.asset
+Training/README.md
+Training/configs/KimWalk02.yaml
+Training/configs/KimWalk03.yaml
+Training/configs/MattRecover05.yaml
+Training/configs/MattWalk01.yaml
+Training/configs/MattWalk02.yaml
+Training/configs/MattWalk03.yaml
+Training/configs/NickWalk02.yaml
+Training/configs/NickWalk03.yaml
+Training/configs/StandardWalk01.yaml
+Training/configs/StandardWalk02.yaml
 ```
 
 ## Staged Files
@@ -28,9 +56,9 @@ Assets/Scripts/Systems/Systems_MomentumGraph.cs
 
 ## Recent Commits
 ```
-0e68edd Add new systems for voice gains and UI kit; update training configurations for corrective passes
-c3b8c15 Add new systems for arena atmosphere, music direction, post-processing effects, and soft body jiggle
-53f89ea ...
-a173ec6 ...
-8ac637f Add MattWalk01 configuration for PPO training with updated hyperparameters
+a6e16c6 Make bouts finishable: shrink the ring, cut friction, rebalance shaping
+c2fb98c ...
+6948b7e ..
+7f55342 ...
+939c926 ..
 ```

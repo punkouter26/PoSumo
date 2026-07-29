@@ -53,7 +53,6 @@ namespace PoSumo
             // The brain travels with the character; clear any scene-serialized
             // model so Agent_Biped picks up the character's own inferenceModel.
             agent.inferenceModel = null;
-            agent.walkModel = null;
 
             // Without a model the agent has no policy and simply collapses as a
             // ragdoll, with nothing in the log to explain why.

@@ -22,8 +22,8 @@ namespace PoSumo
     [RequireComponent(typeof(ParticleSystem))]
     public sealed class Systems_RingBlood : MonoBehaviour
     {
-        [Tooltip("Hard cap on stains. Oldest are recycled past this, so a long bracket cannot grow the renderer count without bound.")]
-        public int maxStains = 140;
+        [Tooltip("Hard cap on stains. Oldest are recycled past this, so a long bracket cannot grow the renderer count without bound.\n\n300, up from 140: a decapitation alone throws well over a hundred droplets that land, and at 140 the pour recycled its own stains mid-flow — the mat never actually looked soaked.")]
+        public int maxStains = 300;
         [Tooltip("Smallest stain, in metres.")]
         public float minSize = 0.06f;
         [Tooltip("Largest stain, in metres.")]

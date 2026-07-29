@@ -44,8 +44,6 @@ namespace PoSumo
         [Tooltip("Optional trained model for in-editor inference playback (no Python needed).")]
         public Unity.InferenceEngine.ModelAsset inferenceModel;
 
-        [Tooltip("Locomotion brain for the round-opening walk-in (copied from the character sheet).")]
-        public Unity.InferenceEngine.ModelAsset walkModel;
 
         /// While true, OnActionReceived only drives motors — no rewards, no
         /// episode termination. Used while the presentation layer (walk-in)
@@ -69,7 +67,11 @@ namespace PoSumo
 
         [Tooltip("ML-Agents behavior name; must exactly match the YAML config key.")]
         public string behaviorName = "Matt";
-        public const int ObservationCount = 41; // 5 body + 26 joints + 4 feet + 4 opponent + 2 edges
+        // 42 = 5 body + 26 joints + 4 feet + 1 task flag + 4 opponent/target + 2 edges.
+        // Was 41; the task flag was added when the walk and fight brains were merged
+        // into one policy per fighter. That +1 invalidated every brain trained before
+        // it — there is no way to feed a 42/45-slot vector to a 41/44-input model.
+        public const int ObservationCount = 42;
         public const int ActionCount = 13;      // hips, knees, ankles, 3 spine, shoulders, elbows
 
         /// Last motor commands as sent to the joints (for HUD display).
@@ -110,7 +112,6 @@ namespace PoSumo
                 extendedObservations = character.extendedObservations;
                 decisionPeriod = character.decisionPeriod;
                 if (inferenceModel == null) inferenceModel = character.inferenceModel;
-                if (walkModel == null) walkModel = character.walkModel;
                 _rUpright = character.uprightReward;
                 _rClosing = character.closingReward;
                 _rLunge = character.lungeBonus;
@@ -201,41 +202,34 @@ namespace PoSumo
             _pendingImpact += relativeSpeed;
         }
 
-        private Unity.InferenceEngine.ModelAsset _fightModel;
         private float _savedCenterX;
 
         /// Round-opening walk-in: borrow the locomotion brain and walk toward
         /// targetX (the opponent). The fight brain takes back over via
         /// EndWalkIn(). No-op when no walk model is assigned.
+        /// Round-opening walk-in: switch the SAME policy to its locomotion task and
+        /// point it at targetX. EndWalkIn switches it back.
+        ///
+        /// There is no model swap any more. Walk and fight are one brain per fighter,
+        /// told apart by the task flag in the observation vector, so this is a mode
+        /// change rather than a SetModel handoff. That removes the whole class of bug
+        /// where the wrong policy was left driving the body — the fight policy fed a
+        /// target metres away used to collapse both fighters within half a second.
         public void BeginWalkIn(float targetX)
         {
-            if (walkModel == null || mode != Mode.Sumo) return;
-            var bp = GetComponent<BehaviorParameters>();
-            _fightModel = bp.Model;
+            if (mode != Mode.Sumo) return;
             _savedCenterX = arenaCenterX;
-            mode = Mode.Recover;              // walk-brain observation layout (virtual target)
+            mode = Mode.Walk;                 // task flag -> 0, target replaces opponent
             arenaCenterX = targetX;
             suppressEpisodeControl = true;
-            // SetModel, not `bp.Model = ...`: the policy is built once at Awake and
-            // cached, so assigning the field alone leaves the FIGHT brain driving
-            // the walk-in. That is what made both fighters collapse within half a
-            // second of a round opening — the fight policy was being fed a target
-            // 6.8 m away, far outside anything it ever trained on.
-            SetModel(behaviorName, walkModel, InferenceDevice.Burst);
         }
 
         public void EndWalkIn()
         {
-            if (mode != Mode.Recover) return;
-            mode = Mode.Sumo;
+            if (mode != Mode.Walk) return;
+            mode = Mode.Sumo;                 // task flag -> 1
             arenaCenterX = _savedCenterX;
             suppressEpisodeControl = false;
-            // Same reason as BeginWalkIn: the handoff back to the fight brain only
-            // takes effect through SetModel.
-            if (_fightModel != null)
-            {
-                SetModel(behaviorName, _fightModel, InferenceDevice.Burst);
-            }
         }
 
         /// NaN/Inf sanitization guard for every value submitted to the model.
@@ -266,9 +260,21 @@ namespace PoSumo
             sensor.AddObservation(San(ff.x * Fs / 2f));
             sensor.AddObservation(San(ff.y / 2f));
 
+            // TASK FLAG — 1 when this is a real bout, 0 when the four "opponent"
+            // slots below are carrying a virtual target instead.
+            //
+            // This is what lets ONE brain do both jobs. Walk and fight always had an
+            // identical 44-slot vector and an identical 13-action space; the only
+            // difference was what occupied the opponent slots. Without a flag the
+            // network had to infer the task from the constants that appear in
+            // locomotion mode (1,0,1 in the extended block) — an accident, not a
+            // signal. With it, the policy can condition on the task explicitly.
+            bool fighting = mode == Mode.Sumo && opponent != null;
+            sensor.AddObservation(fighting ? 1f : 0f);                            // 1
+
             // Opponent torso (or, in Walk/Recover mode, a virtual target at ring center).
             Vector2 op, ov;
-            if (mode == Mode.Sumo && opponent != null)
+            if (fighting)
             {
                 op = opponent.Torso.position; ov = opponent.Torso.linearVelocity;
             }
@@ -287,7 +293,7 @@ namespace PoSumo
 
             if (extendedObservations)                                             // +3
             {
-                if (mode == Mode.Sumo && opponent != null)
+                if (fighting)
                 {
                     if (_opponentBody == null) _opponentBody = opponent.GetComponent<Agent_BipedBody>();
                     float oppUp = _opponentBody != null

@@ -45,8 +45,6 @@ namespace PoSumo
         public int decisionPeriod = 3;
         [Tooltip("Trained model for inference playback.")]
         public Unity.InferenceEngine.ModelAsset inferenceModel;
-        [Tooltip("Locomotion brain used for the round-opening walk-in; the fight model takes over at engagement range.")]
-        public Unity.InferenceEngine.ModelAsset walkModel;
 
         [Header("Sumo reward shaping (training only)")]
         public float uprightReward = 0.0005f;

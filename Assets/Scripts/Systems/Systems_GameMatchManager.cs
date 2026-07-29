@@ -123,11 +123,16 @@ namespace PoSumo
         /// The walk-in only runs if BOTH fighters actually have a locomotion brain;
         /// Agent_Biped.BeginWalkIn is a silent no-op without one, which would strand
         /// them at the far ends until the timeout.
+        /// One brain per fighter now does both jobs, so "is a walk policy available"
+        /// collapses to "is a brain available at all". Kept as a named check because
+        /// the walk-in still has to be skipped for a fighter with no model rather
+        /// than handing the ceremony to a body with no policy driving it.
         private bool WalkBrainsReady()
         {
             return wrestlerA != null && wrestlerB != null
                 && wrestlerA.character != null && wrestlerB.character != null
-                && wrestlerA.character.walkModel != null && wrestlerB.character.walkModel != null;
+                && wrestlerA.character.inferenceModel != null
+                && wrestlerB.character.inferenceModel != null;
         }
         // Cached in Start: the foot check runs every FixedUpdate, so no
         // GetComponent in the hot path.
@@ -360,10 +365,10 @@ namespace PoSumo
             // Order matters. Swap the brain FIRST, then EndEpisode so
             // OnEpisodeBegin resets pose, contact sensors and action history under
             // the policy that is about to drive, and only then place the body.
-            // Handing the walk brain a body still carrying the fight brain's
+            // Handing the walk task a body still carrying the fight task's
             // leftover state is what made the fighters collapse on the first stride.
             // Both aim at the CENTRE, not at their own stand-off mark, so they walk
-            // into each other rather than halting a stand-off apart. The walk brain
+            // into each other rather than halting a stand-off apart. The walk task
             // never stops on its own — with episode control suppressed it strides
             // straight through its target — so contact, not arrival, is what ends
             // the approach. See WalkInTouched.
@@ -384,7 +389,7 @@ namespace PoSumo
         }
 
         /// Places a fighter at the far end, upright and simulating, ready to walk.
-        /// Unlike PoseNeutral this leaves physics and motors ON — the walk brain
+        /// Unlike PoseNeutral this leaves physics and motors ON — the walk task
         /// needs a live body to drive.
         private void PoseForWalkIn(Agent_Biped w, float offsetX)
         {
@@ -532,7 +537,7 @@ namespace PoSumo
         /// Countdown hit zero: physics back on, fight brains live.
         private void BeginSimulation()
         {
-            // When the walk brain held them through the countdown they are already
+            // When the walk task held them through the countdown they are already
             // simulating and balanced; all that changes here is which policy owns
             // the body. Unfreeze still runs for the no-walk-brain fallback path.
             if (_walkBrainHolding)

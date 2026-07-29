@@ -24,8 +24,7 @@ MonoBehaviour:
   torqueScale: 1
   extendedObservations: 1
   decisionPeriod: 3
-  inferenceModel: {fileID: 5022602860645237092, guid: 8f76568562941a345ae69c088f1518bf, type: 3}
-  walkModel: {fileID: 5022602860645237092, guid: 95275fda98386c84b8cbb3bb41334205, type: 3}
+  inferenceModel: {fileID: 0}
   uprightReward: 0.0005
   closingReward: 0.003
   lungeBonus: 0.003

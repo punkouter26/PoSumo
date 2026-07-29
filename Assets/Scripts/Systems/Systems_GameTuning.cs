@@ -43,7 +43,7 @@ namespace PoSumo
         public float walkInHalfWidth = 8f;
         [Tooltip("Half the gap the fighters start the walk-in from. They walk all the way to contact now, and the measured closing rate is only ~1 m/s for the PAIR, so this is 3 and not 6: from 6 m apart they meet in about 4 s. At 6 (12 m apart) the approach ran past 9 s and never finished.")]
         public float walkInStartGapHalf = 3f;
-        [Tooltip("Surface gap in metres between the two fighters' colliders at which they count as having met — 0 is literal contact. This is the moment the walk brains hand off to the fight brains. Measured body-to-body rather than torso-to-torso, because limb pose swings torso-separation-at-contact between about 0.9 m and 1.8 m.")]
+        [Tooltip("Surface gap in metres between the two fighters' colliders at which they count as having met — 0 is literal contact. This is the moment the policy flips from its walk task to its fight task. Measured body-to-body rather than torso-to-torso, because limb pose swings torso-separation-at-contact between about 0.9 m and 1.8 m.")]
         public float walkInTouchGap = 0.05f;
         [Tooltip("Hard cap on the walk-in, in seconds. Must cover the full approach: roughly walkInStartGapHalf metres each at the measured ~1.4 m/s, plus margin for a stumble. On timeout the fighters are parked at the stand-off and the round opens with the normal countdown instead.")]
         public float walkInTimeout = 12f;

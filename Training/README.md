@@ -29,33 +29,29 @@ they are ~140 MB per run and nothing ever deploys from them.
 
 ## Configs and the runs they produced
 
-**Everything below was re-tuned onto the current capsule-limb physics** (see
-"The capsule-limb re-tune"). The lineage column is the trunk each run continued.
+**One brain per fighter, covering both walking and fighting** (2026-07-28). The walk
+and fight policies were merged: a task flag in the observation vector tells the two
+jobs apart, which took the vector 44 → 45 and invalidated every brain trained before
+it. There is no separate walk run, walk config, walk env or walk `.onnx` any more.
 
 | Config | Behavior | Run | Env | Backs |
 |---|---|---|---|---|
-| `MattSumo07.yaml` | Matt | `matt_sumo07` (6.0M target, ← `matt_sumo06`) | MattAggrEnv | **paused at 5,749,739** — resumable |
-| `StandardSumo03.yaml` | Standard | `standard_sumo03` (6.0M, ← `standard_sumo02`) | StandardEnv | complete — `Standard_v01/Standard.onnx` |
-| `KimSumo03.yaml` | Kim | `kim_sumo03` (6.0M target, ← `kim_sumo02`) | KimEnv | **paused at 5,499,625** — resumable |
-| `NickSumo05.yaml` | Nick | `nick_sumo05` (6.0M target, ← `nick_sumo04`) | NickEnv | **paused at 5,499,945** — resumable |
-| `MattWalk03.yaml` | Matt | `matt_walk03` (← `matt_walk02`) | MattWalkEnv | `Matt_v01/MattWalk.onnx` |
-| `KimWalk03.yaml` | Kim | `kim_walk03` (← `kim_walk02`) | KimWalkEnv | `Kim_v01/KimWalk.onnx` |
-| `NickWalk03.yaml` | Nick | `nick_walk03` (← `nick_walk02`) | NickWalkEnv | `Nick_v01/NickWalk.onnx` |
-| `StandardWalk02.yaml` | Standard | `standard_walk02` (← `standard_walk01`) | StandardWalkEnv | `Standard_v01/StandardWalk.onnx` |
-| `MattSumo06.yaml` | Matt | — | — | trunk only (weights for `matt_sumo07`) |
-| `StandardSumo02.yaml` | Standard | — | — | trunk only |
-| `KimSumo02.yaml` | Kim | — | — | trunk only |
-| `NickSumo04.yaml` | Nick | — | — | trunk only |
-| `MattWalk01.yaml` | Matt | — | — | trunk only — the **baseline gait** every walk brain descends from |
-| `MattWalk02.yaml` / `KimWalk02.yaml` / `NickWalk02.yaml` / `StandardWalk01.yaml` | — | — | — | trunk only |
-| `MattRecover05.yaml` | Matt | *(not run)* | — | template for `SCN_TRAIN_RECOVER4`, the surviving recover-school scene |
+| `MattUnified01.yaml` | Matt | `matt_unified01` (15.0M, cold) | MattAggrEnv | in progress |
+| `StandardUnified01.yaml` | Standard | `standard_unified01` (15.0M, cold) | StandardEnv | queued |
+| `KimUnified01.yaml` | Kim | `kim_unified01` (15.0M, cold) | KimEnv | queued |
+| `NickUnified01.yaml` | Nick | `nick_unified01` (15.0M, cold) | NickEnv | queued |
+| `MattSumo06/07/08`, `StandardSumo02/03/04`, `KimSumo02/03/04`, `NickSumo04/05/06` | — | — | — | pre-merge history, parked in `trunks/pre_merge/` |
 
-Retired on 2026-07-28 (backed no surviving run or trunk): `KimSumo01`, `KimWalk01`,
-`MattSumo05`, `NickSumo01`, `NickSumo02`, `NickSumo03` (the rejected regression),
-`NickWalk01`, `StandardSumo01`.
+**These are COLD runs and had to be.** A 44-obs checkpoint cannot warm-start a 45-obs
+policy — the first layer shape no longer matches — so no pre-merge weights carry over.
 
-Every fighter owns a walk brain, and all of them descend from `matt_walk01` — the
-baseline gait, trained on the shared 1.0 body under behavior name `Matt`.
+Retired on 2026-07-28: every `*Walk*` config (walking is a lane inside each unified
+scene now), `MattRecover05` (its scene is gone; the walk-in sets `Mode.Walk`, not
+`Mode.Recover`), plus the earlier round — `KimSumo01`, `MattSumo05`, `NickSumo01/02/03`,
+`StandardSumo01`.
+
+A gait still has to be learned on the physique it runs on, so the walk lane lives in
+each fighter's own scene rather than one shared walk scene.
 
 ## The capsule-limb re-tune
 
@@ -89,11 +85,7 @@ opponents so farming that does not win gets punished. **Judge a fight re-tune on
 ELO, never on mean reward.**
 
 Run-ids are `<behavior>_<phase><NN>`, so a TensorBoard row always reads
-`<run>\<Behavior>` with matching names (`matt_walk01\Matt`, `kim_walk01\Kim`).
-The baseline walk was originally `standard_walk01`/`StandardWalk01.yaml`, which
-broke that rule — it is renamed, and only the deployed file `StandardWalk.onnx`
-still carries the old name, because Standard is the fighter that uses it.
-| `MattRecover05.yaml` | Matt | *(archived)* | RecoverEnv | — recover-school recipe, nothing deployed |
+`<run>\<Behavior>` with matching names (`matt_unified01\Matt`, `kim_unified01\Kim`).
 
 ## What lives where
 
@@ -101,12 +93,11 @@ still carries the old name, because Standard is the fighter that uses it.
 deployed brain** — one per row in the table above. Everything else is either
 deleted or moved out:
 
-- `trunks/` — checkpoints kept purely as `--initialize-from` sources, not as
-  history worth plotting: every pre-capsule run each current brain descends from
-  (`matt_sumo04/05`, `standard_sumo01`, `kim_sumo01`, `nick_sumo02`, `matt_walk01`,
-  `kim_walk01`, `nick_walk01`). Outside the logdir so TensorBoard shows exactly one
-  run per deployed brain. **A config's documented `--initialize-from` therefore
-  needs its trunk copied back into `results/` first** —
+- `trunks/` — checkpoints kept as weights rather than history. `trunks/pre_merge/`
+  holds every run from before the walk+fight merge; those are 44-obs and cannot
+  warm-start anything now, but they are what a rollback would restore. Outside the
+  logdir so TensorBoard shows only live runs. **A config's documented
+  `--initialize-from` needs its trunk copied back into `results/` first** —
   `Copy-Item -Recurse Training/trunks/<run> Training/results/`.
 - **Staging dirs** (`kim_init`, `kim_walk_init`, …) must sit *inside* `results/`
   at launch because `--initialize-from` resolves relative to `--results-dir`.
