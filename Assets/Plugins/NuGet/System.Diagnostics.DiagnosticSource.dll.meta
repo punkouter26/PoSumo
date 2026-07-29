@@ -14,6 +14,7 @@ PluginImporter:
     Any:
       enabled: 1
       settings:
+        Exclude Android: 1
         Exclude Editor: 1
     Editor:
       enabled: 0
