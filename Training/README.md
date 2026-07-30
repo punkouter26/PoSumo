@@ -36,10 +36,45 @@ it. There is no separate walk run, walk config, walk env or walk `.onnx` any mor
 
 | Config | Behavior | Run | Env | Backs |
 |---|---|---|---|---|
-| `MattUnified01.yaml` | Matt | `matt_unified01` (15.0M, cold) | MattAggrEnv | in progress |
-| `StandardUnified01.yaml` | Standard | `standard_unified01` (15.0M, cold) | StandardEnv | queued |
-| `KimUnified01.yaml` | Kim | `kim_unified01` (15.0M, cold) | KimEnv | queued |
-| `NickUnified01.yaml` | Nick | `nick_unified01` (15.0M, cold) | NickEnv | queued |
+| `MattUnified01.yaml` | Matt | `matt_unified02` (15.0M, cold) | MattAggrEnv | `Matt.onnx` |
+| `StandardUnified01.yaml` | Standard | `standard_unified01` (15.0M, cold) | StandardEnv | `Standard.onnx` |
+| `KimUnified01.yaml` | Kim | `kim_unified01` (15.0M, cold) | KimEnv | `Kim.onnx` |
+| `NickUnified01.yaml` | Nick | `nick_unified01` (15.0M, cold + resume) | NickEnv | `Nick.onnx` |
+
+All four reached the configured `max_steps: 15000000`. Final ELO: Standard 5941,
+Matt 4832, Kim 4776, Nick 4581 — but see the Nick note below before comparing his
+number with the other three.
+
+### Nick was interrupted at 3.75M and resumed (2026-07-30)
+
+`nick_unified01` died at step 3,749,814 on 2026-07-29 11:06 with no final
+`<Behavior>.onnx` and no `configuration.yaml`, while the other three ran to 15M.
+It was **resumed, not restarted** — the run was healthy, not broken: ELO had risen
+monotonically 1199 → 1786 and reward carried real variance, so this was not the
+inverted-walk-`facingSign` failure that killed `matt_unified01` (that one pins mean
+reward just under the +3 graduation bonus with near-zero variance).
+
+The resume took it 3.75M → 15.0M at ~744 steps/s, about 3.7 h on 3 envs.
+
+**The interruption cost the ELO scale, and this is the part worth remembering.**
+Self-play ELO and the opponent pool live in `run_logs/training_status.json`, which
+the crash never wrote. On `--resume` mlagents restored the *weights* from
+`checkpoint.pt` but reset ELO to `initial_elo: 1200` and started a fresh pool. So
+Nick's 4581 is measured against a pool that began from scratch at 3.75M, while the
+other three accumulated theirs across a full 15M — the numbers are not strictly
+comparable, and a crashed-then-resumed run can never be compared on ELO *level*
+again. Judge it on shape, which is clean: monotonic non-decreasing across all ten
+deciles (1411 → 4369 by decile mean), max drawdown 586 from running peak.
+
+Verified in-game rather than on the curve alone —
+`MatchTestHarness.Run(10)` in SCN_SUMO (roster is Matt vs Nick):
+
+```
+HARNESS RESULT: MATT 3 — 7 NICK over 10 matches / 38 rounds | longest round 14.4s
+```
+
+Nick beats a full-budget Matt 7-3, and no round reached the timeout, which is the
+behaviour the 4.0 m ring was shrunk to produce.
 | `MattSumo06/07/08`, `StandardSumo02/03/04`, `KimSumo02/03/04`, `NickSumo04/05/06` | — | — | — | pre-merge history, parked in `trunks/pre_merge/` |
 
 **These are COLD runs and had to be.** A 44-obs checkpoint cannot warm-start a 45-obs
