@@ -28,8 +28,10 @@ namespace PoSumo.EditorTools
     {
         private const string OUTPUT_PATH = "Builds/Android/PoSumo.aab";
         private const string APP_ID = "com.punkoutersoftware.posumo";
-        private const string KEYSTORE_PATH = "C:/Users/punko/Downloads/PoSumo-Release/posumo-upload.jks";
-        private const string KEYALIAS = "posumo-upload";
+        // internal, not private: BuildAndroid signs its test APK with the same
+        // upload key. One copy of these facts, so the two builders cannot diverge.
+        internal const string KEYSTORE_PATH = "C:/Users/punko/Downloads/PoSumo-Release/posumo-upload.jks";
+        internal const string KEYALIAS = "posumo-upload";
 
         // Google Play requires new apps and updates to target API 36 from 2026-08-31.
         private const int TARGET_SDK = 36;
@@ -123,18 +125,7 @@ namespace PoSumo.EditorTools
             // in the finally block — BuildPlayer compiles player assemblies inline
             // with whatever PlayerSettings says right now, so the player build sees
             // the stripped set while the editor gets its symbol straight back.
-            string definesBefore = PlayerSettings.GetScriptingDefineSymbols(NamedBuildTarget.Android);
-            string definesForBuild = string.Join(";", definesBefore
-                .Split(';')
-                .Select(s => s.Trim())
-                .Where(s => s.Length > 0 && !EDITOR_ONLY_DEFINES.Contains(s)));
-
-            if (definesForBuild != definesBefore)
-            {
-                PlayerSettings.SetScriptingDefineSymbols(NamedBuildTarget.Android, definesForBuild);
-                Debug.Log($"AAB BUILD: stripped editor-only defines for this build. " +
-                          $"was [{definesBefore}] now [{definesForBuild}]");
-            }
+            string definesBefore = StripEditorOnlyDefines("AAB BUILD");
 
             var options = new BuildPlayerOptions
             {
@@ -158,10 +149,7 @@ namespace PoSumo.EditorTools
             {
                 // Restore the editor's defines even if the build threw, or the MCP
                 // tooling stays dark until the next domain reload.
-                if (definesForBuild != definesBefore)
-                {
-                    PlayerSettings.SetScriptingDefineSymbols(NamedBuildTarget.Android, definesBefore);
-                }
+                RestoreDefines(definesBefore);
                 // Do not leave the password sitting in the in-memory PlayerSettings.
                 PlayerSettings.Android.keystorePass = string.Empty;
                 PlayerSettings.Android.keyaliasPass = string.Empty;
@@ -174,8 +162,43 @@ namespace PoSumo.EditorTools
                       $"time={summary.totalTime.TotalMinutes:F1}min | {summary.outputPath}");
         }
 
+        /// Removes the editor-only defines for the duration of a player build and
+        /// returns the ORIGINAL define string, which the caller must hand back to
+        /// RestoreDefines in a finally block. See the comment at the call site in
+        /// Build() for why the player must not be compiled with these defined.
+        ///
+        /// Both Android builders need this: the NuGet DLLs the MCP runtime links
+        /// against are excluded from Android, so compiling that runtime into the
+        /// player fails with a few hundred missing-type errors.
+        internal static string StripEditorOnlyDefines(string logPrefix)
+        {
+            string definesBefore = PlayerSettings.GetScriptingDefineSymbols(NamedBuildTarget.Android);
+            string definesForBuild = string.Join(";", definesBefore
+                .Split(';')
+                .Select(s => s.Trim())
+                .Where(s => s.Length > 0 && !EDITOR_ONLY_DEFINES.Contains(s)));
+
+            if (definesForBuild != definesBefore)
+            {
+                PlayerSettings.SetScriptingDefineSymbols(NamedBuildTarget.Android, definesForBuild);
+                Debug.Log($"{logPrefix}: stripped editor-only defines for this build. " +
+                          $"was [{definesBefore}] now [{definesForBuild}]");
+            }
+
+            return definesBefore;
+        }
+
+        /// Puts back whatever StripEditorOnlyDefines returned.
+        internal static void RestoreDefines(string definesBefore)
+        {
+            if (PlayerSettings.GetScriptingDefineSymbols(NamedBuildTarget.Android) != definesBefore)
+            {
+                PlayerSettings.SetScriptingDefineSymbols(NamedBuildTarget.Android, definesBefore);
+            }
+        }
+
         /// Environment variable wins; otherwise read <keystore>.pass next to the keystore.
-        private static string ResolveKeystorePassword()
+        internal static string ResolveKeystorePassword()
         {
             string fromEnv = Environment.GetEnvironmentVariable("POSUMO_KEYSTORE_PASS");
             if (!string.IsNullOrEmpty(fromEnv))
