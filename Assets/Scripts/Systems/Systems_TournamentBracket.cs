@@ -82,7 +82,13 @@ namespace PoSumo
             // Otherwise this is a fresh visit, so draw a new field.
             if (!Systems_TournamentState.SeedsReady())
             {
-                Systems_TournamentState.AutoSeed(_roster, Time.frameCount);
+                // NOT Time.frameCount: SCN_TOURNAMENT is build index 0, so this
+                // Start runs on the first frame of the session and the salt was
+                // the same small constant on every cold launch — ten launches,
+                // ten byte-identical draws. Invisible unless you compare cold
+                // starts, because RESHUFFLE runs late enough for frameCount to
+                // vary. TickCount is wall-clock and unrelated to the frame loop.
+                Systems_TournamentState.AutoSeed(_roster, System.Environment.TickCount);
             }
 
             BuildUi();

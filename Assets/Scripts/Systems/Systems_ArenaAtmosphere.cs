@@ -60,6 +60,9 @@ namespace PoSumo
             public Transform transform;
             public Vector3 baseLocalPosition;
             public float phase;
+            /// True when this transform also belongs to the parallax plane, so
+            /// the sway pass carries the parallax offset instead of erasing it.
+            public bool parallax;
         }
 
         private readonly List<ParallaxLayer> _layers = new List<ParallaxLayer>();
@@ -102,7 +105,10 @@ namespace PoSumo
                 SpriteRenderer renderer = renderers[rendererIndex];
                 Transform target = renderer.transform;
 
-                if (swayCrowd && IsCrowd(target.name))
+                bool swaying = swayCrowd && IsCrowd(target.name);
+                bool background = renderer.sortingOrder <= backgroundOrderThreshold;
+
+                if (swaying)
                 {
                     _sway.Add(new SwayTarget
                     {
@@ -112,10 +118,18 @@ namespace PoSumo
                         // crowd never moves as one block — and so it looks the same
                         // every run, which matters when comparing screenshots.
                         phase = Mathf.Repeat(target.position.x * 2.3f + target.position.y * 1.7f, Mathf.PI * 2f),
+                        // The 16 CrowdSilhouettes are sortingOrder -9 against a -9
+                        // threshold, so they are background AND swaying. They used
+                        // to be appended to both lists, and the sway pass — which
+                        // runs second and writes localPosition outright — erased
+                        // the parallax offset, leaving the crowd standing still
+                        // while the wall it is painted on slid behind it. Carrying
+                        // the offset here keeps them in register.
+                        parallax = background && target.parent == _arena,
                     });
                 }
 
-                if (renderer.sortingOrder > backgroundOrderThreshold)
+                if (!background)
                 {
                     continue;
                 }
@@ -128,7 +142,10 @@ namespace PoSumo
                 //
                 // Only root-most transforms; a child (a banner's Motif) rides its
                 // parent and would otherwise get the offset twice.
-                if (target.parent == _arena)
+                // Swaying transforms are driven by the sway pass instead, which
+                // applies the same offset — listing them here as well would just
+                // be a write that pass immediately overwrites.
+                if (target.parent == _arena && !swaying)
                 {
                     _layers.Add(new ParallaxLayer
                     {
@@ -190,6 +207,10 @@ namespace PoSumo
                     Vector3 position = target.baseLocalPosition;
                     position.y += Mathf.Sin(t + target.phase) * swayAmplitude;
                     position.x += Mathf.Cos(t * 0.6f + target.phase) * swayAmplitude * 0.4f;
+                    if (target.parallax)
+                    {
+                        position.x += cameraOffset * parallaxStrength;
+                    }
                     target.transform.localPosition = position;
                 }
             }

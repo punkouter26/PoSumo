@@ -40,6 +40,18 @@ namespace PoSumo.EditorTools
                 return;
             }
 
+            // The same guard the AAB builder has. A present keystore.pass with a
+            // missing .jks — a half-restored release folder — satisfied the check
+            // above, so the build ran for minutes and then died inside Gradle on a
+            // signing error, leaving keystoreName pointing at a file that is not
+            // there. Aborting costs a second and prints the line the tooling greps.
+            if (!System.IO.File.Exists(BuildAndroidAAB.KEYSTORE_PATH))
+            {
+                Debug.LogError("BUILD RESULT: Aborted — keystore not found at " +
+                               BuildAndroidAAB.KEYSTORE_PATH);
+                return;
+            }
+
             PlayerSettings.Android.useCustomKeystore = true;
             PlayerSettings.Android.keystoreName = BuildAndroidAAB.KEYSTORE_PATH;
             PlayerSettings.Android.keystorePass = password;

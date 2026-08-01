@@ -225,8 +225,12 @@ namespace PoSumo
                 _murmurSource.Play();
             }
 
-            // The first round starts without a RoundStarted event.
-            PlayTaiko();
+            // No opening taiko here. It used to be fired from Start because a
+            // countdown-only opening raised no RoundStarted — but the walk-in
+            // path always did raise it, so every match with enableWalkIn on
+            // opened with two taiko hits. The manager now raises RoundStarted for
+            // the countdown-only opening too, so OnRoundStarted is the single
+            // source of the hit on both paths.
             _nextBreathTime = Time.time + breathInterval;
         }
 

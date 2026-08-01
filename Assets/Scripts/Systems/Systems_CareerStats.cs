@@ -133,9 +133,13 @@ namespace PoSumo
 
         public static void RecordRound(string winner, string loser)
         {
-            if (string.IsNullOrEmpty(winner) || string.IsNullOrEmpty(loser))
+            if (string.IsNullOrEmpty(winner) || string.IsNullOrEmpty(loser) || winner == loser)
             {
-                return;   // a draw scores for nobody
+                // A draw scores for nobody, and neither does a mirror bout: both
+                // names key the SAME record, so counting it credited one fighter
+                // with a round win and a round loss for every round of a
+                // Matt-vs-Matt match. RecordMatch has always had this guard.
+                return;
             }
             Get(winner).roundWins++;
             Get(loser).roundLosses++;

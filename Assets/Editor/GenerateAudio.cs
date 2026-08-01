@@ -30,6 +30,17 @@ namespace PoSumo.EditorTools
         // 8 s at 120 BPM = 4 bars of 4/4, 16 steps of 0.5 s.
         private const float MUSIC_SECONDS = 8f;
         private const float MUSIC_STEP = 0.5f;
+        /// Loop crossfade for EVERY music stem, and deliberately one shared value.
+        ///
+        /// LoopWrap returns a buffer shortened by its own fade, so the four stems
+        /// each passing their own figure (bed 0.5, tension 0.4, pulse 0.15, drums
+        /// 0.12) shipped them at four different lengths — 7.500, 7.600, 7.850 and
+        /// 7.880 s. Systems_MusicDirector starts all four on ONE PlayScheduled
+        /// with loop on and documents them as sample-locked forever; at those
+        /// lengths the drums gained 0.38 s on the bed every loop, so a couple of
+        /// minutes in the arrangement was noise. Any change here must keep it a
+        /// single constant.
+        private const float MUSIC_LOOP_FADE = 0.5f;
 
         [MenuItem("PoSumo/Generate Audio")]
         public static void Run()
@@ -556,7 +567,7 @@ namespace PoSumo.EditorTools
                 float breath = 0.55f + 0.45f * Mathf.Sin(t * 0.25f * Mathf.PI * 2f);
                 buffer[bufferIndex] += air.Process((float)(rng.NextDouble() * 2 - 1)) * 0.14f * breath;
             }
-            return Normalize(LoopWrap(buffer, 0.5f), 0.55f);
+            return Normalize(LoopWrap(buffer, MUSIC_LOOP_FADE), 0.55f);
         }
 
         /// A slow heartbeat on the downbeats: the layer that enters when a round
@@ -570,7 +581,7 @@ namespace PoSumo.EditorTools
                 AddHit(buffer, beat * MUSIC_STEP * 2f, Taiko(0), 0.9f);
                 AddHit(buffer, (beat + 1.5f) * MUSIC_STEP * 2f, Taiko(2), 0.32f);
             }
-            return Normalize(LoopWrap(buffer, 0.15f), 0.75f);
+            return Normalize(LoopWrap(buffer, MUSIC_LOOP_FADE), 0.75f);
         }
 
         /// The driving pattern for an active round.
@@ -597,7 +608,7 @@ namespace PoSumo.EditorTools
                     AddHit(buffer, at, Taiko(step % 3), gain * 0.8f);
                 }
             }
-            return Normalize(LoopWrap(buffer, 0.12f), 0.8f);
+            return Normalize(LoopWrap(buffer, MUSIC_LOOP_FADE), 0.8f);
         }
 
         /// High shimmering cluster for match point: unstable, and never resolves.
@@ -625,7 +636,7 @@ namespace PoSumo.EditorTools
             {
                 buffer[bufferIndex] += air.Process((float)(rng.NextDouble() * 2 - 1)) * 0.05f;
             }
-            return Normalize(LoopWrap(buffer, 0.4f), 0.45f);
+            return Normalize(LoopWrap(buffer, MUSIC_LOOP_FADE), 0.45f);
         }
 
         private static void AddHit(float[] buffer, float atSeconds, float[] hit, float gain)

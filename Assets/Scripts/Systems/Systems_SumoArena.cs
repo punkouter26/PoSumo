@@ -37,6 +37,12 @@ namespace PoSumo
         private Transform _platform, _surface, _baseLip;
         private float _currentHalf = -1f;
 
+        /// The dohyo's CURRENT half-width in metres. Anything drawn against the
+        /// mat edge has to read this rather than keep its own copy: the manager
+        /// sizes the mat from GameTuning after the fighters are built, the
+        /// walk-in widens it, and the engage contracts it again.
+        public float CurrentHalfWidth => _currentHalf > 0f ? _currentHalf : groundWidth * 0.5f;
+
         private static readonly Dictionary<string, Sprite> RuntimeSprites = new Dictionary<string, Sprite>();
 
         /// Physically resizes the dohyo to the given half-width: platform
@@ -127,15 +133,50 @@ namespace PoSumo
             return new PhysicsMaterial2D(name) { friction = friction, bounciness = bounciness };
         }
 
-        /// Training-env only (runtime-built arenas): mutates the platform's
-        /// physics material friction for domain randomization. Never call on a
-        /// baked scene — there the material is a shared asset.
+        // Runtime-owned copy of the platform material. Created on first use and
+        // reused, so repeated friction changes cost nothing and leak nothing.
+        private PhysicsMaterial2D _platformMatInstance;
+
+        /// Sets the dohyo top-surface friction: the training referee's per-round
+        /// domain randomization, and the game's one-time apply from GameTuning.
+        ///
+        /// Mutates an INSTANCE, never the material it was given. In a baked scene
+        /// col.sharedMaterial is the project asset Ground_Clay.physicsMaterial2D,
+        /// and writing through to it edited the asset itself — during Play mode,
+        /// where asset edits are not reverted on exit. That is not theoretical:
+        /// Build() writes that asset at the component default 0.9, yet it is
+        /// committed at 0.55, which is GameTuning.surfaceFriction, arrived at via
+        /// this method.
         public void SetSurfaceFriction(float friction)
         {
             surfaceFriction = friction;
             if (_platform == null) return;
             var col = _platform.GetComponent<BoxCollider2D>();
-            if (col != null && col.sharedMaterial != null) col.sharedMaterial.friction = friction;
+            if (col == null) return;
+#if UNITY_EDITOR
+            // Edit mode keeps the shared asset on the collider: Build() bakes that
+            // reference into the scene, and swapping in a scene-local instance
+            // here would leave the saved scene pointing at nothing after reload.
+            // Only Build() authors the material outside Play mode.
+            if (!Application.isPlaying) return;
+#endif
+
+            if (_platformMatInstance == null)
+            {
+                _platformMatInstance = new PhysicsMaterial2D("Ground_Clay_Runtime")
+                {
+                    bounciness = col.sharedMaterial != null ? col.sharedMaterial.bounciness : 0f,
+                };
+            }
+            _platformMatInstance.friction = friction;
+            col.sharedMaterial = _platformMatInstance;
+        }
+
+        private void OnDestroy()
+        {
+            // Script-created, so nothing else will ever collect it.
+            if (_platformMatInstance != null) Destroy(_platformMatInstance);
+            if (_tawaraMatInstance != null) Destroy(_tawaraMatInstance);
         }
 
         [Tooltip("Width in metres of the slick tawara band at each rim. 0 disables it.")]
@@ -144,6 +185,25 @@ namespace PoSumo
         public float tawaraFriction = 0.18f;
 
         private Transform _bandLeft, _bandRight;
+        private PhysicsMaterial2D _tawaraMatInstance;
+
+        /// The band material, resolved once. In edit mode this is the shared
+        /// project asset (so a baked scene keeps referencing it); at runtime it is
+        /// a single owned instance whose friction tracks tawaraFriction.
+        private PhysicsMaterial2D TawaraMaterial()
+        {
+            if (_tawaraMatInstance != null)
+            {
+                _tawaraMatInstance.friction = tawaraFriction;
+                return _tawaraMatInstance;
+            }
+            PhysicsMaterial2D material = SourcePhysMat("Ground_Tawara", tawaraFriction, 0f);
+#if UNITY_EDITOR
+            if (!Application.isPlaying) return material;   // the shared asset
+#endif
+            _tawaraMatInstance = material;
+            return _tawaraMatInstance;
+        }
 
         /// The bales, as physics rather than decoration.
         ///
@@ -188,7 +248,12 @@ namespace PoSumo
             var box = t.GetComponent<BoxCollider2D>();
             if (box != null)
             {
-                box.sharedMaterial = SourcePhysMat("Ground_Tawara", tawaraFriction, 0f);
+                // Resolved ONCE and cached. At runtime SourcePhysMat takes the
+                // `new PhysicsMaterial2D` branch, so calling it per band per call
+                // allocated two native objects every time the referee randomized
+                // the platform width — every round, per arena, per worker, none of
+                // them ever collected in a headless env that never reloads a scene.
+                box.sharedMaterial = TawaraMaterial();
             }
             // Centred on the outer band, top edge 5 mm above the clay so it wins the
             // contact against the platform collider it overlaps.

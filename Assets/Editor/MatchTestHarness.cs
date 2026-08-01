@@ -9,13 +9,19 @@ namespace PoSumo.EditorTools
     /// round. Enter Play mode, then call Run(n).
     ///
     /// The match manager normally waits for Space/REMATCH at match end, so this
-    /// invokes its private ResetMatch() to chain matches unattended.
+    /// calls its public ResetMatch() to chain matches unattended. That reset also
+    /// cancels the announce still in flight — without it the previous match's
+    /// result card revealed itself ~1.2 s into the NEXT match, froze both
+    /// fighters and left every chained match to expire on the clock, which is
+    /// what the tally below would then have been measuring.
     public static class MatchTestHarness
     {
         private static Systems_GameMatchManager _manager;
         private static int _targetMatches;
         private static int _matchesSeen;
         private static int _roundsSeen;
+        private static int _baseWinsA;
+        private static int _baseWinsB;
         private static float _roundStartTime;
         private static readonly StringBuilder Log = new StringBuilder();
 
@@ -43,6 +49,12 @@ namespace PoSumo.EditorTools
             _matchesSeen = 0;
             _roundsSeen = 0;
             _roundStartTime = Time.realtimeSinceStartup;
+            // MatchWinsA/B accumulate from the manager's Start and are NOT reset
+            // by ResetMatch, so reporting them raw counted matches played before
+            // this Run — a second Run() in one Play session printed a tally whose
+            // two halves did not sum to the match count.
+            _baseWinsA = _manager.MatchWinsA;
+            _baseWinsB = _manager.MatchWinsB;
             Log.Clear();
 
             _manager.RoundEnded += OnRoundEnded;
@@ -87,8 +99,8 @@ namespace PoSumo.EditorTools
         {
             _manager.RoundEnded -= OnRoundEnded;
             _manager.MatchEnded -= OnMatchEnded;
-            int winsA = _manager.MatchWinsA;
-            int winsB = _manager.MatchWinsB;
+            int winsA = _manager.MatchWinsA - _baseWinsA;
+            int winsB = _manager.MatchWinsB - _baseWinsB;
             Debug.Log($"HARNESS RESULT: {_manager.nameA} {winsA} — {winsB} {_manager.nameB} " +
                       $"over {_matchesSeen} matches / {_roundsSeen} rounds | " +
                       $"longest round {_manager.LongestRound:F1}s\n{Log}");

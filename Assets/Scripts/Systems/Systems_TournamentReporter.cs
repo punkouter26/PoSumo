@@ -49,8 +49,12 @@ namespace PoSumo
             _returning = true;
 
             Agent_CharacterDefinition character = winner.character;
+            // Read BEFORE reporting: ReportWinner advances CurrentMatch, so
+            // logging it afterwards named the match that has not been played yet
+            // and every line was off by one.
+            int decidedMatch = Systems_TournamentState.CurrentMatch;
             Systems_TournamentState.ReportWinner(character);
-            Debug.Log($"[TOURNAMENT] match {Systems_TournamentState.CurrentMatch} winner: " +
+            Debug.Log($"[TOURNAMENT] match {decidedMatch} winner: " +
                       $"{(character != null ? character.behaviorName : "unknown")}");
 
             // The result card is itself delayed — while the loser flops on a

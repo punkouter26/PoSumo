@@ -26,10 +26,12 @@ namespace PoSumo.EditorTools
         private const string ASSET_PATH = "Assets/Resources/VoiceGains.asset";
         private const string VOICE_FOLDER = "Assets/Resources/Audio/Voice";
 
-        /// Everything is levelled to this RMS. -20 dBFS was chosen against the
-        /// measured set: the loudest clip needs only -3 dB to reach it and the
-        /// quietest needs +15.9 dB, which still leaves its peak at -3.9 dBFS, so
-        /// no clip has to be pushed into the ceiling.
+        /// The RMS every clip is levelled TOWARD. It is a relative target, not an
+        /// absolute one: the table is rebased at the end so the loudest clip sits
+        /// at unity gain and nothing asks for boost, because the consumer's
+        /// AudioSource.volume cannot deliver any. Changing this shifts every clip
+        /// together and so changes nothing audible — the master is `volume` on
+        /// Systems_FighterVoice.
         private const float TARGET_RMS_DB = -20f;
 
         /// No corrected clip may peak above this. A quiet clip that is also peaky
@@ -45,6 +47,7 @@ namespace PoSumo.EditorTools
 
             var names = new List<string>();
             var gains = new List<float>();
+            var measuredRmsDb = new List<float>();
             var report = new StringBuilder();
             int ceilingLimited = 0, unreadable = 0;
 
@@ -94,8 +97,44 @@ namespace PoSumo.EditorTools
 
                 names.Add(clip.name);
                 gains.Add(gain);
-                report.AppendLine($"  {clip.name}: {20f * Mathf.Log10(rms):F1} dB -> " +
-                                  $"gain {20f * Mathf.Log10(gain):+0.0;-0.0} dB");
+                // Reported after the attenuate-only rebase below, not here, or
+                // every line would quote a gain the table does not hold.
+                measuredRmsDb.Add(20f * Mathf.Log10(rms));
+            }
+
+            // Rebase to ATTENUATE-ONLY.
+            //
+            // The only consumer is Systems_FighterVoice, which does
+            // `_source.volume = volume * gain` — and AudioSource.volume is clamped
+            // by Unity to [0,1]. Raw gains here run up to 6.2x, so with volume at
+            // 0.9 every gain above 1/0.9 collapsed to exactly 1.0: 24 of the 30
+            // measured clips ended up at the SAME playback volume, which is the
+            // "one mumbles, the other shouts" problem this pass exists to fix,
+            // and it left the loud clips relatively quieter than before.
+            //
+            // Dividing through by the largest gain preserves every relative level
+            // exactly — the whole point of the pass — while guaranteeing nothing
+            // is ever asked for more than unity. The bank simply sits lower, and
+            // `volume` on the consumer remains the master control.
+            float maxGain = 0f;
+            for (int gainIndex = 0; gainIndex < gains.Count; gainIndex++)
+            {
+                if (gains[gainIndex] > maxGain) maxGain = gains[gainIndex];
+            }
+            float effectiveTargetDb = TARGET_RMS_DB;
+            if (maxGain > 1f)
+            {
+                for (int gainIndex = 0; gainIndex < gains.Count; gainIndex++)
+                {
+                    gains[gainIndex] /= maxGain;
+                }
+                effectiveTargetDb = TARGET_RMS_DB - 20f * Mathf.Log10(maxGain);
+            }
+
+            for (int reportIndex = 0; reportIndex < names.Count; reportIndex++)
+            {
+                report.AppendLine($"  {names[reportIndex]}: {measuredRmsDb[reportIndex]:F1} dB -> " +
+                                  $"gain {20f * Mathf.Log10(gains[reportIndex]):+0.0;-0.0} dB");
             }
 
             var asset = AssetDatabase.LoadAssetAtPath<Systems_VoiceGains>(ASSET_PATH);
@@ -104,12 +143,13 @@ namespace PoSumo.EditorTools
                 asset = ScriptableObject.CreateInstance<Systems_VoiceGains>();
                 AssetDatabase.CreateAsset(asset, ASSET_PATH);
             }
-            asset.SetTable(TARGET_RMS_DB, names, gains);
+            asset.SetTable(effectiveTargetDb, names, gains);
             EditorUtility.SetDirty(asset);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
 
-            Debug.Log($"NORMALIZE RESULT: {names.Count} clips levelled to {TARGET_RMS_DB} dBFS RMS | " +
+            Debug.Log($"NORMALIZE RESULT: {names.Count} clips levelled to {effectiveTargetDb:F1} dBFS RMS " +
+                      $"(attenuate-only, rebased from {TARGET_RMS_DB} dBFS) | " +
                       $"peak-limited={ceilingLimited} unreadable={unreadable} | {ASSET_PATH}\n{report}");
         }
     }

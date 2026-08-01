@@ -38,17 +38,41 @@ namespace PoSumo
         private float _slowMoEndReal;
         private bool _widePending;
         private float _wideAtReal;
+        private bool _resolved;
+        private bool _subscribed;
 
+        /// References are resolved here rather than in OnEnable because this
+        /// companion is spawned BEFORE Systems_MatchAudio is, so an OnEnable
+        /// lookup would find no audio.
         private void Start()
         {
             _manager = FindAnyObjectByType<Systems_GameMatchManager>();
             _camFollow = FindAnyObjectByType<Systems_CameraFollow>();
             _audio = FindAnyObjectByType<Systems_MatchAudio>();
-            if (_manager == null) return;
+            _resolved = true;
+            Subscribe();
+        }
 
-            _manager.RoundEnded += OnRoundEnded;
-            _manager.RoundStarted += OnRoundStarted;
-            _manager.MatchEnded += OnMatchEnded;
+        /// Start runs once, but OnDisable tears the subscriptions down — so
+        /// without re-subscribing here a single disable/enable cycle of this
+        /// object silently killed the KO slow motion, the round-end punch-in,
+        /// the salt throw and the match-end camera beat for the rest of the
+        /// session, with no error.
+        private void OnEnable()
+        {
+            if (_resolved) Subscribe();
+        }
+
+        private void Subscribe()
+        {
+            if (_subscribed) return;
+            _subscribed = true;
+            if (_manager != null)
+            {
+                _manager.RoundEnded += OnRoundEnded;
+                _manager.RoundStarted += OnRoundStarted;
+                _manager.MatchEnded += OnMatchEnded;
+            }
             Systems_BodyDamage.Knockout += OnKnockout;
         }
 
@@ -103,7 +127,15 @@ namespace PoSumo
 
         private void OnDisable()
         {
-            Time.timeScale = 1f;
+            // Only undo slow motion this component actually applied, and never
+            // over a pause — a blanket write to 1 also cancelled the player's.
+            if (_slowMoActive)
+            {
+                _slowMoActive = false;
+                RestoreTimeScale();
+            }
+            if (!_subscribed) return;
+            _subscribed = false;
             if (_manager != null)
             {
                 _manager.RoundEnded -= OnRoundEnded;
@@ -112,6 +144,20 @@ namespace PoSumo
             }
             // Static event — leaking this keeps a dead scene's presentation alive.
             Systems_BodyDamage.Knockout -= OnKnockout;
+        }
+
+        /// Ends slow motion without stepping on a pause.
+        ///
+        /// The slow-mo deadline is REALTIME, so it keeps running while paused at
+        /// timeScale 0 — and Update runs there too. Writing 1 unconditionally
+        /// therefore resumed the match a second or so after the player paused
+        /// during a round-end or KO finish, with the PAUSED card still up.
+        /// TogglePause restores the scale itself on resume, so skipping it here
+        /// loses nothing.
+        private void RestoreTimeScale()
+        {
+            if (_manager != null && _manager.IsPaused) return;
+            Time.timeScale = 1f;
         }
 
         /// Shio-maki: each wrestler throws purifying salt across the dohyo before
@@ -167,8 +213,8 @@ namespace PoSumo
         {
             if (_slowMoActive && Time.realtimeSinceStartup >= _slowMoEndReal)
             {
-                Time.timeScale = 1f;
                 _slowMoActive = false;
+                RestoreTimeScale();
             }
 
             // The hold on the fallen fighter has expired — pull back to the arena.

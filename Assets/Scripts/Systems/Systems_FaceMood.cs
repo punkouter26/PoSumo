@@ -14,8 +14,10 @@ namespace PoSumo
     /// Systems_GameMatchManager.
     public sealed class Systems_FaceMood : MonoBehaviour
     {
-        [Tooltip("Behavior name of the fighter whose face reacts.")]
+        [Tooltip("Behavior name of the fighter whose face reacts. Only used to resolve hand-placed instances — the runtime spawner assigns `fighter` directly.")]
         public string fighterBehaviorName = "Matt";
+        [Tooltip("The fighter whose face reacts. Assigned by Systems_GameMatchManager when it spawns this.")]
+        public Agent_Biped fighter;
         public float flashSeconds = 1.5f;
         public float knockdownFlashSeconds = 1.2f;
         [Tooltip("Per-second rate the mood chases live dominance.")]
@@ -77,23 +79,35 @@ namespace PoSumo
         private int _lastMoodTarget;
         private const float FLOURISH_SECONDS = 0.9f; // ladder rides up, holds a beat, walks back
 
+        /// Fallback for an instance placed by hand in a scene rather than spawned
+        /// by the manager. Ambiguous in a mirror match, which is exactly why the
+        /// spawner assigns the instance instead.
+        private Agent_Biped ResolveByName()
+        {
+            if (_manager.wrestlerA != null && _manager.wrestlerA.behaviorName == fighterBehaviorName)
+            {
+                return _manager.wrestlerA;
+            }
+            if (_manager.wrestlerB != null && _manager.wrestlerB.behaviorName == fighterBehaviorName)
+            {
+                return _manager.wrestlerB;
+            }
+            return null;
+        }
+
         private void Start()
         {
             _manager = FindAnyObjectByType<Systems_GameMatchManager>();
             _hud = FindAnyObjectByType<Systems_FightHud>();
             if (_manager == null) return;
 
-            if (_manager.wrestlerA != null && _manager.wrestlerA.behaviorName == fighterBehaviorName)
-            {
-                _fighter = _manager.wrestlerA;
-                _fighterIsA = true;
-            }
-            else if (_manager.wrestlerB != null && _manager.wrestlerB.behaviorName == fighterBehaviorName)
-            {
-                _fighter = _manager.wrestlerB;
-                _fighterIsA = false;
-            }
+            // Bound by INSTANCE, never by behaviour name. The bracket seeds each
+            // character twice, so in a mirror bout the name is ambiguous: both
+            // spawned drivers matched wrestlerA, leaving B's face frozen on its
+            // spawn sprite while A's head sprite was written by two components.
+            _fighter = fighter != null ? fighter : ResolveByName();
             if (_fighter == null) return;
+            _fighterIsA = _fighter == _manager.wrestlerA;
             _body = _fighter.GetComponent<Agent_BipedBody>();
 
             // Face names come from the character definition; Matt's legacy

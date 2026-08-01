@@ -261,9 +261,11 @@ namespace PoSumo
         private float _nextSplashTime;
         private float _koUntil;
         private bool _knockedOut;
+        private Systems_GameMatchManager _manager;
 
         private void Start()
         {
+            _manager = FindAnyObjectByType<Systems_GameMatchManager>();
             if (body == null)
             {
                 body = GetComponentInParent<Agent_BipedBody>();
@@ -275,18 +277,25 @@ namespace PoSumo
                 return;
             }
 
-            // NOTE: keyed by behaviour name, so the two bracket slots seeded with
-            // the SAME character share one damage record. Per-slot tracking would
-            // need a stable entrant id the arena scene does not currently carry.
-            if (!Store.TryGetValue(agent.behaviorName, out _marks))
+            // Keyed by behaviour name so a fighter carries its bruises from bout
+            // to bout. A MIRROR bout breaks that: the bracket seeds every
+            // character twice, so both slots resolved to one key — and
+            // _regionDamage is the live dismemberment gate, not merely a record.
+            // Sharing it meant the detach threshold was reached on half the
+            // punishment and the limb tore off a fighter who had never been hit
+            // there, on both bodies, with rules consequences via OutOfRing's
+            // foot test. Mirror bouts get a per-side key; every other pairing is
+            // keyed exactly as before.
+            string key = DamageKey(agent);
+            if (!Store.TryGetValue(key, out _marks))
             {
                 _marks = new List<Mark>();
-                Store[agent.behaviorName] = _marks;
+                Store[key] = _marks;
             }
-            if (!RegionStore.TryGetValue(agent.behaviorName, out _regionDamage))
+            if (!RegionStore.TryGetValue(key, out _regionDamage))
             {
                 _regionDamage = new float[REGION_COUNT];
-                RegionStore[agent.behaviorName] = _regionDamage;
+                RegionStore[key] = _regionDamage;
             }
             Active[body] = this;
 
@@ -301,6 +310,23 @@ namespace PoSumo
             // belonged to the match where it happened; replaying the drama on
             // every subsequent scene load would be absurd.
             ReapplyStandingDismemberment();
+        }
+
+        /// Persistent damage-record key for this fighter.
+        ///
+        /// Behaviour name alone in every normal bout, so nothing about the
+        /// existing carry-over changes. Only a mirror bout — where the name
+        /// identifies both fighters equally — is split per side, because there
+        /// the alternative is one shared mutable array driving two bodies.
+        private string DamageKey(Agent_Biped agent)
+        {
+            if (_manager == null
+                || _manager.wrestlerA == null || _manager.wrestlerB == null
+                || _manager.wrestlerA.behaviorName != _manager.wrestlerB.behaviorName)
+            {
+                return agent.behaviorName;
+            }
+            return agent.teamId == 0 ? agent.behaviorName + "#A" : agent.behaviorName + "#B";
         }
 
         /// Re-sever anything already past the threshold, without presentation.
@@ -338,8 +364,17 @@ namespace PoSumo
             if (_knockedOut && Time.time >= _koUntil)
             {
                 _knockedOut = false;
-                // Hand the body back to its brain. If the round already ended, the
-                // referee's own reset takes over and this is harmless.
+                // Only hand the body back while a round is actually live. The
+                // referee ends a round with both fighters' actions off but their
+                // physics still simulating through the announce beat, so an
+                // expiring KO restored motors mid-beat and the "unconscious"
+                // loser climbed back to his feet under the SCORES! banner.
+                // Skipping it is safe: the next round's ResetPose calls
+                // RestoreMotors anyway.
+                if (_manager != null && !_manager.RoundLive)
+                {
+                    return;
+                }
                 if (body != null)
                 {
                     body.RestoreMotors();

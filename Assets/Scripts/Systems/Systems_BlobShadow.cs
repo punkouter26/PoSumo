@@ -18,6 +18,7 @@ namespace PoSumo
         public Rigidbody2D target;                 // pelvis rigidbody
         [Tooltip("Optional. When set, each foot also gets its own contact patch.")]
         public Agent_BipedBody body;
+        [Tooltip("Fallback dohyo half-extent, used only when no Systems_SumoArena is present.")]
         public float platformHalfWidth = 2.75f;    // dohyo top extent from arena center
         public float platformY = 0f;               // dohyo top surface
         public float floorY = -0.6f;               // crowd-floor surface (fall-off landings)
@@ -35,6 +36,7 @@ namespace PoSumo
         private SpriteRenderer _renderer;
         private SpriteRenderer[] _footRenderers;
         private Rigidbody2D[] _feet;
+        private Systems_SumoArena _arena;
         private static Sprite _softDisc;
 
         private static Sprite SoftDisc()
@@ -67,6 +69,21 @@ namespace PoSumo
 
         private void Start()
         {
+            // The mat geometry is read from the arena, not from the fields below.
+            // Agent_BipedBody builds this shadow and sets only target/baseWidth/
+            // body, so platformHalfWidth kept its 2.75 default — the pre-realism
+            // ring — while the mat is 4.0. Past x = +/-2.75 every patch dropped to
+            // floorY and drew 0.6 m BELOW the clay, and since walkInStartGapHalf
+            // is 3 that was both fighters for the whole ceremonial opening.
+            _arena = FindAnyObjectByType<Systems_SumoArena>();
+            if (_arena != null)
+            {
+                Vector3 arenaPosition = _arena.transform.position;
+                arenaCenterX = arenaPosition.x;
+                platformY = arenaPosition.y;
+                floorY = platformY - _arena.platformDrop;
+            }
+
             if (body == null)
             {
                 return;
@@ -85,8 +102,13 @@ namespace PoSumo
             }
         }
 
-        private float GroundAt(float x) =>
-            Mathf.Abs(x - arenaCenterX) <= platformHalfWidth ? platformY : floorY;
+        /// Read live, so the patches follow the mat as the walk-in widens it and
+        /// the engage contracts it back to the fighting ring.
+        private float GroundAt(float x)
+        {
+            float half = _arena != null ? _arena.CurrentHalfWidth : platformHalfWidth;
+            return Mathf.Abs(x - arenaCenterX) <= half ? platformY : floorY;
+        }
 
         private void LateUpdate()
         {

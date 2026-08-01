@@ -365,9 +365,16 @@ namespace PoSumo
         /// foot (near->far or far->near), i.e. actual stepping, not skating.
         private void CadenceReward(float scale)
         {
-            bool nearPlanted = _b.FootNear.position.y < PLANTED_HEIGHT
+            // Heights are ARENA-RELATIVE, exactly as StanceFactor measures them.
+            // Against absolute world Y this test was meaningless for the walk
+            // lane, which sits at y = -60: every foot was trivially below 0.12, so
+            // plantedness collapsed to the velocity gate alone and the apex of a
+            // swing — airborne but momentarily slow — counted as a step. The same
+            // line behaved correctly in the sumo lane at y = 0, so one reward term
+            // meant two different things inside a single training scene.
+            bool nearPlanted = San(_b.FootNear.position.y) - arenaGroundY < PLANTED_HEIGHT
                 && Mathf.Abs(_b.FootNear.linearVelocity.x) < 0.5f;
-            bool farPlanted = _b.FootFar.position.y < PLANTED_HEIGHT
+            bool farPlanted = San(_b.FootFar.position.y) - arenaGroundY < PLANTED_HEIGHT
                 && Mathf.Abs(_b.FootFar.linearVelocity.x) < 0.5f;
             int pattern = (nearPlanted ? 1 : 0) | (farPlanted ? 2 : 0);
             if ((pattern == 1 && _lastSinglePlant == 2) || (pattern == 2 && _lastSinglePlant == 1))

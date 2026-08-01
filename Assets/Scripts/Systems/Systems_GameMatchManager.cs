@@ -180,6 +180,16 @@ namespace PoSumo
         /// about the centre line and the sample counts for neither of them.
         public bool ScoringLive => _phase == Phase.Fighting && _countdownLeft <= 0f;
 
+        /// True while a round is actually being contested. Unlike ScoringLive this
+        /// includes the countdown, because what it answers is "may something hand
+        /// a body back to its brain" — Systems_BodyDamage's expiring knockout.
+        public bool RoundLive => _phase == Phase.Fighting;
+
+        /// True while the pause card is up. Read by Systems_MatchPresentation,
+        /// whose slow-motion timer is REALTIME and so keeps running behind the
+        /// pause — it must not write Time.timeScale back to 1 there.
+        public bool IsPaused => _paused;
+
         /// Fired when a round is decided: (roundWinner, roundLoser) — both null on a draw.
         public event System.Action<Agent_Biped, Agent_Biped> RoundEnded;
         /// Fired when scoring resumes for a fresh round.
@@ -194,6 +204,10 @@ namespace PoSumo
         private VisualElement _pauseCard, _resultCard;
         private VisualElement _scoreBug;   // hidden while the result card is up
         private bool _paused;
+        // Announce reveals still in flight, so a rematch can drop them — see
+        // CancelPendingAnnounce.
+        private IVisualElementScheduledItem _resultCardReveal, _scoreBugHide, _bannerReveal;
+        private bool _openingRoundPending;
 
         private void Start()
         {
@@ -285,6 +299,15 @@ namespace PoSumo
             {
                 HoldUpright();
                 StartCountdown();
+                // Round 1 of a countdown-only opening raises RoundStarted like
+                // any other round. It did not, so the opening round got no salt
+                // throw and Systems_MusicDirector never went live for it — and
+                // Systems_MatchAudio compensated by firing its own taiko from
+                // Start, which then double-hit on the walk-in path that DOES
+                // raise the event. Deferred rather than raised here: the
+                // companions subscribe in their own Start, which runs after this
+                // one finished creating them, so an inline raise reaches nobody.
+                _openingRoundPending = true;
             }
         }
 
@@ -659,6 +682,9 @@ namespace PoSumo
             var go = new GameObject($"Voice_{fighter.behaviorName}");
             go.transform.SetParent(transform, false);
             var voice = go.AddComponent<Systems_FighterVoice>();
+            // The instance, not just the name: in a mirror bout the name matches
+            // both wrestlers and every voice bound to wrestlerA.
+            voice.fighter = fighter;
             voice.fighterBehaviorName = fighter.behaviorName;
             voice.pitchScale = pitchScale;
         }
@@ -671,6 +697,8 @@ namespace PoSumo
             var go = new GameObject($"FaceMood_{fighter.behaviorName}");
             go.transform.SetParent(transform, false);
             var mood = go.AddComponent<Systems_FaceMood>();
+            // See SpawnVoice: the instance disambiguates a mirror bout.
+            mood.fighter = fighter;
             mood.fighterBehaviorName = fighter.behaviorName;
         }
 
@@ -923,6 +951,11 @@ namespace PoSumo
 
         private void Update()
         {
+            if (_openingRoundPending)
+            {
+                _openingRoundPending = false;
+                RoundStarted?.Invoke();
+            }
             if (_phase == Phase.MatchOver && ContinuePressed()) { ResetMatch(); return; }
             // Android maps its hardware back button onto escapeKey, so this is the
             // system-back handler as well as the desktop shortcut. Update still runs
@@ -1241,7 +1274,7 @@ namespace PoSumo
                 ShowResultCardAfter(announceDelayMs);
                 // The running scorebug would otherwise sit above the result card
                 // competing with it; the card already states the score.
-                HideAfter(_scoreBug, announceDelayMs);
+                _scoreBugHide = HideAfter(_scoreBug, announceDelayMs);
                 MatchEnded?.Invoke(aWon ? wrestlerA : wrestlerB);
                 return;
             }
@@ -1322,7 +1355,7 @@ namespace PoSumo
             // instead of being stretched along with it.
             long delayMs = (long)(Mathf.Max(0f, knockoutAnnounceSeconds) * 1000f);
             ShowResultCardAfter(delayMs);
-            HideAfter(_scoreBug, delayMs);
+            _scoreBugHide = HideAfter(_scoreBug, delayMs);
 
             // No RoundEnded is fired: no round was won. Raising it would hand the
             // career recorder a round result that never happened.
@@ -1335,12 +1368,29 @@ namespace PoSumo
             return body != null && body.IsLimp;
         }
 
-        private static void HideAfter(VisualElement element, long delayMs)
+        private static IVisualElementScheduledItem HideAfter(VisualElement element, long delayMs)
         {
-            if (element == null) return;
-            if (delayMs <= 0L) { element.style.display = DisplayStyle.None; return; }
-            element.schedule.Execute(() => element.style.display = DisplayStyle.None)
-                   .StartingIn(delayMs);
+            if (element == null) return null;
+            if (delayMs <= 0L) { element.style.display = DisplayStyle.None; return null; }
+            return element.schedule.Execute(() => element.style.display = DisplayStyle.None)
+                          .StartingIn(delayMs);
+        }
+
+        /// Drops every announce still in flight.
+        ///
+        /// The result card, the scorebug hide and the round banner are all
+        /// scheduled ~1.2 s out so the ragdoll lands first. Nothing used to
+        /// cancel them, so starting the next match inside that window — a tap on
+        /// the MatchOver phase, or MatchTestHarness chaining — let RevealResultCard
+        /// fire into the NEW match: it froze both fighters (actions off, physics
+        /// off) and raised the previous match's card as a modal. The walk-in then
+        /// never reached contact and burned its full timeout with two motionless
+        /// bodies, which is measured play the harness tally then reported as real.
+        private void CancelPendingAnnounce()
+        {
+            if (_resultCardReveal != null) { _resultCardReveal.Pause(); _resultCardReveal = null; }
+            if (_scoreBugHide != null) { _scoreBugHide.Pause(); _scoreBugHide = null; }
+            if (_bannerReveal != null) { _bannerReveal.Pause(); _bannerReveal = null; }
         }
 
         /// Reveal the result card, and stop the match dead at the same moment.
@@ -1364,7 +1414,7 @@ namespace PoSumo
                 RevealResultCard();
                 return;
             }
-            _resultCard.schedule.Execute(RevealResultCard).StartingIn(delayMs);
+            _resultCardReveal = _resultCard.schedule.Execute(RevealResultCard).StartingIn(delayMs);
         }
 
         /// Kills a fighter's motion outright: motors off, velocities zeroed and
@@ -1388,7 +1438,7 @@ namespace PoSumo
                 _hud.ShowCentre(element);
                 return;
             }
-            element.schedule.Execute(() => _hud.ShowCentre(element)).StartingIn(delayMs);
+            _bannerReveal = element.schedule.Execute(() => _hud.ShowCentre(element)).StartingIn(delayMs);
         }
 
         private static string WrapName(string n, Color c) => $"<color=#{Hex(c)}>{n}</color>";
@@ -1403,6 +1453,9 @@ namespace PoSumo
             _koA = _koB = 0;
             EndedByKnockout = false;
             _walkInPlayed = false;   // a rematch is a new match, so it walks in again
+            // Before HideModal, or a reveal scheduled by the match just finished
+            // fires into this one and freezes it behind a stale card.
+            CancelPendingAnnounce();
             MatchReset?.Invoke();
             UpdateScoreboard(false);
             _hud.HideModal();            // clears the result card and the backdrop

@@ -13,8 +13,24 @@ namespace PoSumo
     {
         private Systems_GameMatchManager _manager;
 
+        /// Snapshotted at Start, not read at MatchEnded.
+        ///
+        /// Systems_TournamentReporter also subscribes to MatchEnded, and it
+        /// subscribes FIRST — its GameObject is created in Systems_MatchRoster's
+        /// Awake at execution order -500, while this one is created inside the
+        /// match manager's Start. Its handler calls ReportWinner, which clears
+        /// Active on the final, so by the time this recorder ran the guard the
+        /// bracket already looked inactive and RecordTitle — the only title
+        /// writer in the project — never fired once. Reading the state before
+        /// any of that happens removes the ordering dependency instead of
+        /// trading one fragile order for another.
+        private bool _isTournamentFinal;
+
         private void Start()
         {
+            _isTournamentFinal = Systems_TournamentState.Active
+                && Systems_TournamentState.CurrentMatch == Systems_TournamentState.FINAL_MATCH;
+
             _manager = FindAnyObjectByType<Systems_GameMatchManager>();
             if (_manager == null)
             {
@@ -48,10 +64,9 @@ namespace PoSumo
             Agent_Biped loser = winner == _manager.wrestlerA ? _manager.wrestlerB : _manager.wrestlerA;
             Systems_CareerStats.RecordMatch(NameOf(winner), NameOf(loser));
 
-            // The final of a bracket also awards a title. Checked here rather than
+            // The final of a bracket also awards a title. Decided here rather than
             // in the reporter because an exhibition match must never award one.
-            if (Systems_TournamentState.Active
-                && Systems_TournamentState.CurrentMatch == Systems_TournamentState.FINAL_MATCH)
+            if (_isTournamentFinal)
             {
                 Systems_CareerStats.RecordTitle(NameOf(winner));
             }
