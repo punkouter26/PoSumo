@@ -35,6 +35,10 @@ namespace PoSumo
             {
                 _manager.pointsToWin = roundsToWinMatchFallback;
             }
+            // This bout's result goes to the bracket and the scene change is
+            // scheduled the moment it is decided, so the result card must not
+            // offer a rematch it cannot honour.
+            _manager.MarkBracketBout();
             _manager.MatchEnded += OnMatchEnded;
         }
 

@@ -12,8 +12,9 @@ namespace PoSumo
     ///            -> Fighting
     /// A round loss (pushed out, fallen off, or sustained throw-down) scores a
     /// point for the opponent; first to pointsToWin takes the match. Match end
-    /// dims the arena and waits for the REMATCH button, a pointer press or Space.
-    /// UI Toolkit only.
+    /// dims the arena and waits for the REMATCH button, a pointer press or Space
+    /// — except in a bracket bout, where the result is already final (see
+    /// MarkBracketBout). UI Toolkit only.
     public sealed class Systems_GameMatchManager : MonoBehaviour
     {
         private enum Phase { Fighting, RoundEnded, Grace, WalkIn, MatchOver }
@@ -203,7 +204,9 @@ namespace PoSumo
         private Label _resultTitle, _resultScore;
         private VisualElement _pauseCard, _resultCard;
         private VisualElement _scoreBug;   // hidden while the result card is up
+        private Button _rematchButton;     // hidden for a bracket bout — see MarkBracketBout
         private bool _paused;
+        private bool _bracketBout;
         // Announce reveals still in flight, so a rematch can drop them — see
         // CancelPendingAnnounce.
         private IVisualElementScheduledItem _resultCardReveal, _scoreBugHide, _bannerReveal;
@@ -821,10 +824,11 @@ namespace PoSumo
             _resultCard.Add(_resultScore);
 
             // Big touch-friendly rematch button (mobile) — Space and any pointer
-            // press still work too.
-            Button rematch = Systems_UiKit.PrimaryButton("REMATCH", ResetMatch);
-            rematch.style.marginTop = Systems_UiKit.SPACE_5;
-            _resultCard.Add(rematch);
+            // press still work too. Kept in a field because a bracket bout hides
+            // it at reveal time; see MarkBracketBout.
+            _rematchButton = Systems_UiKit.PrimaryButton("REMATCH", ResetMatch);
+            _rematchButton.style.marginTop = Systems_UiKit.SPACE_5;
+            _resultCard.Add(_rematchButton);
 
             _hud.AddModal(_resultCard);
         }
@@ -956,7 +960,7 @@ namespace PoSumo
                 _openingRoundPending = false;
                 RoundStarted?.Invoke();
             }
-            if (_phase == Phase.MatchOver && ContinuePressed()) { ResetMatch(); return; }
+            if (_phase == Phase.MatchOver && !_bracketBout && ContinuePressed()) { ResetMatch(); return; }
             // Android maps its hardware back button onto escapeKey, so this is the
             // system-back handler as well as the desktop shortcut. Update still runs
             // at timeScale 0, so it can also un-pause.
@@ -972,7 +976,8 @@ namespace PoSumo
 #endif
         }
 
-        /// Dismiss the result card and rematch.
+        /// Dismiss the result card and rematch. Never consulted for a bracket bout
+        /// — see MarkBracketBout.
         ///
         /// This was space-only. On the actual target platform there is no keyboard,
         /// so Keyboard.current is null and the check could never return true — an
@@ -987,7 +992,11 @@ namespace PoSumo
             }
             return Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame;
 #else
-            return Input.GetKeyDown(KeyCode.Space);
+            // No legacy-Input fallback: the project is Input System package only
+            // (ProjectSettings activeInputHandler: 1), so this branch never
+            // compiles, and UnityEngine.Input would throw at runtime under that
+            // setting anyway. The REMATCH button still dismisses the card.
+            return false;
 #endif
         }
 
@@ -1404,6 +1413,14 @@ namespace PoSumo
         {
             FreezeFighter(wrestlerA);
             FreezeFighter(wrestlerB);
+            // Applied here rather than at build time: the reporter is spawned by
+            // Systems_MatchRoster and its Start is not ordered against this
+            // component's, so the flag is only reliably set by the time a match
+            // has actually been decided.
+            if (_rematchButton != null)
+            {
+                _rematchButton.style.display = _bracketBout ? DisplayStyle.None : DisplayStyle.Flex;
+            }
             _hud.ShowModal(_resultCard);
         }
 
@@ -1442,6 +1459,18 @@ namespace PoSumo
         }
 
         private static string WrapName(string n, Color c) => $"<color=#{Hex(c)}>{n}</color>";
+
+        /// Called by Systems_TournamentReporter, which exists only for a bracket
+        /// bout. A bracket result is reported to Systems_TournamentState the
+        /// instant the match is decided and the return to SCN_TOURNAMENT is
+        /// already scheduled, so a rematch cannot change the outcome — it just
+        /// restarts the fight for a second and then cuts to the bracket anyway.
+        /// Both the REMATCH button and tap-to-continue are suppressed.
+        ///
+        /// Not gated on Systems_TournamentState.Active: ReportWinner clears that
+        /// flag on the final, and it is cleared before the result card is even
+        /// revealed, so the final's card would have offered a rematch.
+        public void MarkBracketBout() => _bracketBout = true;
 
         /// Public so MatchTestHarness can chain matches unattended without the
         /// REMATCH button. It used to reach this through private reflection, which
