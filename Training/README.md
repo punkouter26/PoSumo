@@ -102,6 +102,63 @@ scene now), `MattRecover05` (its scene is gone; the walk-in sets `Mode.Walk`, no
 A gait still has to be learned on the physique it runs on, so the walk lane lives in
 each fighter's own scene rather than one shared walk scene.
 
+## The actuator rebuild (2026-08-01) — every brain needs a corrective pass
+
+The motor model changed, so every shipped brain is now driving a body that answers
+differently. This is the same class of change as the capsule-limb re-tune below, and
+the same recovery applies: rebuild each env, `--initialize-from` the shipped trunk,
+run a short pass at reduced learning rate. Do NOT retrain from scratch.
+
+What changed under the policies:
+
+1. **Force-velocity (Hill) scaling on motor torque.** A `HingeJoint2D` motor is an
+   ideal servo — full torque at any speed — so a hip could deliver 300 N·m while
+   already swinging at 400°/s. Concentric torque now falls off with shortening
+   velocity (a/F0 = 0.25) and eccentric keeps 1.5×, as in vivo. This is the physical
+   version of what `effortPenalty` was buying with a reward term, so **expect the
+   effort term to be worth re-tuning downward** once the policies adapt.
+2. **Activation dynamics.** Commanded torque is now first-order lagged, 50 ms rise /
+   70 ms fall. At decision period 3 (60 ms) the policy could previously invert a
+   joint's whole torque between decisions.
+3. **Nonlinear end-range passive stiffness**, cubic past 70% of each joint's own
+   half-range, so limbs stop parking against their stops.
+4. **Angular damping 0.8 → 0.35.** The old value was compensating for 1; keeping both
+   would leave the bodies sluggish.
+5. **Ankle ±25° → ±35°, torque 120 → 160 N·m.** Human total ROM is ~70°, and the
+   ankle is the joint that actually drives a sumo forward.
+
+Two things are staged but OFF, and both want the next run rather than a corrective
+pass, because each changes the observation vector and so invalidates the input layer:
+
+- `Agent_CharacterDefinition.contactObservations` (+4 obs: per-foot contact and the
+  share of body weight through each foot). The policy is currently **blind to the
+  floor** — the four "feet" slots are torso-relative positions and nothing else — so
+  it cannot tell a planted foot from one in the air. This is the highest-value
+  observation available and it takes 45 → 49.
+- `Agent_CharacterDefinition.driveReward` (0 by default). Every existing sumo term
+  pays for a *collision*; nothing pays for holding a load. Measured push in contact
+  was 71–500 N against a human's sustained 350–700 N. Try 0.004–0.008 with
+  `contactObservations` on.
+
+### Better training than more PPO
+
+Self-play from scratch is why the gaits read as learned-not-lived. In rough order of
+value per unit of work:
+
+1. **Reference-motion imitation (DeepMimic-style).** Pretrain against even a short
+   reference clip — a shiko stomp, a tachiai charge — then fine-tune on winning with
+   self-play. This is the best-established route to human-looking bipedal motion and
+   it composes with everything already here.
+2. **Mirror/symmetry augmentation.** The body is symmetric and `facingSign` already
+   mirrors observations, so each sample can be reflected into a second training
+   example. Roughly halves the cost of learning a symmetric gait.
+3. **Early termination on non-postures.** Ending an episode when the chest passes,
+   say, 60° off vertical stops the policy spending its budget learning to be good at
+   being collapsed, which is where a lot of measured play currently lives.
+4. **Curriculum on push, not just on ring width.** `platform_difficulty` already
+   exists; a `push_resistance` dial that ramps opponent mass or friction would train
+   the sustained drive that `driveReward` pays for.
+
 ## The capsule-limb re-tune
 
 Limb colliders changed from `BoxCollider2D` to `CapsuleCollider2D` (matched to the

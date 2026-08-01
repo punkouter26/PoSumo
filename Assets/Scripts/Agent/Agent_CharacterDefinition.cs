@@ -43,6 +43,8 @@ namespace PoSumo
         public bool extendedObservations = true;
         [Tooltip("DecisionRequester period the model was trained at. Standard is 3; legacy brains used 5.")]
         public int decisionPeriod = 3;
+        [Tooltip("Adds 4 observations: per-foot ground contact and the share of body weight carried through each foot.\n\nOFF for every shipped brain, and it must stay off until that fighter is retrained — it changes the observation vector length, so an existing .onnx would be fed a vector its input layer cannot accept.\n\nWorth turning on for the NEXT training run: without it the policy cannot tell a planted foot from one in the air, or feel how hard it is loading the mat, which is the single most important thing a wrestler senses.")]
+        public bool contactObservations = false;
         [Tooltip("Trained model for inference playback.")]
         public Unity.InferenceEngine.ModelAsset inferenceModel;
 
@@ -66,6 +68,8 @@ namespace PoSumo
         public float effortPenalty = 0.0015f;
         [Tooltip("Per-step reward for a real sumo base: both feet planted, planted apart, and knees bent. Nothing rewarded stance before, and fighters were measured mid-bout standing on one foot with the chest 0.87 m off the mat.")]
         public float stanceReward = 0.0009f;
+        [Tooltip("Per-step reward for driving the opponent back while BOTH feet carry load, scaled by the weaker foot's share of body weight. Requires contactObservations to be meaningful.\n\n0 by default because every shipped brain trained without it. Sumo is won by sustained push, but every other term here pays for a collision, so policies learned to strike rather than drive. Try 0.004-0.008 on the next run.")]
+        public float driveReward = 0f;
         public float energyPenalty = 0.0004f;
         public float jerkPenalty = 0.0003f;
         [Range(0f, 1f)]

@@ -32,6 +32,8 @@ namespace PoSumo
 
         [Tooltip("Adds 3 opponent-state observations (uprightness, down flag, edge distance). Must match the assigned model's input size.")]
         public bool extendedObservations = false;
+        [Tooltip("Adds 4 proprioceptive observations: per-foot ground contact and normalised load. OFF for every shipped brain — it changes the vector length, so it can only be switched on together with a retrain.")]
+        public bool contactObservations = false;
         [Tooltip("ML-Agents DecisionRequester period. Legacy brains trained at 5; the extended Matt brain at 3.")]
         public int decisionPeriod = 5;
 
@@ -105,6 +107,10 @@ namespace PoSumo
         // such constant — neither term existed. They are deliberate behavioural
         // change and every fighter needs a corrective run to pick them up.
         private float _pEffort = 0.0015f, _rStance = 0.0009f;
+        // Defaults to 0 — unlike the coefficients above, this one must NOT change
+        // what an untuned character trains, because every shipped brain was trained
+        // without it. Set it on the character sheet for the next run.
+        private float _rDrive = 0f;
 
         // Walk-school coefficients — defaults are the constants this branch used
         // before they became per-character, so an unassigned character trains the
@@ -120,6 +126,7 @@ namespace PoSumo
             {
                 behaviorName = character.behaviorName;
                 extendedObservations = character.extendedObservations;
+                contactObservations = character.contactObservations;
                 decisionPeriod = character.decisionPeriod;
                 if (inferenceModel == null) inferenceModel = character.inferenceModel;
                 _rUpright = character.uprightReward;
@@ -136,6 +143,7 @@ namespace PoSumo
                 _pJerk = character.jerkPenalty;
                 _pEffort = character.effortPenalty;
                 _rStance = character.stanceReward;
+                _rDrive = character.driveReward;
                 _bendFloor = character.straightLegEarnFraction;
                 _wForward = character.walkForwardReward;
                 _wStanceFloor = character.walkStanceFloor;
@@ -151,7 +159,7 @@ namespace PoSumo
             bp.BehaviorName = behaviorName;
             bp.TeamId = teamId;
             bp.BrainParameters.VectorObservationSize =
-                ObservationCount + (extendedObservations ? 3 : 0);
+                ObservationCount + (extendedObservations ? 3 : 0) + (contactObservations ? 4 : 0);
             bp.BrainParameters.NumStackedVectorObservations = 1;
             bp.BrainParameters.ActionSpec = ActionSpec.MakeContinuous(ActionCount);
 
@@ -304,6 +312,14 @@ namespace PoSumo
             float xLocal = (tp.x - arenaCenterX) * Fs;                            // 2
             sensor.AddObservation(San((ringHalfWidth - xLocal) / ringHalfWidth)); // dist to edge ahead
             sensor.AddObservation(San((ringHalfWidth + xLocal) / ringHalfWidth)); // dist to edge behind
+
+            if (contactObservations)                                              // +4
+            {
+                sensor.AddObservation(_b.FootDownNear ? 1f : 0f);
+                sensor.AddObservation(San(_b.FootLoadNear));
+                sensor.AddObservation(_b.FootDownFar ? 1f : 0f);
+                sensor.AddObservation(San(_b.FootLoadFar));
+            }
 
             if (extendedObservations)                                             // +3
             {
@@ -527,6 +543,28 @@ namespace PoSumo
                     // Getting back up mid-round pays (falls are not losses).
                     AddReward(Mathf.Max(0f, tv.y) * 0.0005f);
                     AddReward((torsoY - _lastTorsoY) * _rRise);
+                }
+
+                // SUSTAINED DRIVE. Every other term here pays for a collision —
+                // closing speed, lunge, impact momentum — so the policy learned to
+                // hit rather than to push, and measured push in contact was 71-500 N
+                // against a human's sustained 350-700 N. Sumo is not a striking
+                // sport: it is won by holding a load through the feet and walking
+                // the opponent backwards.
+                //
+                // Paid only when BOTH feet are carrying weight and the fighter is
+                // actually moving toward the opponent, which is the one posture that
+                // cannot be farmed by flailing. Costs nothing at inference; like all
+                // shaping it only exists during training.
+                if (opponent != null && _b.FootDownNear && _b.FootDownFar)
+                {
+                    float toward = Mathf.Sign(opponent.TorsoX - Torso.position.x);
+                    float drive = San(tv.x) * toward;
+                    if (drive > 0f)
+                    {
+                        float grip = Mathf.Min(_b.FootLoadNear, _b.FootLoadFar);
+                        AddReward(drive * grip * _rDrive);
+                    }
                 }
 
                 // Sumo base: a wide, low, two-footed stance. Nothing rewarded this

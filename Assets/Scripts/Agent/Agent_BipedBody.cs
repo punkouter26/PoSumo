@@ -130,6 +130,31 @@ namespace PoSumo
         private const float PASSIVE_STIFFNESS_FRAC = 0.06f;   // of max torque at 90 deg off neutral
         private const float PASSIVE_DAMPING_FRAC = 0.10f;     // of max torque at 400 deg/s
 
+        /// Hill's a/F0 for mixed skeletal muscle. Shapes how fast concentric torque
+        /// falls off with shortening velocity; 0.25 is the textbook value.
+        private const float HILL_A_F0 = 0.25f;
+        /// Eccentric torque as a multiple of isometric. Real muscle resists a
+        /// stretch harder than it shortens, which is what lets a braced fighter
+        /// hold a shove without being driven back.
+        private const float ECCENTRIC_GAIN = 1.5f;
+        /// Muscle activation / deactivation time constants (seconds). Rise is
+        /// faster than fall, as in vivo.
+        private const float ACT_RISE_TAU = 0.05f;
+        private const float ACT_FALL_TAU = 0.07f;
+
+        /// Torque budget actually in force at each joint this step, after the
+        /// force-velocity scaling and the activation lag. Persisted because the
+        /// lag is a first-order filter over time, not a per-step function.
+        private float[] _appliedTorque;
+
+        /// End-range passive stiffening. Real joints are slack in mid-range and get
+        /// very stiff in the last stretch before the stop; a single linear spring
+        /// (what this used to be) is equally stiff everywhere and lets limbs park
+        /// against their limits. Cubic in the fraction of range used past the knee
+        /// point, added on top of the linear term.
+        private const float END_RANGE_KNEE = 0.7f;    // fraction of half-range where stiffening starts
+        private const float END_RANGE_GAIN = 6f;      // multiple of the linear term at the very stop
+
         // NOT YET IMPLEMENTED: passive neck.
         //
         // The head is a compound collider on the Chest rigidbody with its 6 kg
@@ -203,7 +228,16 @@ namespace PoSumo
         // 75 degrees and throw an arm 160 degrees behind him, which is the single
         // largest "that is not a body" contributor after motor saturation. They are
         // now clamped to roughly human TOTAL range:
-        //   ankle    +/-45 -> +/-25   (human ROM ~70 deg: 20 dorsi + 50 plantar)
+        //   ankle    +/-45 -> +/-25 -> +/-35 (human TOTAL ROM ~70 deg, and +/-25 gave
+        //            only 50, capping the joint that actually drives a sumo forward.
+        //            Torque 120 -> 160 against a human plantarflexor peak of 150-200.)
+        //            STILL SYMMETRIC, and that is deliberate restraint, not an
+        //            oversight: the real ankle is asymmetric (~20 dorsi / 50 plantar),
+        //            but which SIGN is plantarflexion has to be MEASURED here, not
+        //            reasoned out — see the sign-convention note below, which is the
+        //            bug that survived the whole life of this project. Widen-symmetric
+        //            is the change that cannot be wrong. Make it asymmetric only after
+        //            probing the sign the same way the hip/knee/elbow were probed.
         //   spine    +/-25 -> +/-20   each, so +/-60 over three (human ~120 total)
         //   shoulder +/-160 -> +/-120 (human ~240 total)
         //
@@ -237,10 +271,10 @@ namespace PoSumo
         {
             new JointDef(1, 0,  0f, 0.964f,-120f,  30f, 300f, 400f), // hip near
             new JointDef(2, 1,  0f, 0.533f,   0f, 150f, 250f, 500f), // knee near
-            new JointDef(3, 2,  0f, 0.10f,  -25f,  25f, 120f, 400f), // ankle near
+            new JointDef(3, 2,  0f, 0.10f,  -35f,  35f, 160f, 400f), // ankle near
             new JointDef(4, 0,  0f, 0.964f,-120f,  30f, 300f, 400f), // hip far
             new JointDef(5, 4,  0f, 0.533f,   0f, 150f, 250f, 500f), // knee far
-            new JointDef(6, 5,  0f, 0.10f,  -25f,  25f, 120f, 400f), // ankle far
+            new JointDef(6, 5,  0f, 0.10f,  -35f,  35f, 160f, 400f), // ankle far
             new JointDef(7, 0,  0f, 1.130f, -20f,  20f, 180f, 250f), // spine 1 (pelvis->lower back)
             new JointDef(8, 7,  0f, 1.259f, -20f,  20f, 180f, 250f), // spine 2 (lower->upper back)
             new JointDef(9, 8,  0f, 1.388f, -20f,  20f, 180f, 250f), // spine 3 (upper back->chest)
@@ -469,7 +503,12 @@ namespace PoSumo
                 // ragdoll had effectively no passive damping and every limb whipped
                 // and oscillated, which read as a puppet wearing motors.
                 rb.linearDamping = 0.25f;
-                rb.angularDamping = 0.8f;
+                // 0.8 was ~16x Unity's default and was doing the job the actuator
+                // model should do: bleeding off rotational energy everywhere to stop
+                // an ideal servo catapulting the body. With the Hill curve and the
+                // activation lag in ApplyMotor that brake is no longer load-bearing,
+                // and at 0.8 it also flattened the follow-through a real body has.
+                rb.angularDamping = 0.35f;
                 rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
 
                 // Collider shape follows the drawn shape so contacts happen exactly
@@ -612,6 +651,7 @@ namespace PoSumo
             _maxTorque = new float[JOINT_DEFS.Length];
             _passiveStiffness = new float[JOINT_DEFS.Length];
             _passiveDamping = new float[JOINT_DEFS.Length];
+            _appliedTorque = new float[JOINT_DEFS.Length];
             for (int jointDefIndex = 0; jointDefIndex < JOINT_DEFS.Length; jointDefIndex++)
             {
                 var d = JOINT_DEFS[jointDefIndex];
@@ -873,7 +913,35 @@ namespace PoSumo
             if (joint == null) return;
             var m = joint.motor;
             m.motorSpeed = Mathf.Clamp(action, -1f, 1f) * _maxSpeed[jointIndex] * facingSign;
-            m.maxMotorTorque = _maxTorque[jointIndex];
+
+            // FORCE-VELOCITY (Hill). A HingeJoint2D motor is an ideal servo: left
+            // alone it delivers its FULL torque at any speed up to the target, so a
+            // hip could push 300 N-m while already swinging at 400 deg/s. No muscle
+            // does that — concentric force falls hyperbolically as the muscle
+            // shortens faster and reaches zero at maximum shortening velocity.
+            //
+            // This is the physical version of what effortPenalty was reaching for
+            // with a reward term: flailing at full speed now costs torque by
+            // construction rather than by being fined for it afterwards.
+            //
+            // Hill's a/F0 = b/v0 = 0.25 is the classic value for mixed skeletal
+            // muscle. Eccentric (motor fighting the joint's motion) is NOT reduced —
+            // real muscle is ~1.5x stronger resisting a stretch than shortening —
+            // so bracing against a shove keeps its full budget.
+            float speedFrac = Mathf.Clamp01(Mathf.Abs(joint.jointSpeed) / Mathf.Max(1f, _maxSpeed[jointIndex]));
+            bool concentric = joint.jointSpeed * m.motorSpeed > 0f;
+            float fv = concentric ? (1f - speedFrac) / (1f + HILL_A_F0 * speedFrac * 4f) : ECCENTRIC_GAIN;
+            float target = _maxTorque[jointIndex] * Mathf.Clamp(fv, 0f, ECCENTRIC_GAIN);
+
+            // ACTIVATION DYNAMICS. Muscle torque cannot step: it rises over ~50 ms
+            // and falls over ~70 ms. At decision period 3 (60 ms) the policy could
+            // otherwise invert a joint's entire torque between two decisions, which
+            // is the other half of why the ragdolls snap rather than move.
+            float tau = target > _appliedTorque[jointIndex] ? ACT_RISE_TAU : ACT_FALL_TAU;
+            _appliedTorque[jointIndex] = Mathf.Lerp(_appliedTorque[jointIndex], target,
+                                                    1f - Mathf.Exp(-Time.fixedDeltaTime / tau));
+
+            m.maxMotorTorque = _appliedTorque[jointIndex];
             joint.motor = m;
         }
 
@@ -911,6 +979,9 @@ namespace PoSumo
         /// internal force and cannot push the fighter around by itself.
         private void FixedUpdate()
         {
+            SampleFootLoad(FootNear, out FootDownNear, out FootLoadNear);
+            SampleFootLoad(FootFar, out FootDownFar, out FootLoadFar);
+
             if (Joints == null || _passiveStiffness == null) return;
             for (int jointIndex = 0; jointIndex < Joints.Length; jointIndex++)
             {
@@ -921,6 +992,23 @@ namespace PoSumo
 
                 float torque = -(joint.jointAngle * _passiveStiffness[jointIndex]
                                  + joint.jointSpeed * _passiveDamping[jointIndex]);
+
+                // End-range stiffening: slack in mid-range, very stiff approaching
+                // the stop. Measured against how far into ITS OWN half-range the
+                // joint is, so an asymmetric joint (hip, knee, ankle, elbow) stiffens
+                // at the right place on each side rather than around zero.
+                var lim = joint.limits;
+                float span = joint.jointAngle >= 0f ? lim.max : lim.min;
+                if (!Mathf.Approximately(span, 0f))
+                {
+                    float used = Mathf.Clamp01(joint.jointAngle / span);
+                    if (used > END_RANGE_KNEE)
+                    {
+                        float over = (used - END_RANGE_KNEE) / (1f - END_RANGE_KNEE);
+                        torque -= Mathf.Sign(joint.jointAngle) * over * over * over
+                                  * END_RANGE_GAIN * Mathf.Abs(span) * _passiveStiffness[jointIndex];
+                    }
+                }
 
                 child.AddTorque(torque);
                 Rigidbody2D parent = joint.connectedBody;
@@ -954,6 +1042,41 @@ namespace PoSumo
             const float TARGET_H = 0.39f;
             HeadRenderer.transform.localScale =
                 new Vector3(TARGET_H / (sy * _headCellW), TARGET_H / (sy * _headCellH), 1f);
+        }
+
+        /// Per-foot ground contact and the normal force carried through it,
+        /// normalised against body weight. Written every physics step from the
+        /// feet's own contact lists.
+        ///
+        /// This exists because the policy is otherwise BLIND to the floor: the four
+        /// "feet" slots in the observation vector are positions relative to the
+        /// torso and nothing else, so a fighter cannot tell a planted foot from one
+        /// in the air, nor feel how much of its weight is on each. A human has
+        /// plantar pressure and Golgi tendon organs for exactly this, and driving
+        /// off a surface you cannot feel is the hardest version of the problem.
+        [System.NonSerialized] public float FootLoadNear, FootLoadFar;
+        [System.NonSerialized] public bool FootDownNear, FootDownFar;
+
+        private readonly ContactPoint2D[] _contactBuf = new ContactPoint2D[8];
+
+        /// Samples one foot's contacts. Normal impulses are per-step, so dividing by
+        /// fixedDeltaTime turns them back into a force before scaling by body weight.
+        private void SampleFootLoad(Rigidbody2D foot, out bool down, out float load)
+        {
+            down = false;
+            load = 0f;
+            if (foot == null) return;
+            int count = foot.GetContacts(_contactBuf);
+            float sum = 0f;
+            for (int i = 0; i < count; i++)
+            {
+                if (_contactBuf[i].normal.y <= 0.3f) continue;   // not a floor-ish contact
+                down = true;
+                sum += _contactBuf[i].normalImpulse;
+            }
+            if (!down) return;
+            float weight = Mathf.Max(1f, TotalMass * 9.81f);
+            load = Mathf.Clamp01(sum / Time.fixedDeltaTime / weight);
         }
 
         public Rigidbody2D FootNear => Parts[3];
