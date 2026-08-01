@@ -100,8 +100,8 @@ namespace PoSumo
             switch (partIndex)
             {
                 case -1: return Region.Head;
-                case 1: case 2: case 3: return Region.LegNear;    // thigh, shin, foot
-                case 4: case 5: case 6: return Region.LegFar;
+                case 1: case 2: case 3: case 14: return Region.LegNear;  // thigh, shin, foot, toe
+                case 4: case 5: case 6: case 15: return Region.LegFar;
                 case 10: case 11: return Region.ArmNear;          // upper arm, forearm
                 case 12: case 13: return Region.ArmFar;
                 default: return Region.Torso;                     // pelvis, backs, chest

@@ -182,8 +182,16 @@ namespace PoSumo
         private struct JointDef
         {
             public int child, parent; public float ax, ay, min, max, torque, speed;
-            public JointDef(int c, int p, float ax_, float ay_, float mn, float mx, float t, float s)
-            { child = c; parent = p; ax = ax_; ay = ay_; min = mn; max = mx; torque = t; speed = s; }
+            /// False for joints the policy does not drive. They still carry limits
+            /// and passive resistance, but their motor is DISABLED — leaving it on
+            /// would not make them free, it would make them a brake: Build() sets
+            /// motorSpeed 0, so an un-driven motor actively holds the joint still at
+            /// its full torque budget. Unpowered joints must come AFTER every
+            /// powered one, because ApplyMotor indexes 0..ActionCount-1.
+            public bool powered;
+            public JointDef(int c, int p, float ax_, float ay_, float mn, float mx, float t, float s,
+                            bool pow = true)
+            { child = c; parent = p; ax = ax_; ay = ay_; min = mn; max = mx; torque = t; speed = s; powered = pow; }
         }
 
         // Right-facing layout. Heights: ankle 0.10, knee 0.533, hip 0.964,
@@ -208,10 +216,10 @@ namespace PoSumo
             new PartDef("Pelvis",    0.32f,  0.18f,  11f,  0f,    1.054f,  0, 1f),
             new PartDef("ThighNear", 0.14f,  0.431f,  7f,  0f,    0.749f,  2, 0.95f),
             new PartDef("ShinNear",  0.11f,  0.433f,  3.5f, 0f,   0.317f,  2, 0.95f),
-            new PartDef("FootNear",  0.268f, 0.08f,   1f,  0.06f, 0.04f,   2, 0.95f, false, true),
+            new PartDef("FootNear",  0.20f,  0.08f,   0.8f, 0.026f, 0.04f,  2, 0.95f, false, true),
             new PartDef("ThighFar",  0.14f,  0.431f,  7f,  0f,    0.749f, -2, 0.78f),
             new PartDef("ShinFar",   0.11f,  0.433f,  3.5f, 0f,   0.317f, -2, 0.78f),
-            new PartDef("FootFar",   0.268f, 0.08f,   1f,  0.06f, 0.04f,  -2, 0.78f, false, true),
+            new PartDef("FootFar",   0.20f,  0.08f,   0.8f, 0.026f, 0.04f, -2, 0.78f, false, true),
             new PartDef("LowerBack", 0.30f,  0.14f,   7f,  0f,    1.195f,  0, 0.97f),
             new PartDef("UpperBack", 0.31f,  0.14f,   7f,  0f,    1.324f,  0, 0.99f),
             new PartDef("Chest",     0.34f,  0.18f,  13f,  0f,    1.471f,  0, 1f),
@@ -219,6 +227,23 @@ namespace PoSumo
             new PartDef("FArmNear",  0.09f,  0.28f,   1.8f, 0f,   1.004f,  3, 0.9f),
             new PartDef("UArmFar",   0.10f,  0.327f,  2.5f, 0f,   1.308f, -3, 0.76f),
             new PartDef("FArmFar",   0.09f,  0.28f,   1.8f, 0f,   1.004f, -3, 0.76f),
+            // TOES (metatarsophalangeal segment). APPENDED, never inserted: Parts[3]
+            // and Parts[6] are the feet by index, and Systems_BodyDamage.RegionOf
+            // switches on the part index, so renumbering the existing table would
+            // silently re-map damage regions and the foot accessors.
+            //
+            // The feet above were SHORTENED 0.268 -> 0.20 and lightened 1.0 -> 0.8 to
+            // pay for these, so total foot length stays at Winter's 0.152H = 0.268 m
+            // and total foot mass at 1.0 kg. The heel does not move: it sat at
+            // x = 0.06 - 0.268/2 = -0.074, and 0.026 - 0.20/2 is the same -0.074.
+            //
+            // isFoot MUST be true. Not for the friction material (though they want
+            // that too) but because Build() puts a Sensor_BodyPartContact on every
+            // NON-foot part, and that sensor is what feeds NonFootGroundContacts ->
+            // IsDown. A toe registered as a body part would mean every fighter is
+            // permanently "down" from the moment it stands up.
+            new PartDef("ToeNear",   0.068f, 0.06f,   0.2f, 0.160f, 0.03f,  2, 0.95f, false, true),
+            new PartDef("ToeFar",    0.068f, 0.06f,   0.2f, 0.160f, 0.03f, -2, 0.78f, false, true),
         };
 
         // child, parent, anchor(x,y in root space), min, max (deg), torque, speed
@@ -282,6 +307,23 @@ namespace PoSumo
             new JointDef(11,10, 0f, 1.144f,-150f,   0f,  60f, 500f), // elbow near
             new JointDef(12, 9, 0f, 1.471f,-120f, 120f,  80f, 500f), // shoulder far (on chest)
             new JointDef(13,12, 0f, 1.144f,-150f,   0f,  60f, 500f), // elbow far
+            // MTP (toe) joints — UNPOWERED, and they must stay last. ApplyMotor and
+            // CollectObservations both index 0..ActionCount-1, so appending here adds
+            // a joint to the body without touching the 13-action / 42-obs contract
+            // that every trained brain depends on.
+            //
+            // Unpowered but not inert: they carry limits and the same passive
+            // stiffness and damping as every other joint, which is what a real MTP
+            // is during stance — a sprung hinge that stores energy as the heel rises
+            // and returns it at toe-off. Before this the foot was one rigid box, so
+            // push-off simply stopped at a flat plate and the gait could only shuffle.
+            //
+            // Anchor sits where the shortened foot now ends: -0.074 + 0.20 = 0.126.
+            // Range is symmetric for the same reason the ankle is — the real MTP is
+            // asymmetric (~60 extension, ~30 flexion) but the sign has to be measured
+            // here, not assumed.
+            new JointDef(14, 3, 0.126f, 0.04f, -35f, 35f, 40f, 400f, false), // toe near
+            new JointDef(15, 6, 0.126f, 0.04f, -35f, 35f, 40f, 400f, false), // toe far
         };
 
         private void Awake()
@@ -671,8 +713,15 @@ namespace PoSumo
                     max = facingSign > 0 ? d.max : -d.min
                 };
                 joint.limits = lim;
-                joint.useMotor = true;
-                var m = joint.motor; m.maxMotorTorque = d.torque * torqueScale; m.motorSpeed = 0; joint.motor = m;
+                // An un-driven motor is a BRAKE, not a free joint: motorSpeed 0 with a
+                // torque budget actively holds the joint still. Unpowered joints get
+                // the motor switched off so they swing on their limits and passive
+                // resistance alone.
+                joint.useMotor = d.powered;
+                if (d.powered)
+                {
+                    var m = joint.motor; m.maxMotorTorque = d.torque * torqueScale; m.motorSpeed = 0; joint.motor = m;
+                }
 
                 Joints[jointDefIndex] = joint;
                 _maxSpeed[jointDefIndex] = d.speed;
