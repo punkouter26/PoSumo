@@ -20,12 +20,26 @@ round expire on the clock and be settled on position — no ring-out at all. The
 2.5 m opening stand-off and 0.55 friction cut the drive to 1.5 m against a 376 N wall.
 `Systems_SumoMatchManager` does **not** read `GameTuning` — it carries its own copy of the
 ring, spawn gap and timeout in every training scene, so a change here must be written into
-those scenes too or the brains train on an arena the game does not have.
+those scenes too or the brains train on an arena the game does not have. Its **code
+defaults were never updated** and still read 5.5 / `startHalfRange (1.7, 5.5)` /
+`spawnGapHalf 1.2`; the four training scenes serialize the correct 4 / `(1.7, 4)` / 2.5.
+Grep the `.unity` files, not the `.cs`, to learn what an env actually trains against.
 
 The roster is exactly four trained fighters — **Matt**, **Standard**, **Nick**,
 **Kim** — each with an `.onnx`, a `*_Character.asset` and a `MANIFEST.md`. The
 8-slot bracket seeds each of them twice. `Assets/Agents/ROSTER.md` is the roster
 overview; there is no code mirror of it.
+
+**`ROSTER.md` and the per-fighter `MANIFEST.md` files predate the walk+fight merge** and
+still describe 44 obs, separate walk brains and the old `*_sumoNN` runs. `Training/README.md`
+is current (it has the unified-run table); the character assets and `Agent_Biped` are
+authoritative over all of them. Fix a manifest when you touch its fighter rather than
+trusting it.
+
+`Training/results/` is gitignored **and is not present in a fresh clone** — the deployed
+`.onnx` files under `Assets/Agents/` are the only brains that ship. Anything in this file
+about resuming, `--initialize-from` or `DeployLatestCheckpoint` assumes you have first
+re-run training locally to recreate that directory.
 
 ## Toolchain versions (validated in production — treat as the required set)
 
@@ -80,6 +94,24 @@ overview; there is no code mirror of it.
 3. `mlagents_envs/environment.py::_check_communication_compatibility` (venv site-packages
    AND source clone) — `StrictVersion` replaced with a manual tuple parse; the original
    crashes worker auto-restarts.
+
+## Commands at a glance
+
+Almost nothing here is a shell command — the editor menu is the build system. Details for
+each live in *Editor menu tools* and *Training workflow* below.
+
+| Goal | How |
+|---|---|
+| Play the game | Open `SCN_TOURNAMENT` and enter Play mode (it loads `SCN_SUMO` per bout) |
+| Compile / import after editing `.cs` outside the editor | MCP `assets-refresh` (ForceUpdate) |
+| Behavioural test | Play mode in `SCN_SUMO`, then `MatchTestHarness.Run(n)` via MCP `script-execute` → `HARNESS RESULT:` |
+| Ship an Android build | *PoSumo → Build Android APK* / *Build Android AAB (Play release)* |
+| Build a training env | *PoSumo → Build \<Name\> Training Env* → `Builds/<Name>Env/<Name>Env.exe` |
+| Train | `Training\venv\Scripts\mlagents-learn.exe` (+ TensorBoard, always) |
+| Ship a brain | *PoSumo → Deploy \<Name\> Brain* |
+
+There is no lint step and no unit-test suite; the hooks in `.claude/hooks/` are the
+static checks, and they run on edit rather than on demand.
 
 ## Architecture
 
@@ -139,25 +171,33 @@ output layer.
 
 ### The brain contract (`Agent_Biped`)
 - **13 continuous actions** (`ActionCount`), always.
-- **41 observations** (legacy, decision period 5) or **44** when `extendedObservations`
-  is on (+ opponent uprightness / down flag / edge distance, decision period 3 — the
-  standard for new characters). Obs count and decision period MUST match what the
-  assigned `.onnx` was trained with, or inference is silently garbage.
+- **`Agent_Biped.ObservationCount = 42`**, or **45** when `extendedObservations` is on
+  (+ opponent uprightness / down flag / edge distance, decision period 3 — the standard
+  for all four shipped fighters). Layout: 5 body + 26 joint (13 × angle/speed) + 4 feet
+  + **1 task flag** + 4 opponent-or-target + 2 edge distances. The pre-merge counts were
+  41/44; the task flag is what took them to 42/45 and invalidated every earlier brain.
+  Prose elsewhere in the repo (`MANIFEST.md`, `ROSTER.md`, the tooltip on
+  `Agent_CharacterDefinition.extendedObservations`) still says 44 — **the constant in
+  `Agent_Biped` is the truth**. Obs count and decision period MUST match what the assigned
+  `.onnx` was trained with, or inference is silently garbage.
 - Three `Mode`s: `Walk` (falling ends the episode), `Recover` (get up, then walk —
-  falling never ends it, but lying down bleeds reward), `Sumo` (refereed externally;
-  shaping only, ±1 comes from the referee).
+  falling never ends it, but lying down bleeds reward; nothing references it any more),
+  `Sumo` (refereed externally; shaping only, ±1 comes from the referee).
 - Configures its own `BehaviorParameters` / `DecisionRequester` in `Awake` — nothing to
   wire in the Inspector.
 - All observations pass through `San()` NaN/Inf sanitization.
-- `BeginWalkIn` / `EndWalkIn` temporarily swap in the character's `walkModel` (and the
-  Recover observation layout) for the ceremonial round-opening walk-in, with
-  `suppressEpisodeControl` so the presentation layer can borrow the body safely.
+- `BeginWalkIn` / `EndWalkIn` **switch `mode` between `Sumo` and `Walk`** for the
+  ceremonial round-opening walk-in — flipping the task flag and pointing the four
+  "opponent" slots at a virtual target — plus `suppressEpisodeControl` so the presentation
+  layer can borrow the body safely. There is **no model swap**: `walkModel` and
+  `DeployWalk` no longer exist. The leftover `<Name>Walk.onnx` files in each agent folder
+  are pre-merge artifacts that nothing loads.
 
 ### Characters are ScriptableObjects
 `Agent_CharacterDefinition` (menu: *PoSumo/Character Definition*) is one asset per
 fighter holding identity (behavior name = YAML key, colour, face sprite names), body
 build scales, brain generation (`extendedObservations`, `decisionPeriod`,
-`inferenceModel`, `walkModel`), and **every reward-shaping coefficient for both the sumo
+`inferenceModel` — one model, no `walkModel`), and **every reward-shaping coefficient for both the sumo
 and walk schools**. Fighter personality (Nick = light and mobile, Kim = heavy planted
 anchor) lives in the asset and the YAML header comments, never in `Agent_Biped`.
 
@@ -177,16 +217,31 @@ characters for a scene, or defers to `Tournament_State` when a bracket is active
 - `Systems_GameMatchManager` — **game** referee. Round state machine
   Fighting → RoundEnded → Grace → Fighting, scored to `pointsToWin` (exhibition) or
   `tournamentPointsToWin` (bracket), countdown freeze, timeout tiebreak on position, UI
-  Toolkit HUD built in code. Spawns the presentation companions
-  (`Systems_MatchPresentation` slow-mo/punch-in, `Systems_MatchAudio`, `Systems_FaceMood`)
-  and exposes `RoundEnded` / `RoundStarted` / `MatchEnded` / `MatchReset` events.
+  Toolkit HUD built in code. Spawns every runtime companion and exposes
+  `RoundEnded` / `RoundStarted` / `MatchEnded` / `MatchReset` — the events every
+  presentation system subscribes to. At 1455 lines it is the largest file in the project
+  and the entry point for anything match-shaped.
 
 Falling is **not** a loss in either referee (`knockdownLoses` is off). If you change a
 losing condition, change it in **both** — they have silently diverged before, and
 policies then never learn that a stray foot over the edge is fatal.
 
+**Three game-only rules exist that the brains never train against**, and that asymmetry is
+deliberate — they are spectacle layered on the sumo rules, not sumo rules:
+`downOutSeconds` (3 s lying down forfeits the round — `IsDown` can latch permanently once
+a leg is under the body, and measured play had half of every round be two motionless
+ragdolls waiting out the clock), `knockoutsToLoseMatch` (3 head KOs lose the match
+outright, via `Systems_BodyDamage.Knockout`), and the low-friction `tawara` band at the
+rim (`tawaraBandWidth` / `tawaraFriction`) that turns "almost out" into "out".
+`Systems_SumoMatchManager` has no equivalent of any of them.
+
 Shared numbers live in `Assets/Settings/GameTuning.asset` (`Systems_GameTuning`); scene
-components copy from it at startup, so tune the asset, not serialized scene values.
+components copy from it in `Start`, so tune the asset, not serialized scene values — the
+scenes still hold stale copies (SCN_SUMO serializes `ringHalfWidth: 1.68`,
+`neutralGapHalf: 1.2`) that are overwritten at runtime and will mislead anyone grepping
+the `.unity` file. The **fields on the components are the fallback for when no tuning
+asset is assigned**, so a code default and the asset can disagree indefinitely and only
+the asset takes effect (`roundTimeoutSeconds` is 30 in code, **20** in the asset).
 
 ### Tournament
 `Systems_TournamentState` is a **static** 8-slot single-elimination bracket (it must
@@ -202,6 +257,36 @@ Bracket UI gotcha: several rows display the *same* match (match 0 is both the QF
 and the semifinal's left entrant), so `_winnerSlots` holds one entry **per chip**, not per
 match, and `Refresh()` reads each chip's match from its `userData`. Keying that list by
 match index silently orphans the duplicate chips and they never repaint.
+
+### Presentation companions: spawned, never wired
+Nothing below is placed in a scene. `Systems_GameMatchManager` `new GameObject(...)`s each
+one in `Start`, gated by an `enable*` bool on `GameTuning`, and they talk back only through
+its four events. That is why the arena scenes stay small and why "turn the feature off" is
+a tick on one asset rather than an edit in three scenes.
+
+| Companion | What it adds |
+|---|---|
+| `Systems_MatchPresentation` | slow-mo finish, camera punch-in, salt throw |
+| `Systems_MatchAudio` / `Systems_FighterVoice` / `Systems_VoiceGains` | impact + crowd + ceremony audio; per-fighter spoken lines (silent when a fighter has no clips) |
+| `Systems_MusicDirector` | adaptive layered score |
+| `Systems_ArenaLighting` / `Systems_ArenaAtmosphere` | 2D light rig + post volume; backdrop parallax, haze, crowd sway |
+| `Systems_ImpactFx` / `Systems_DustPuff` / `Systems_SoftBodyJiggle` / `Systems_BlobShadow` | hit bursts, dust, flesh wobble, contact shadows |
+| `Systems_BodyDamage` / `Systems_RingBlood` | bruise decals where a fighter is hit, the bloody head KO, and blood left on the mat. **Owns the `Knockout` static event the referee's 3-KO rule reads**, so it is the one "presentation" system with a rules consequence |
+| `Systems_FaceMood` | expression driven by dominance |
+| `Systems_CareerRecorder` | the only writer into career stats |
+
+### Career stats persist across sessions
+`Systems_CareerStats` is static like `Systems_TournamentState` — but where the bracket
+*clears* itself on `SubsystemRegistration`, this one **reloads from disk** there, because it
+must survive the whole session and domain reload is off. It writes
+`career.json` in `Application.persistentDataPath`: per-fighter W/L, round record, titles,
+head-to-head and an Elo (start 1000, K 24). Records are keyed by **behavior name**, which is
+the only fighter identity stable across folder and asset renames — do not key anything on
+folder or asset name. Head-to-head is three parallel `List<>`s because `JsonUtility` cannot
+serialize a `Dictionary`.
+
+This Elo is the *game's* ladder and has nothing to do with the self-play ELO in
+TensorBoard; do not compare the two numbers.
 
 ### Scenes
 Build settings are exactly two scenes: `SCN_TOURNAMENT` (index 0) and `SCN_SUMO`. The game
@@ -365,15 +450,27 @@ else goes elsewhere —
 | Tool | Purpose |
 |---|---|
 | `BuildTrainingEnv` | Headless Win64 player containing one training scene (`--env` target). One menu entry per surviving training scene |
-| `BuildAndroid` | APK to `Builds/Android/PoSumo.apk` from the enabled build-settings scenes |
+| `BuildAndroid` | *Build Android APK* → `Builds/Android/PoSumo.apk` from the enabled build-settings scenes |
+| `BuildAndroidAAB` | *Build Android AAB (Play release)* → `Builds/Android/PoSumo.aab`, signed. Logs `AAB BUILD RESULT:` |
 | `DeployBrain` | Copy a run's ONNX → agent folder + wire the character asset. One entry per fighter, each pinned to the run that currently backs its shipped brain |
 | `MatchTestHarness` | `MatchTestHarness.Run(n)` in Play mode: chains N matches unattended, logs a `HARNESS RESULT:` win/loss tally |
+| `GenerateAudio` | *Generate Audio* — synthesizes the match SFX bank in-editor; the clips are generated assets, not recordings |
+| `NormalizeVoice` | *Normalize Voice Levels* — evens out the per-fighter voice clips |
+
+**Android signing keeps the keystore and its password outside the repo**, at
+`C:/Users/punko/Downloads/PoSumo-Release/` (`keystore.pass`, one line), because Unity
+deliberately does not serialize keystore passwords into `ProjectSettings`. Both Android
+builds read `POSUMO_KEYSTORE_PASS` first and fall back to that file, then clear the
+password out of `PlayerSettings` afterwards. Without either, the build **aborts** rather
+than producing an unsigned artifact.
 
 `Builds/` is gitignored and disposable — every env build is reproducible from its menu
 entry, so retire a build by deleting the folder rather than keeping it around.
 
 Judge a character by the harness tally, not by one eyeballed round. The build/deploy tools
-print a `BUILD RESULT:` / `DEPLOY RESULT:` line — that is how their outcome is read back.
+print a `BUILD RESULT:` / `AAB BUILD RESULT:` / `DEPLOY RESULT:` line — that is how their
+outcome is read back. There is no test suite: `MatchTestHarness` and the Game-view
+screenshot flow below are the verification tools this project has.
 
 ## Unity Editor automation (MCP)
 
