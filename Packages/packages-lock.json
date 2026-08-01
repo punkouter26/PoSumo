@@ -59,11 +59,11 @@
       "url": "https://package.openupm.com"
     },
     "com.ivanmurzak.unity.mcp.particlesystem": {
-      "version": "1.2.28",
+      "version": "1.2.30",
       "depth": 0,
       "source": "registry",
       "dependencies": {
-        "com.ivanmurzak.unity.mcp": "0.86.0",
+        "com.ivanmurzak.unity.mcp": "0.86.3",
         "com.unity.modules.particlesystem": "1.0.0"
       },
       "url": "https://package.openupm.com"
@@ -201,10 +201,12 @@
       "url": "https://packages.unity.com"
     },
     "com.unity.collab-proxy": {
-      "version": "2.12.4",
+      "version": "2.13.3",
       "depth": 0,
       "source": "registry",
-      "dependencies": {},
+      "dependencies": {
+        "com.unity.collections": "2.6.2"
+      },
       "url": "https://packages.unity.com"
     },
     "com.unity.collections": {
@@ -255,7 +257,7 @@
       "url": "https://packages.unity.com"
     },
     "com.unity.inputsystem": {
-      "version": "1.19.0",
+      "version": "1.20.0",
       "depth": 0,
       "source": "registry",
       "dependencies": {
