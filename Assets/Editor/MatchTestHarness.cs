@@ -70,7 +70,13 @@ namespace PoSumo.EditorTools
             string who = winner == null
                 ? "DRAW"
                 : (winner == _manager.wrestlerA ? _manager.nameA : _manager.nameB);
-            Log.AppendLine($"  round {_roundsSeen}: {who} ({seconds:F1}s)");
+            // Wall-clock, so it includes the walk-in, the countdown freeze, the grace
+            // pause and the slow-mo finish — NOT the same measure as the manager's
+            // LongestRound, which counts only the Fighting phase and is what
+            // roundTimeoutSeconds is judged against. Both are labelled, because
+            // printed bare they contradicted each other: "longest round 12.4s"
+            // above a list containing 23.8s.
+            Log.AppendLine($"  round {_roundsSeen}: {who} ({seconds:F1}s wall)");
         }
 
         private static void OnMatchEnded(Agent_Biped winner)
@@ -103,7 +109,8 @@ namespace PoSumo.EditorTools
             int winsB = _manager.MatchWinsB - _baseWinsB;
             Debug.Log($"HARNESS RESULT: {_manager.nameA} {winsA} — {winsB} {_manager.nameB} " +
                       $"over {_matchesSeen} matches / {_roundsSeen} rounds | " +
-                      $"longest round {_manager.LongestRound:F1}s\n{Log}");
+                      $"longest FIGHT {_manager.LongestRound:F1}s of {_manager.roundTimeoutSeconds:F0}s limit" +
+                      $"\n{Log}");
         }
     }
 }

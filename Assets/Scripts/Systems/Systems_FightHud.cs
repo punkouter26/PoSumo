@@ -159,7 +159,15 @@ namespace PoSumo
         /// here until the next countdown.
         private void OnRoundEnded(Agent_Biped winner, Agent_Biped loser) { ShowDetail(true); }
 
-        private void OnMatchEnded(Agent_Biped winner) { ShowDetail(true); }
+        /// Match end belongs to the result card, so the detail table stands down.
+        ///
+        /// Both used to appear at once, in different layers: the table pinned high
+        /// over the dohyo and the result modal low, with a dead band between them
+        /// and no relationship between the two. Two surfaces competing for the same
+        /// moment read as one broken screen. The table is still the between-rounds
+        /// read above, which is where it is actually studied — at match end the
+        /// verdict is what matters and the modal already dims the arena behind it.
+        private void OnMatchEnded(Agent_Biped winner) { ShowDetail(false); }
 
         // ---- Build ---------------------------------------------------------
 
@@ -190,10 +198,16 @@ namespace PoSumo
             _mannShownA = new Color[Systems_BodyDamage.REGION_COUNT];
             _mannShownB = new Color[Systems_BodyDamage.REGION_COUNT];
 
+            // The mannequins are damage-coloured (green->amber->red), so they carry
+            // no fighter identity of their own — left and right were two identical
+            // green figures. A team-coloured base under each one labels it without
+            // touching the damage ramp, which has to stay readable as damage.
             VisualElement left = Systems_UiKit.Column(Align.Center).NoPick();
             left.Add(figureA);
+            left.Add(TeamBase(manager.colorA));
             VisualElement right = Systems_UiKit.Column(Align.Center).NoPick();
             right.Add(figureB);
+            right.Add(TeamBase(manager.colorB));
 
             VisualElement centre = Systems_UiKit.Column().NoPick();
             centre.Add(Systems_UiKit.Caption("DOMINANCE", Systems_UiKit.FONT_MICRO,
@@ -248,7 +262,10 @@ namespace PoSumo
             _detailCard.Add(Systems_UiKit.Divider());
 
             _territory = CompareRow("TERRITORY", Systems_UiKit.FONT_BODY);
-            _knockdowns = CompareRow("KNOCKDOWNS", Systems_UiKit.FONT_BODY);
+            // "KNOCKDOWNS" alone reads as knockdowns SUFFERED, which inverts the
+            // table: the winner of a 3-0 showed 4 against the loser's 8 and looked
+            // beaten on his own result screen. These are knockdowns dealt.
+            _knockdowns = CompareRow("KNOCKDOWNS DEALT", Systems_UiKit.FONT_BODY);
             _shoves = CompareRow("SHOVES · BEST", Systems_UiKit.FONT_BODY);
             _work = CompareRow("WORK RATE", Systems_UiKit.FONT_BODY);
 
@@ -531,6 +548,20 @@ namespace PoSumo
             return parts;
         }
 
+        /// A short team-coloured bar sat under a mannequin so the two figures can be
+        /// told apart. Deliberately not a tint ON the figure: the figure's colour is
+        /// the damage reading.
+        private static VisualElement TeamBase(Color team)
+        {
+            var bar = new VisualElement().NoPick();
+            bar.style.width = 34f;
+            bar.style.height = 3f;
+            bar.style.marginTop = Systems_UiKit.SPACE_1;
+            bar.style.backgroundColor = team;
+            bar.Round(2);
+            return bar;
+        }
+
         private static VisualElement Piece(VisualElement parent, float left, float top,
                                            float w, float h, int radius)
         {
@@ -590,8 +621,17 @@ namespace PoSumo
                 _shownDomB = domB;
                 _dominance.valueA.text = domA.ToString();
                 _dominance.valueB.text = domB.ToString();
-                _dominance.valueA.style.color = DominanceColour(DominanceA);
-                _dominance.valueB.style.color = DominanceColour(DominanceB);
+                // Team colours, NOT a good/bad ramp. These sit directly beside a tug
+                // bar already drawn in colorA/colorB, and a magnitude ramp painted
+                // the leader green and the trailer red — so red meant both "losing"
+                // and "the red fighter". Identity wins; the bar already shows who
+                // leads, and the leader is emphasised by weight instead.
+                _dominance.valueA.style.color = manager.colorA;
+                _dominance.valueB.style.color = manager.colorB;
+                _dominance.valueA.style.unityFontStyleAndWeight =
+                    DominanceA >= DominanceB ? FontStyle.Bold : FontStyle.Normal;
+                _dominance.valueB.style.unityFontStyleAndWeight =
+                    DominanceB > DominanceA ? FontStyle.Bold : FontStyle.Normal;
                 _dominance.fillA.style.width = Length.Percent(Mathf.Clamp01(DominanceA / 100f) * 100f);
                 _dominance.fillB.style.width = Length.Percent(Mathf.Clamp01(DominanceB / 100f) * 100f);
             }
@@ -627,13 +667,6 @@ namespace PoSumo
             float pushA = Mathf.Clamp(_aggA.sumPush / Mathf.Max(1, _aggA.touchSamples), 0f, AVG_PUSH_MAX);
             float pushB = Mathf.Clamp(_aggB.sumPush / Mathf.Max(1, _aggB.touchSamples), 0f, AVG_PUSH_MAX);
             SetBar(_push, pushA, pushB, AVG_PUSH_MAX, "{0:F0} N");
-        }
-
-        private static Color DominanceColour(float dominance)
-        {
-            if (dominance >= 55f) return Systems_UiKit.Good;
-            if (dominance <= 45f) return Systems_UiKit.Bad;
-            return Systems_UiKit.TextHi;
         }
 
         private static void SetCompare(ComparePair pair, string valueA, string valueB)

@@ -382,9 +382,18 @@ a tick on one asset rather than an edit in three scenes.
 | `Systems_ArenaLighting` / `Systems_ArenaAtmosphere` | 2D light rig + post volume; backdrop parallax, haze, crowd sway, light shafts |
 | `Systems_BodySurface` | writes `_Sweat` and `_Dirt` into one fighter's `PoSumo/BodyLit` material — sheen from exertion, clay from arena contact. Rides `enableLighting`; disables itself when `FlatBodyShading` is on |
 | `Systems_ImpactFx` / `Systems_DustPuff` / `Systems_SoftBodyJiggle` / `Systems_BlobShadow` | hit bursts, dust, flesh wobble, contact shadows |
-| `Systems_BodyDamage` / `Systems_RingBlood` | bruise decals where a fighter is hit, the bloody head KO, and blood left on the mat. **Owns the `Knockout` static event the referee's 3-KO rule reads**, so it is the one "presentation" system with a rules consequence |
+| `Systems_BodyDamage` / `Systems_RingBlood` | bruise decals, **limb loss and decapitation**, the bloody head KO, and blood left on the mat. **Owns the `Knockout` static event the referee's 3-KO rule reads**, so it is the one "presentation" system with a rules consequence |
 | `Systems_FaceMood` | expression driven by dominance |
 | `Systems_CareerRecorder` | the only writer into career stats |
+
+**Fighters can be dismembered and decapitated, and this is not cosmetic.** Measured play
+produces `[DAMAGE] Damage_Nick lost LegNear at 20.0 damage — bleeding from stump 'Pelvis'`
+and `Damage_Matt DECAPITATED at 2.8 damage`. A fighter that loses a leg cannot satisfy the
+get-up condition again, so it is `downOutSeconds` — not the ring-out — that actually ends
+that round. That is the interaction to keep in mind when tuning either: shorten
+`downOutSeconds` and dismembered fighters are retired faster; disable it and they lie
+there until the clock expires, which is the exact stall the rule was added to kill.
+The training referee has no equivalent, so no brain has ever trained against it.
 
 ### Career stats persist across sessions
 `Systems_CareerStats` is static like `Systems_TournamentState` — but where the bracket

@@ -75,6 +75,20 @@ HARNESS RESULT: MATT 3 — 7 NICK over 10 matches / 38 rounds | longest round 14
 
 Nick beats a full-budget Matt 7-3, and no round reached the timeout, which is the
 behaviour the 4.0 m ring was shrunk to produce.
+
+**That 7-3 no longer reproduces — re-measured 2026-08-01 it is 0-3 the other way:**
+
+```
+HARNESS RESULT: MATT 3 — 0 NICK over 3 matches / 10 rounds | longest FIGHT 12.4s of 20s limit
+```
+
+Same brains, same scene. Nothing in the observation, action or reward contract changed
+between the two measurements, so this is the game layer, not the policies: the ring,
+friction and HUD passes all landed in between, and the game-only rules (down-out, the
+3-knockout rule, the tawara band) are exactly the sort of thing that moves a matchup
+without touching a brain. Three matches is also a small sample against ten — re-run at
+`Run(10)` before treating the reversal as settled. The part that DID hold is the
+finishing behaviour: longest fight 12.4s against a 20s limit, no round near the clock.
 | `MattSumo06/07/08`, `StandardSumo02/03/04`, `KimSumo02/03/04`, `NickSumo04/05/06` | — | — | — | pre-merge history, parked in `trunks/pre_merge/` |
 
 **These are COLD runs and had to be.** A 44-obs checkpoint cannot warm-start a 45-obs

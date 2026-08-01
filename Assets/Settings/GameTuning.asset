@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Systems_GameTuning
   minOrtho: 2.8
   maxOrtho: 7
-  feetDrop: 1.5
+  feetDrop: 0.95
   horizontalMargin: 0.8
   smoothing: 4
   wideOrtho: 14

@@ -1179,8 +1179,7 @@ namespace PoSumo
                 // a draw that neither earned.
                 if (aDownOut && bDownOut && !Mathf.Approximately(_downA, _downB))
                 {
-                    EndRound(_downA > _downB ? wrestlerB : wrestlerA, null,
-                             _downA > _downB ? "COULD NOT CONTINUE" : "COULD NOT CONTINUE");
+                    EndRound(_downA > _downB ? wrestlerB : wrestlerA, null, "COULD NOT CONTINUE");
                 }
                 else
                 {

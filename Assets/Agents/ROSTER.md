@@ -13,10 +13,14 @@ the bracket's entrants are assigned in the scene.
 | MATT | `Matt` | Matt_v01 | red | 1.00 / 1.00 / 1.00 | aggressive baseline — highest impact reward | `matt_sumo05` (8.0M) |
 | STANDARD | `Standard` | Standard_v01 | green | 1.00 / 1.00 / 1.00 | neutral reference + owns the shared walk brain | `standard_sumo01` (45.0M) |
 | NICK | `Nick` | Nick_v01 | blue | 0.72 / 0.82 / 0.85 | mobile lightweight — highest cadence, no deep-stance requirement | `nick_sumo02` (4.0M on 12.0M) |
-| KIM | `Kim` | Kim_v01 | teal | 1.45 / 1.30 / 1.50 | heavyweight anchor — deep stance, does not chase | `kim_sumo01` (12.0M) |
+| KIM | `Kim` | Kim_v01 | purple | 1.45 / 1.30 / 1.50 | heavyweight anchor — deep stance, does not chase | `kim_sumo01` (12.0M) |
 
 Physique is mass / width / torque scale. Each folder's `MANIFEST.md` holds the
 full spec and the exact retrain command.
+
+Colour names above are descriptions of `teamColor` on the character asset, which is
+the authority — this table said "teal" for Kim while her asset has been purple
+(0.62, 0.32, 0.62). Read the asset, not this column, if the two ever disagree again.
 
 ## Adding a fighter
 
