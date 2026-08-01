@@ -315,6 +315,41 @@ Hard-won specifics, so nobody re-derives them:
   give it discrete visible beams. Both read against the particle haze `Systems_DustPuff`
   emits, so turning the haze off makes both nearly invisible.
 
+### The HUD: one document, three bands, and a proportional floor
+Every screen is UI Toolkit built from C# at runtime — there is no UGUI Canvas in
+the project, no `.uxml` and no `.uss`. `Systems_UiKit` holds the tokens and the
+builders; `Systems_HudRoot` is the single `UIDocument` the match screen draws
+through (three components used to add their own at equal sorting order, which has
+no defined draw or pick order, and taps aimed at REMATCH were being swallowed).
+`Assets/UI Toolkit/README.md` is the working reference — read it before touching
+UI, it carries the pending font-asset work and three gotchas that each cost a bug.
+
+The three that matter most here:
+
+- **Inline styles resolve above every USS rule**, including the runtime theme's
+  `:hover` and `:active`. `StyleButton` writes `backgroundColor` inline, so every
+  button in the game was visually dead on press until `AddPressFeedback` put the
+  feedback back by hand. Build controls through the kit or they will have none.
+- **An absolutely positioned child resolves its offsets against its parent's
+  PADDING box.** The safe-area inset therefore goes on the content and modal
+  layers but deliberately NOT on the scrim between them — under the inset it
+  stopped at the notch and left undimmed strips behind every dialog.
+- **The panel scales on WIDTH** (`GamePanelSettings` match `0`, 720x1280 ref), so
+  band heights authored in points take a different share of the screen on every
+  aspect ratio. `Stage` carries a 45% minimum and `Dock` a 28% maximum for that
+  reason. Do not "fix" it by switching to a balanced match: that narrows the panel
+  below 720pt on tall phones and overflows the bracket's chip row, which is a bug
+  already fixed once.
+
+`Systems_FightHud` is split by whether the fight is happening: an always-on
+**live strip** in the dock (two damage mannequins flanking one DOMINANCE
+tug-of-war bar, ~115pt) and a **detail card** in the stage band carrying the
+seven aggregate metrics, shown on `RoundEnded`/`MatchEnded` and hidden on
+`RoundStarted`. It was previously one ~484pt table pinned to the dock with no way
+to hide it — 39% of a 9:16 panel and ~52% of a 4:3 tablet in portrait,
+permanently over the bottom of the dohyo. Nobody parses a work-rate percentage
+while a bout is being decided; put new aggregate metrics on the detail card.
+
 ### Presentation companions: spawned, never wired
 Nothing below is placed in a scene. `Systems_GameMatchManager` `new GameObject(...)`s each
 one in `Start`, gated by an `enable*` bool on `GameTuning`, and they talk back only through

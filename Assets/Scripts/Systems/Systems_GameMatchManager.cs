@@ -749,12 +749,13 @@ namespace PoSumo
         /// `top:10 right:10` from a different file and a different UIDocument.
         private void BuildTopBar()
         {
-            // No on-screen pause chip. Pause itself is NOT gone — TogglePause is
-            // still bound to escapeKey in Update, which is what Android maps its
-            // hardware back button to, so the pause card is reachable on the
-            // target platform without spending a corner of the HUD on it.
-            // TopBarLeft stays as an empty fixed-width slot: it and TopBarRight
-            // are what keep the scorebug optically centred.
+            // An on-screen pause affordance, in the slot that was being reserved
+            // for it anyway. Removing it left the hardware back key as the ONLY
+            // way to pause on Android with nothing on screen advertising that,
+            // while the slot it vacated went on costing 104pt of hardcoded width
+            // for nothing. The escapeKey binding in Update stays — this is a
+            // second door to the same room, not a replacement for it.
+            _hud.TopBarLeft.Add(Systems_UiKit.PauseButton(TogglePause));
 
             // Which bout of the bracket this is. The bracket screen announces
             // "MATCH 3 of 7 — KIM v NICK", then the arena showed two names and a
@@ -814,11 +815,15 @@ namespace PoSumo
             _banner.style.unityTextAlign = TextAnchor.MiddleCenter;
             _banner.style.textShadow = Systems_UiKit.Outline;
             _banner.style.whiteSpace = WhiteSpace.Normal;
+            _banner.NoPick();
             _hud.AddCentre(_banner);
 
             _countdown = Systems_UiKit.Text("", Systems_UiKit.FONT_MEGA, Systems_UiKit.Gold, true);
             _countdown.style.unityTextAlign = TextAnchor.MiddleCenter;
             _countdown.style.textShadow = Systems_UiKit.Outline;
+            // A 112pt digit dead centre of the screen is the single largest thing
+            // in the HUD; it has no business hit-testing.
+            _countdown.NoPick();
             _hud.AddCentre(_countdown);
         }
 
@@ -912,10 +917,12 @@ namespace PoSumo
             _scoreDigits.text = $"{_scoreA} : {_scoreB}";
             if (flash)
             {
-                _scoreDigits.style.fontSize = Systems_UiKit.FONT_HERO;
-                _scoreDigits.schedule
-                    .Execute(() => _scoreDigits.style.fontSize = Systems_UiKit.FONT_TITLE)
-                    .StartingIn(400);
+                // An eased settle rather than "jump to HERO, snap back on a 400ms
+                // timer". The old pair of instant steps read as a rendering fault,
+                // and if the scheduled item was ever dropped — a scene load
+                // landing inside that window — the digits stayed oversized for the
+                // rest of the match with nothing to put them back.
+                _scoreDigits.PopFontSize(Systems_UiKit.FONT_HERO, Systems_UiKit.FONT_TITLE, 320);
             }
         }
 
@@ -944,9 +951,14 @@ namespace PoSumo
             int digit = Mathf.CeilToInt(_countdownLeft);
             if (digit == _lastCountdownDigit) return;
             _lastCountdownDigit = digit;
-            _countdown.style.fontSize = Systems_UiKit.FONT_MEGA;
             _countdown.text = digit.ToString();
             _hud.ShowCentre(_countdown);
+            // Each digit lands oversized and settles onto FONT_MEGA. PopFontSize
+            // writes the final size itself, so this replaces the plain assignment
+            // rather than adding to it. The "FIGHT!" branch above still sets
+            // FONT_HERO directly and must: a word at 112pt runs off a 720pt panel,
+            // and it fires ~1s after the last digit, well clear of this animation.
+            _countdown.PopFontSize(Systems_UiKit.FONT_MEGA + 28, Systems_UiKit.FONT_MEGA, 260);
 
             if (digit == 1) return; // let the last punch-in expire — wide for the engage
             var fighter = ((countdownSeconds - digit) & 1) == 0 ? wrestlerA : wrestlerB;

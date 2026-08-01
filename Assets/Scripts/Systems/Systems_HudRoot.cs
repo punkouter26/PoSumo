@@ -20,22 +20,32 @@ namespace PoSumo
     /// The layout, which replaces a set of unrelated absolute offsets (the graph
     /// at top:96, the score at bottom:480, four dialogs at 32/34/36/49 percent):
     ///
-    ///     root .......... safe-area padded, never hit-tested
-    ///     +- backdrop ... dim behind a blocking dialog
-    ///     +- column ..... top-to-bottom flex, never hit-tested
-    ///     |  +- TopBar .. pause | scorebug | stats, fixed height
-    ///     |  +- Stage ... everything between; the fighters show through it
-    ///     |  +- Dock .... momentum graph and the stats drawer
-    ///     +- modal ...... centred dialogs, above everything
+    ///     root .......... full bleed, never hit-tested
+    ///     +- content .... SAFE-AREA INSET, never hit-tested
+    ///     |  +- column .. top-to-bottom flex
+    ///     |     +- TopBar .. pause | scorebug, content height
+    ///     |     +- Stage ... the view of the fight, plus between-round detail
+    ///     |     +- Dock .... the always-on live strip
+    ///     +- backdrop ... dim behind a blocking dialog, NOT inset
+    ///     +- modalSafe .. SAFE-AREA INSET
+    ///        +- modal ... centred dialogs, above everything
     ///
     /// Bands size themselves, so nothing is pinned to a pixel offset that was
-    /// measured against one aspect ratio.
+    /// measured against one aspect ratio — and Stage carries a proportional floor
+    /// so the two HUD bands can never squeeze the view of the fight below 45% of
+    /// the panel, whatever the aspect ratio. The panel scales on WIDTH (the
+    /// PanelSettings' match is 0), so band heights in points are constant while
+    /// the panel's height in points is not: on a 4:3 tablet in portrait a
+    /// content-sized dock takes a proportionally much larger bite than it does on
+    /// the 9:16 reference. The floor is what makes that safe; do NOT "fix" it by
+    /// moving the PanelSettings to a balanced match instead, because that narrows
+    /// the panel below 720pt on tall phones and overflows the bracket's chip row.
     ///
     /// Two exclusivity layers are enforced here rather than left to callers:
     /// `ShowCentre` for the transient callouts drawn over the arena (countdown,
     /// round banner) and `ShowModal` for dialogs that take over the screen
     /// (result card, pause menu). Showing one member of a layer hides its
-    /// siblings, so the 120pt countdown digit can no longer land on top of the
+    /// siblings, so the 112pt countdown digit can no longer land on top of the
     /// result card. The two layers are deliberately independent: pausing during a
     /// countdown should dim the countdown, not race with it.
     ///
@@ -44,22 +54,30 @@ namespace PoSumo
     /// own it.
     public sealed class Systems_HudRoot : MonoBehaviour
     {
+        /// The view of the fight is never allowed below this share of the panel.
+        private const int STAGE_MIN_PERCENT = 45;
+
+        /// And the live strip is never allowed above this share of it.
+        private const int DOCK_MAX_PERCENT = 28;
+
         private UIDocument _document;
         private VisualElement _backdrop;
         private VisualElement _centre;
         private VisualElement _modal;
 
-        /// Fixed-height row across the top: pause, scorebug, stats toggle.
+        /// Row across the top: pause on the left, scorebug in the middle.
         public VisualElement TopBarLeft { get; private set; }
         public VisualElement TopBarCentre { get; private set; }
         public VisualElement TopBarRight { get; private set; }
 
-        /// The band between the bars. Reserved for transient callouts; it is
-        /// never hit-tested, so the arena reads through it untouched.
+        /// The band between the bars — the view of the fight. Carries the
+        /// transient callouts and the fight HUD's between-round detail card, both
+        /// of which are hidden while a round is live, so during play this band is
+        /// clear glass.
         public VisualElement Stage { get; private set; }
 
-        /// The bottom band. The momentum graph and the stats drawer live here —
-        /// the widest, safest strip of a portrait screen, and previously empty.
+        /// The bottom band. The fight HUD's always-on live strip lives here — the
+        /// widest, safest strip of a portrait screen.
         public VisualElement Dock { get; private set; }
 
         /// Returns the scene's HUD root, building it if this is the first caller.
@@ -95,24 +113,40 @@ namespace PoSumo
             VisualElement root = _document.rootVisualElement;
             root.style.flexGrow = 1;
             root.NoPick();
-            // One safe-area watcher for the whole HUD. Previously the match
-            // manager and the graph each attached one and the fight HUD attached
-            // none, so its panels and its STATS chip sat under the notch and the
-            // gesture bar on every device that has them.
-            Systems_SafeArea.Attach(transform, root);
+
+            // Three full-bleed sibling layers, in draw order. The safe-area inset
+            // is applied to the first and third but deliberately NOT to the scrim
+            // between them: an absolutely positioned child resolves left/right/
+            // top/bottom against its parent's PADDING box, so a scrim under the
+            // inset stopped at the notch and left an undimmed strip across the top
+            // and bottom of the screen behind every dialog. The inset used to sit
+            // on the document root, which is what put it there.
+            VisualElement content = new VisualElement().Fill().NoPick();
+            root.Add(content);
 
             _backdrop = new VisualElement().Fill();
             _backdrop.style.backgroundColor = Systems_UiKit.Backdrop;
             _backdrop.style.display = DisplayStyle.None;
+            root.Add(_backdrop);
+
+            VisualElement modalSafe = new VisualElement().Fill().NoPick();
+            root.Add(modalSafe);
+
+            // One watcher for the whole HUD. Previously the match manager and the
+            // graph each attached one and the fight HUD attached none, so its
+            // panels sat under the notch and the gesture bar on every device that
+            // has them.
+            Systems_SafeArea.Attach(transform, content, modalSafe);
 
             VisualElement column = new VisualElement().Fill().NoPick();
             column.style.flexDirection = FlexDirection.Column;
-            root.Add(column);
+            content.Add(column);
 
             column.Add(BuildTopBar());
 
             Stage = new VisualElement().NoPick();
             Stage.style.flexGrow = 1;
+            Stage.style.minHeight = Length.Percent(STAGE_MIN_PERCENT);
             Stage.style.justifyContent = Justify.Center;
             Stage.style.alignItems = Align.Center;
             column.Add(Stage);
@@ -124,30 +158,36 @@ namespace PoSumo
 
             Dock = new VisualElement().NoPick();
             Dock.style.flexShrink = 0;
+            Dock.style.maxHeight = Length.Percent(DOCK_MAX_PERCENT);
             Dock.style.paddingLeft = Systems_UiKit.SPACE_3;
             Dock.style.paddingRight = Systems_UiKit.SPACE_3;
             Dock.style.paddingBottom = Systems_UiKit.SPACE_3;
             column.Add(Dock);
-
-            // Added after the bands, so a dialog dims the top bar and the dock as
-            // well as the arena. The old overlay was a sibling on a different
-            // panel from the stat panels and the graph and could not dim either.
-            root.Add(_backdrop);
 
             _modal = new VisualElement().Fill().NoPick();
             // Bottom-anchored, not centred. A centred dialog lands squarely on
             // the fighters — and the result card in particular appears exactly
             // when the camera has pulled back to show the finish, so centring it
             // covered the one thing the shot exists to show. Down here it is also
-            // nearer the thumb.
+            // nearer the thumb. The gutters live here rather than on modalSafe,
+            // because the safe-area watcher owns that element's padding outright.
             _modal.style.justifyContent = Justify.FlexEnd;
             _modal.style.alignItems = Align.Center;
             _modal.style.paddingLeft = Systems_UiKit.SPACE_5;
             _modal.style.paddingRight = Systems_UiKit.SPACE_5;
             _modal.style.paddingBottom = Systems_UiKit.SPACE_5;
-            root.Add(_modal);
+            modalSafe.Add(_modal);
         }
 
+        /// Pause on the left, scorebug in the middle.
+        ///
+        /// The side slots used to be a hardcoded 104pt each and NOTHING was ever
+        /// added to either: the pause chip was moved to the hardware back button
+        /// and the fight HUD's STATS chip was deleted, leaving 208pt of reserved
+        /// width serving no purpose but to centre the scorebug. Equal flex basis
+        /// does that job with no fixed number in it, and the left slot now carries
+        /// a real pause affordance again — on Android the only way to pause was
+        /// the hardware back key, which nothing on screen advertised.
         private VisualElement BuildTopBar()
         {
             VisualElement bar = Systems_UiKit.Row(Align.FlexStart).NoPick();
@@ -156,25 +196,29 @@ namespace PoSumo
             bar.style.paddingRight = Systems_UiKit.SPACE_2;
             bar.style.paddingTop = Systems_UiKit.SPACE_2;
 
-            // The side slots are a fixed width so the centre slot is genuinely
-            // centred on the screen rather than centred on what is left over.
-            TopBarLeft = Systems_UiKit.Row().NoPick();
-            TopBarLeft.style.width = 104;
-            TopBarLeft.style.justifyContent = Justify.FlexStart;
-            TopBarLeft.style.flexShrink = 0;
+            TopBarLeft = SideSlot(Justify.FlexStart);
+            TopBarRight = SideSlot(Justify.FlexEnd);
 
             TopBarCentre = Systems_UiKit.Column(Align.Center).NoPick();
-            TopBarCentre.style.flexGrow = 1;
-
-            TopBarRight = Systems_UiKit.Row().NoPick();
-            TopBarRight.style.width = 104;
-            TopBarRight.style.justifyContent = Justify.FlexEnd;
-            TopBarRight.style.flexShrink = 0;
+            TopBarCentre.style.flexShrink = 0;
 
             bar.Add(TopBarLeft);
             bar.Add(TopBarCentre);
             bar.Add(TopBarRight);
             return bar;
+        }
+
+        /// Zero flex basis plus equal grow: whatever slack the bar has is split
+        /// evenly between the two sides, so the centre slot is genuinely centred
+        /// on the screen no matter what either side holds.
+        private static VisualElement SideSlot(Justify justify)
+        {
+            VisualElement slot = Systems_UiKit.Row().NoPick();
+            slot.style.flexGrow = 1;
+            slot.style.flexBasis = 0;
+            slot.style.minWidth = Systems_UiKit.TOUCH_MIN;
+            slot.style.justifyContent = justify;
+            return slot;
         }
 
         // ---- Centre layer: transient callouts over the arena ----------------
@@ -215,7 +259,9 @@ namespace PoSumo
             _modal.Add(element);
         }
 
-        /// Shows one dialog, hides the others, and raises the dim backdrop.
+        /// Shows one dialog, hides the others, and raises the dim backdrop. Both
+        /// are animated: a dialog that snaps on in one frame reads as a glitch,
+        /// and this one arrives while the camera is still settling on the finish.
         public void ShowModal(VisualElement element)
         {
             for (int childIndex = 0; childIndex < _modal.childCount; childIndex++)
@@ -225,9 +271,15 @@ namespace PoSumo
                     : DisplayStyle.None;
             }
             _backdrop.style.display = DisplayStyle.Flex;
+            _backdrop.FadeIn(Systems_UiKit.MOTION_FAST);
+            if (element != null)
+            {
+                element.RiseIn(48f);
+            }
         }
 
-        /// Hides every dialog and drops the backdrop.
+        /// Hides every dialog and drops the backdrop. Instant on the way out: the
+        /// dismissal is the player's own input, and delaying it reads as lag.
         public void HideModal()
         {
             for (int childIndex = 0; childIndex < _modal.childCount; childIndex++)

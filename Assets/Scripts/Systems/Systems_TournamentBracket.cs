@@ -254,20 +254,19 @@ namespace PoSumo
             // row inside the table. It costs nothing here, it is readable while
             // the table is still collapsed, and it buys back a whole line of
             // vertical space in the panel for larger type.
-            var toggle = new Button { text = CareerToggleText(open: false) };
-            toggle.style.height = Systems_UiKit.TOUCH_MIN;
+            // Was eleven inline style writes that re-derived GhostButton's look by
+            // hand — including its own copy of the four-line border reset — and so
+            // was the one control on this screen the kit did not know about. The
+            // kit builder also brings the press feedback with it.
+            Button toggle = null;
+            toggle = Systems_UiKit.QuietButton(CareerToggleText(open: false), () =>
+            {
+                bool open = _careerPanel.style.display == DisplayStyle.None;
+                _careerPanel.style.display = open ? DisplayStyle.Flex : DisplayStyle.None;
+                if (open) RefreshCareerTable();
+                toggle.text = CareerToggleText(open);
+            });
             toggle.style.marginTop = Systems_UiKit.SPACE_3;
-            toggle.style.marginLeft = 0;
-            toggle.style.marginRight = 0;
-            toggle.style.fontSize = Systems_UiKit.FONT_SMALL;
-            toggle.style.unityFontStyleAndWeight = FontStyle.Bold;
-            toggle.style.color = Systems_UiKit.TextLow;
-            toggle.style.backgroundColor = Systems_UiKit.Chip;
-            toggle.style.borderTopWidth = 0;
-            toggle.style.borderBottomWidth = 0;
-            toggle.style.borderLeftWidth = 0;
-            toggle.style.borderRightWidth = 0;
-            toggle.Round(Systems_UiKit.RADIUS_SM);
             _content.Add(toggle);
 
             _careerPanel = Systems_UiKit.Card(Systems_UiKit.Ink, Systems_UiKit.RADIUS_SM);
@@ -275,14 +274,6 @@ namespace PoSumo
             _careerPanel.style.marginTop = Systems_UiKit.SPACE_1;
             _careerPanel.style.display = DisplayStyle.None;
             _content.Add(_careerPanel);
-
-            toggle.clicked += () =>
-            {
-                bool open = _careerPanel.style.display == DisplayStyle.None;
-                _careerPanel.style.display = open ? DisplayStyle.Flex : DisplayStyle.None;
-                if (open) RefreshCareerTable();
-                toggle.text = CareerToggleText(open);
-            };
 
             RefreshCareerTable();
         }
