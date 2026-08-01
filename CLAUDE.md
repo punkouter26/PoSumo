@@ -45,13 +45,13 @@ re-run training locally to recreate that directory.
 
 | Layer | Tool | Version | Notes |
 |---|---|---|---|
-| Engine | Unity Editor | **6000.5.4f1** (Unity 6.2) | changeset d550df8bd089 |
+| Engine | Unity Editor | **6000.5.6f1** (Unity 6.2) | changeset 0e0577a1a2ac. Was 6000.5.4f1 (d550df8bd089) — see the drift note below |
 | Engine | Unity Hub | 3.x | headless CLI broken — install modules via UI |
 | Package | com.unity.ml-agents | **4.0.0** (release_23) | LOCAL `file:` package with patches — never re-fetch |
-| Package | com.unity.ai.inference | 2.2.1 | auto-dependency of ML-Agents (`Unity.InferenceEngine.ModelAsset`) |
-| Package | URP | 17.6.0 | project template |
+| Package | com.unity.ai.inference | 2.6.1 | auto-dependency of ML-Agents (`Unity.InferenceEngine.ModelAsset`). Was 2.2.1 |
+| Package | URP | 17.5.0 | project template |
 | MCP | unity-mcp-cli (npm) | 0.86.0 | |
-| MCP | com.ivanmurzak.unity.mcp | 0.86.0 | + gamedev-mcp-server 9.2.0 |
+| MCP | com.ivanmurzak.unity.mcp | 0.86.3 | + gamedev-mcp-server 9.2.0 |
 | MCP | com.coplaydev.unity-mcp | 10.1.0 | |
 | MCP | com.besty.unity-skills | 2.2.1 | HTTP server port 8090 |
 | Python | Python | **3.10.11** | hard range: >=3.10.1, <=3.10.12 |
@@ -61,7 +61,7 @@ re-run training locally to recreate that directory.
 | Python | numpy | 1.23.5 | pinned by mlagents |
 | Python | onnx | 1.15.0 | |
 | Python | tensorboard | 2.20.0 | always run during training |
-| Android | Build Support module | 6000.5.4f1 | matches editor version |
+| Android | Build Support module | 6000.5.6f1 | must match the editor version |
 | Android | OpenJDK | 17.0.18+8 | embedded in AndroidPlayer |
 | Android | NDK | r27c | |
 | Android | SDK build-tools | 36.0.0 | |
@@ -72,6 +72,24 @@ re-run training locally to recreate that directory.
 | Shell | Node.js / npm | 24.x / 11.x | for MCP CLIs |
 | Shell | Git | 2.55+ | |
 | Shell | uv | 0.11+ | CoplayDev server runner |
+
+**Three of these moved without the table moving with them, and were re-measured on
+2026-08-01 rather than trusted:** the editor went 6000.5.4f1 → **6000.5.6f1**
+(`ProjectSettings/ProjectVersion.txt` is authoritative), `com.unity.ai.inference` went
+2.2.1 → **2.6.1**, and URP reads **17.5.0** where this table claimed 17.6.0
+(`Packages/packages-lock.json` is authoritative for both — `manifest.json` records what was
+asked for, the lock records what resolved). Nothing in the shipped game was observed to
+break: the project compiles clean and the console is error-free.
+
+The one to watch is **`com.unity.ai.inference`**, because it is not a passive dependency
+here. It is what runs every `.onnx` at inference time, and it is the package whose
+editor-only `Google.Protobuf_Packed.dll` collided with ML-Agents' copy — the collision
+that local patch 2 below exists to work around. A minor-version move is exactly when that
+patch could stop holding. If inference ever goes silently wrong (a fighter that stands
+still or twitches rather than erroring), suspect this before suspecting the brain.
+
+Re-measure rather than trusting this table when something behaves oddly; a version drifting
+under a "required set" heading is how a project ends up debugging the wrong layer.
 
 ## Critical version pins (do not "upgrade")
 
