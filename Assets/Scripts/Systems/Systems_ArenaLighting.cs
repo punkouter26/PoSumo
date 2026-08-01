@@ -30,26 +30,58 @@ namespace PoSumo
         // 1.35 global plus a key blows its centreline straight to white and the
         // bodies read as chrome — see the headroom term in PoSumo/BodyLit, which
         // shapes the additive highlights but cannot rescue an over-bright base.
+        // SHADOW BUDGET — the ratio below is the whole trick, and getting it wrong
+        // is why the first pass rendered a shadow pass that produced no visible
+        // shadow. A Light2D shadow occludes ONLY the light that casts it. The key
+        // is the sole caster; the global cannot be shadowed at all (Global type,
+        // and DisableShadows is called on it), and the rims are explicitly
+        // unshadowed. So the darkest a shadowed patch of clay can ever get is
+        //     global + rims  /  global + rims + key
+        // At the old 0.78 / 0.7 that floor was ~53% of full brightness — a shadow
+        // that faint against warm clay is invisible. The key must DOMINATE the
+        // unshadowed fill, not merely match it. Total exposure is held roughly
+        // constant; what changes is which light carries it.
         [Header("Global fill")]
-        [Tooltip("Base illumination everything receives, with no falloff anywhere. Sets the exposure floor; the key light does the shaping.")]
-        public float globalIntensity = 0.78f;
+        [Tooltip("Base illumination everything receives, with no falloff anywhere. Deliberately low: this light can never be shadowed, so every unit of it is a unit that fills in the key's shadows.")]
+        public float globalIntensity = 0.42f;
         public Color globalColor = new Color(1f, 0.97f, 0.93f);
 
         [Header("Key light (above the dohyo) — 0 disables the spotlight look")]
-        public float keyIntensity = 0.7f;
+        [Tooltip("The only shadow-casting light. Carries the exposure so its shadows have something to subtract from.")]
+        public float keyIntensity = 1.25f;
         public Color keyColor = new Color(1f, 0.93f, 0.78f);
         public float keyHeight = 5.2f;
         public float keyOuterRadius = 7.5f;
 
         [Header("Rim lights (crowd side) — 0 keeps the edges as bright as the middle")]
-        public float rimIntensity = 0.35f;
+        [Tooltip("Also unshadowed, and they sit at fighter height pointing inward, so they fill the key's shadows more per unit than the global does. Kept low for that reason.")]
+        public float rimIntensity = 0.2f;
         public Color rimColor = new Color(0.45f, 0.62f, 1f);
         public float rimSpread = 4.2f;
 
         [Header("Shadows")]
-        [Tooltip("Key-light shadows. Agent_BipedBody adds a ShadowCaster2D per part, so the casters and the casting light must be enabled together — a shadow-casting light with no casters still allocates a shadow render texture every frame for nothing.")]
-        public bool keyCastsShadows = true;
-        [Range(0f, 1f)] public float shadowIntensity = 0.6f;
+        // OFF, and this time the reason is measured rather than assumed. Cast
+        // shadows were implemented properly (ShadowCaster2D per part, one
+        // CompositeShadowCaster2D per fighter so they do not self-shadow) and the
+        // light ratio below was rebalanced specifically so a shadow would have
+        // something to subtract from. Three 1080x1920 live captures across
+        // different match states then showed NO body-shaped shadow anywhere.
+        //
+        // The reason is the arena's geometry, not the shadow setup: at gameplay
+        // framing the only clay in frame is the dohyo's FRONT FACE seen edge-on.
+        // The fighters stand on its top edge, so there is no horizontal surface
+        // for a shadow to fall across. This is almost certainly why shadows were
+        // removed the first time too.
+        //
+        // Everything needed is still here and correct — flip this and
+        // Agent_BipedBody.castShadows together if the camera ever frames the mat
+        // from above, or if a floor plane becomes visible. Until then it is a
+        // shadow render texture per frame, plus a second volumetric pass, for
+        // nothing — and this ships to Android. Systems_BlobShadow already does
+        // the contact grounding this geometry can actually show.
+        [Tooltip("Key-light shadows. Needs Agent_BipedBody.castShadows on as well. Currently ineffective at gameplay framing — see the note above before enabling.")]
+        public bool keyCastsShadows = false;
+        [Range(0f, 1f)] public float shadowIntensity = 0.78f;
         public float shadowSoftness = 0.55f;
 
         [Header("Light volumes (god rays)")]

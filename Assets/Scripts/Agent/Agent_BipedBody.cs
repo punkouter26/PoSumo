@@ -58,8 +58,8 @@ namespace PoSumo
         [Tooltip("Velocity-driven wobble on the torso art. Heavier fighters wobble more.")]
         public bool enableJiggle = true;
 
-        [Tooltip("Cast 2D shadows onto the dohyo. Needs Systems_ArenaLighting.keyCastsShadows on as well — casters with no casting light do nothing, and a casting light with no casters still allocates a shadow render texture every frame.")]
-        public bool castShadows = true;
+        [Tooltip("Cast 2D shadows onto the dohyo. Needs Systems_ArenaLighting.keyCastsShadows on as well — casters with no casting light do nothing, and a casting light with no casters still allocates a shadow render texture every frame. OFF because measured captures showed no visible shadow at gameplay framing; see the note in Systems_ArenaLighting.")]
+        public bool castShadows = false;
 
         [HideInInspector] public Rigidbody2D Torso;   // pelvis (root mass, ring-out tracking)
         [HideInInspector] public Rigidbody2D Chest;   // top segment (posture/lean sensing)

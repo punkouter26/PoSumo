@@ -46,3 +46,7 @@ Thumbs.db
 # Editor crash-recovery scene backups
 /Assets/_Recovery/
 /Assets/_Recovery.meta
+
+# Verification screenshots (regenerated on demand via UnitySkills scene_screenshot)
+/Assets/Screenshots/
+/Assets/Screenshots.meta

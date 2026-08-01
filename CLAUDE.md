@@ -278,12 +278,21 @@ shadow render texture every frame**. `Systems_BodySurface` disables itself when
 `FlatBodyShading` is on rather than half-enabling the look behind its back.
 
 Hard-won specifics, so nobody re-derives them:
-- **Exposure is balanced for shaded bodies at `globalIntensity 0.78` / `keyIntensity 0.7`.**
+- **Exposure is balanced for shaded bodies at `globalIntensity 0.42` / `keyIntensity 1.25`.**
   A `Light2D.LightType.Global` has no position and no falloff, so at the old 1.35 with the
   key and rims at zero there was literally no light shaping anywhere. Raising the global back
   toward 1.35 while shading is on drives the lit centreline past white and the bodies read as
   chrome — the shader's `headroom` term shapes the additive highlights but cannot rescue an
   over-bright base.
+- **The global:key RATIO is what makes shadows visible, and it is easy to get wrong.**
+  A Light2D shadow occludes only the light that casts it. The key is the sole caster — the
+  global *cannot* be shadowed (Global type, plus `DisableShadows`) and the rims are explicitly
+  unshadowed — so the darkest a shadowed patch can get is `(global + rims) / (global + rims +
+  key)`. A first pass shipped 0.78 / 0.7, which floors that at ~53% brightness: the shadow
+  pass ran every frame and produced **nothing visible on the clay**. The key must dominate the
+  unshadowed fill, not merely match it. If shadows ever stop reading, check this ratio before
+  touching `shadowIntensity` — and remember the rims fill shadows harder per unit than the
+  global, because they sit at fighter height pointing inward.
 - **The `ShadowCaster2D` goes on the `Art` child, not the physics GameObject.** Its `Awake`
   fills an empty shape path from the `Renderer` on the same object, so no shape has to be
   authored — but it must therefore be added *after* the `SpriteRenderer`.
@@ -291,6 +300,16 @@ Hard-won specifics, so nobody re-derives them:
   `ShadowCasterGroup2DManager` walks up to the nearest group ancestor; without it the 14
   heavily-overlapping parts shadow each other and the body interior fills in as a dark blob.
   Same intent as the pairwise collision ignores: a biped is one object.
+- **Cast shadows are OFF, and the reason is geometric — do not "fix" it by re-enabling.**
+  The full implementation is present and correct, and the light ratio above was rebalanced
+  specifically to make shadows readable. Three 1080×1920 live captures across different match
+  states then showed no body-shaped shadow at all. At gameplay framing the only clay in frame
+  is the dohyo's **front face seen edge-on**; the fighters stand on its top edge, so there is
+  no horizontal surface for a shadow to fall across. That is almost certainly why shadows were
+  removed the first time, too. Enabling `keyCastsShadows` + `castShadows` costs a shadow render
+  texture per frame plus a second volumetric pass — on an Android target — and renders nothing.
+  Turn them on only if the camera ever frames the mat from above or a floor plane becomes
+  visible. `Systems_BlobShadow` does the contact grounding this geometry can actually show.
 - The key's volumetrics and `Systems_ArenaAtmosphere.showShafts` are **independent** and
   stack on purpose — volumetrics give the cone its falloff and its shadow wedges, the shafts
   give it discrete visible beams. Both read against the particle haze `Systems_DustPuff`
