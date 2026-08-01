@@ -11,6 +11,17 @@ namespace PoSumo
     /// Right-facing geometry is defined once; facingSign = -1 mirrors it.
     /// All colliders of the same biped ignore each other (limbs pass through
     /// their own body) but still collide with the ground and the opponent.
+    /// Runs BEFORE Agent_Biped (which has no explicit order, so it sits at 0).
+    ///
+    /// Agent_Biped.Awake ends with base.Awake(), and ML-Agents' Agent.Awake fires
+    /// OnEpisodeBegin, which calls ResetPose() on this component. Awake order
+    /// between two components on the SAME GameObject is undefined in Unity, so that
+    /// only worked by luck: if this component had not built yet, ResetPose walked a
+    /// null _thighs and threw. It won in SCN_SUMO opened directly and LOST on the
+    /// scene load a tournament match arrives through — two NullReferenceExceptions
+    /// per bout, in the path the game actually ships (the build boots into the
+    /// bracket). Ordering this first makes Build() finish before any reset can run.
+    [DefaultExecutionOrder(-400)]
     public sealed class Agent_BipedBody : MonoBehaviour
     {
         [Tooltip("Character sheet; when set, overrides teamColor/headSprite/body scales at Awake.")]
