@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
@@ -19,7 +18,6 @@ namespace PoSumo.EditorTools
         private static int _roundsSeen;
         private static float _roundStartTime;
         private static readonly StringBuilder Log = new StringBuilder();
-        private static MethodInfo _resetMatch;
 
         public static void Run(int matches)
         {
@@ -46,8 +44,6 @@ namespace PoSumo.EditorTools
             _roundsSeen = 0;
             _roundStartTime = Time.realtimeSinceStartup;
             Log.Clear();
-            _resetMatch = typeof(Systems_GameMatchManager)
-                .GetMethod("ResetMatch", BindingFlags.Instance | BindingFlags.NonPublic);
 
             _manager.RoundEnded += OnRoundEnded;
             _manager.MatchEnded += OnMatchEnded;
@@ -78,16 +74,13 @@ namespace PoSumo.EditorTools
                 return;
             }
             // Chain into the next match without waiting for the REMATCH button.
-            if (_resetMatch != null)
+            EditorApplication.delayCall += () =>
             {
-                EditorApplication.delayCall += () =>
+                if (EditorApplication.isPlaying && _manager != null)
                 {
-                    if (EditorApplication.isPlaying && _manager != null)
-                    {
-                        _resetMatch.Invoke(_manager, null);
-                    }
-                };
-            }
+                    _manager.ResetMatch();
+                }
+            };
         }
 
         private static void Finish()

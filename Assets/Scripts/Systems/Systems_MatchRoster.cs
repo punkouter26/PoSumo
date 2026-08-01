@@ -69,15 +69,5 @@ namespace PoSumo
                 body.character = character;
             }
         }
-
-        /// Scoreboard identity for a fighter, derived from its character.
-        public static string DisplayName(Agent_Biped agent)
-        {
-            if (agent == null || agent.character == null)
-            {
-                return "?";
-            }
-            return agent.character.behaviorName.ToUpperInvariant();
-        }
     }
 }

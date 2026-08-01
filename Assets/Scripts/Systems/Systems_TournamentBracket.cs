@@ -625,7 +625,8 @@ namespace PoSumo
                 string bName = b != null ? b.behaviorName.ToUpperInvariant() : "?";
                 // No arena suffix any more: every bout is on the same clay, so
                 // naming it on every line was noise rather than information.
-                _statusLabel.text = $"MATCH {Systems_TournamentState.CurrentMatch + 1} of 7 — {aName} v {bName}";
+                _statusLabel.text = $"MATCH {Systems_TournamentState.CurrentMatch + 1} of " +
+                                    $"{Systems_TournamentState.MATCH_COUNT} — {aName} v {bName}";
                 _actionButton.text = _autoPlay ? "PLAYING…" : "PLAY MATCH";
                 return;
             }

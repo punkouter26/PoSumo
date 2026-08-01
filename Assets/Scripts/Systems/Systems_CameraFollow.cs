@@ -53,6 +53,18 @@ namespace PoSumo
         private float _focusUntil;
         private float _wideUntil;
 
+        /// What to punch in on for a fighter: the head if it has drawn face art,
+        /// otherwise the torso. Lives here rather than at each call site because
+        /// three of them (round end, match end, countdown) had their own copy, so a
+        /// change to what the camera favours only ever landed in one of the three.
+        public static Transform FocusPoint(Agent_Biped fighter)
+        {
+            if (fighter == null) return null;
+            var body = fighter.GetComponent<Agent_BipedBody>();
+            if (body != null && body.HeadRenderer != null) return body.HeadRenderer.transform;
+            return fighter.Torso != null ? fighter.Torso.transform : null;
+        }
+
         /// Blend the camera toward `focus` at `ortho` for `realSeconds` of
         /// unscaled time. Used by the match presentation on round-deciding falls.
         public void PunchIn(Transform focus, float ortho, float realSeconds)

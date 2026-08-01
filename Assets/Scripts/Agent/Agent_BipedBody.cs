@@ -94,6 +94,12 @@ namespace PoSumo
 
         private float[] _maxSpeed;   // deg/s per joint
         private float[] _maxTorque;
+        // Derived from _maxTorque once in Build(). Both are constant for the body's
+        // whole life, and FixedUpdate is the hottest path in the project — 13 joints
+        // per biped, 10 bipeds in a training scene, 50 Hz — so they are not worth
+        // recomputing 6,500 times a second to get the same two numbers back.
+        private float[] _passiveStiffness;   // N-m per degree
+        private float[] _passiveDamping;     // N-m per deg/s
         private Vector3[] _initialLocalPos;
         private Quaternion[] _initialLocalRot;
         private Rigidbody2D[] _thighs;
@@ -552,6 +558,8 @@ namespace PoSumo
             Joints = new HingeJoint2D[JOINT_DEFS.Length];
             _maxSpeed = new float[JOINT_DEFS.Length];
             _maxTorque = new float[JOINT_DEFS.Length];
+            _passiveStiffness = new float[JOINT_DEFS.Length];
+            _passiveDamping = new float[JOINT_DEFS.Length];
             for (int jointDefIndex = 0; jointDefIndex < JOINT_DEFS.Length; jointDefIndex++)
             {
                 var d = JOINT_DEFS[jointDefIndex];
@@ -577,6 +585,8 @@ namespace PoSumo
                 Joints[jointDefIndex] = joint;
                 _maxSpeed[jointDefIndex] = d.speed;
                 _maxTorque[jointDefIndex] = d.torque * torqueScale;
+                _passiveStiffness[jointDefIndex] = _maxTorque[jointDefIndex] * PASSIVE_STIFFNESS_FRAC / 90f;
+                _passiveDamping[jointDefIndex] = _maxTorque[jointDefIndex] * PASSIVE_DAMPING_FRAC / 400f;
             }
 
             // Self-pass-through: ignore every collider pair within this biped.
@@ -849,7 +859,7 @@ namespace PoSumo
         /// internal force and cannot push the fighter around by itself.
         private void FixedUpdate()
         {
-            if (Joints == null || _maxTorque == null) return;
+            if (Joints == null || _passiveStiffness == null) return;
             for (int jointIndex = 0; jointIndex < Joints.Length; jointIndex++)
             {
                 HingeJoint2D joint = Joints[jointIndex];
@@ -857,10 +867,8 @@ namespace PoSumo
                 Rigidbody2D child = joint.attachedRigidbody;
                 if (child == null || !child.simulated) continue;
 
-                float budget = _maxTorque[jointIndex];
-                float stiffness = budget * PASSIVE_STIFFNESS_FRAC / 90f;   // N-m per degree
-                float damping = budget * PASSIVE_DAMPING_FRAC / 400f;      // N-m per deg/s
-                float torque = -(joint.jointAngle * stiffness + joint.jointSpeed * damping);
+                float torque = -(joint.jointAngle * _passiveStiffness[jointIndex]
+                                 + joint.jointSpeed * _passiveDamping[jointIndex]);
 
                 child.AddTorque(torque);
                 Rigidbody2D parent = joint.connectedBody;

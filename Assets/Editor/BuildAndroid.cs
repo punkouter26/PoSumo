@@ -51,14 +51,7 @@ namespace PoSumo.EditorTools
             // app bundle to PoSumo.apk, which adb cannot install.
             EditorUserBuildSettings.buildAppBundle = false;
 
-            var scenes = new System.Collections.Generic.List<string>();
-            foreach (var scene in EditorBuildSettings.scenes)
-            {
-                if (scene.enabled)
-                {
-                    scenes.Add(scene.path);
-                }
-            }
+            var scenes = BuildAndroidAAB.EnabledScenes();
 
             var options = new BuildPlayerOptions
             {

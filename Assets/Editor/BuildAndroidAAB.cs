@@ -94,14 +94,7 @@ namespace PoSumo.EditorTools
             EditorUserBuildSettings.androidBuildType = AndroidBuildType.Release;
             EditorUserBuildSettings.development = false;
 
-            var scenes = new List<string>();
-            foreach (var scene in EditorBuildSettings.scenes)
-            {
-                if (scene.enabled)
-                {
-                    scenes.Add(scene.path);
-                }
-            }
+            List<string> scenes = EnabledScenes();
 
             if (scenes.Count == 0)
             {
@@ -195,6 +188,22 @@ namespace PoSumo.EditorTools
             {
                 PlayerSettings.SetScriptingDefineSymbols(NamedBuildTarget.Android, definesBefore);
             }
+        }
+
+        /// Scene paths ticked in Build Settings, in order. Shared with the APK
+        /// builder so both Android artifacts always contain the same scene list —
+        /// this was the one piece of build setup the two tools each did themselves.
+        internal static List<string> EnabledScenes()
+        {
+            var scenes = new List<string>();
+            foreach (var scene in EditorBuildSettings.scenes)
+            {
+                if (scene.enabled)
+                {
+                    scenes.Add(scene.path);
+                }
+            }
+            return scenes;
         }
 
         /// Environment variable wins; otherwise read <keystore>.pass next to the keystore.

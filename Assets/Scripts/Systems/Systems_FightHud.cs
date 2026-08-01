@@ -489,10 +489,12 @@ namespace PoSumo
             return piece;
         }
 
-        private void PaintMannequin(VisualElement[] parts, Agent_Biped fighter)
+        // Takes the body rather than resolving it: this runs for both fighters on
+        // every rendered frame, and the class already caches _bodyA/_bodyB for its
+        // FixedUpdate sampling — so the GetComponent here was pure repeat work.
+        private void PaintMannequin(VisualElement[] parts, Agent_BipedBody body)
         {
-            if (parts == null || fighter == null) return;
-            var body = fighter.GetComponent<Agent_BipedBody>();
+            if (parts == null) return;
             Systems_BodyDamage damage = body != null ? Systems_BodyDamage.For(body) : null;
             if (damage == null) return;
 
@@ -543,8 +545,8 @@ namespace PoSumo
             float pushB = Mathf.Clamp(_aggB.sumPush / Mathf.Max(1, _aggB.touchSamples), 0f, AVG_PUSH_MAX);
             SetBar(_push, pushA, pushB, AVG_PUSH_MAX, "{0:F0} N");
 
-            PaintMannequin(_mannA, manager.wrestlerA);
-            PaintMannequin(_mannB, manager.wrestlerB);
+            PaintMannequin(_mannA, _bodyA);
+            PaintMannequin(_mannB, _bodyB);
 
             // Was "MATCHES 0–0 · LONGEST RD 0s", which reset every match and so read
             // 0–0 through the whole bout while the career screen said 68 matches.

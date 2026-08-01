@@ -74,11 +74,21 @@ namespace PoSumo
         public const int ObservationCount = 42;
         public const int ActionCount = 13;      // hips, knees, ankles, 3 spine, shoulders, elbows
 
+        /// Height below which a foot counts as planted; the foot centre sits ~0.04
+        /// when flat. Shared by StanceFactor and CadenceReward, which both judge
+        /// "planted" and were drifting apart as two separate 0.12 literals.
+        /// StanceFactor measures it against arenaGroundY, CadenceReward against
+        /// world Y — that difference is deliberate and unchanged.
+        private const float PLANTED_HEIGHT = 0.12f;
+
         /// Last motor commands as sent to the joints (for HUD display).
         [System.NonSerialized] public float[] LastActions = new float[ActionCount];
 
         private Agent_BipedBody _b;
         private Agent_BipedBody _opponentBody;
+        /// Resolved once — the ragdoll is built in Awake and never gains or loses a
+        /// part, so re-fetching this every episode only allocated a fresh array.
+        private Sensor_BodyPartContact[] _contactSensors;
         private readonly float[] _prevActions = new float[ActionCount];
         private float _pendingImpact;
         private float _lastTorsoY;
@@ -167,7 +177,11 @@ namespace PoSumo
         public override void OnEpisodeBegin()
         {
             _b.ResetPose();
-            foreach (var c in GetComponentsInChildren<Sensor_BodyPartContact>()) c.Clear();
+            if (_contactSensors == null) _contactSensors = GetComponentsInChildren<Sensor_BodyPartContact>();
+            for (int sensorIndex = 0; sensorIndex < _contactSensors.Length; sensorIndex++)
+            {
+                _contactSensors[sensorIndex].Clear();
+            }
             NonFootGroundContacts = 0;
             _pendingImpact = 0f;
             _lastTorsoY = _b.Torso.position.y;
@@ -332,7 +346,6 @@ namespace PoSumo
         /// shoulder-and-a-half, past which wider is not better.
         private float StanceFactor()
         {
-            const float PLANTED_HEIGHT = 0.12f;   // foot centre sits ~0.04 when flat
             const float SUMO_STANCE_WIDTH = 0.55f;
 
             float nearY = San(_b.FootNear.position.y) - arenaGroundY;
@@ -352,9 +365,9 @@ namespace PoSumo
         /// foot (near->far or far->near), i.e. actual stepping, not skating.
         private void CadenceReward(float scale)
         {
-            bool nearPlanted = _b.FootNear.position.y < 0.12f
+            bool nearPlanted = _b.FootNear.position.y < PLANTED_HEIGHT
                 && Mathf.Abs(_b.FootNear.linearVelocity.x) < 0.5f;
-            bool farPlanted = _b.FootFar.position.y < 0.12f
+            bool farPlanted = _b.FootFar.position.y < PLANTED_HEIGHT
                 && Mathf.Abs(_b.FootFar.linearVelocity.x) < 0.5f;
             int pattern = (nearPlanted ? 1 : 0) | (farPlanted ? 2 : 0);
             if ((pattern == 1 && _lastSinglePlant == 2) || (pattern == 2 && _lastSinglePlant == 1))

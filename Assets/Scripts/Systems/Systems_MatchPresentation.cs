@@ -66,11 +66,8 @@ namespace PoSumo
             Agent_Biped loser = winner == _manager.wrestlerA ? _manager.wrestlerB : _manager.wrestlerA;
             if (loser != null && loser.Torso != null)
             {
-                var body = loser.GetComponent<Agent_BipedBody>();
-                Transform focus = body != null && body.HeadRenderer != null
-                    ? body.HeadRenderer.transform
-                    : loser.Torso.transform;
-                _camFollow.PunchIn(focus, matchEndPunchOrtho, matchEndHoldSeconds);
+                _camFollow.PunchIn(Systems_CameraFollow.FocusPoint(loser),
+                                   matchEndPunchOrtho, matchEndHoldSeconds);
             }
 
             // Queued rather than chained off a coroutine so it survives the
@@ -157,11 +154,8 @@ namespace PoSumo
             // Occasionally celebrate the winner's face instead of the fall.
             if (winner != null && Random.value < winnerHeadZoomChance)
             {
-                var body = winner.GetComponent<Agent_BipedBody>();
-                Transform focus = body != null && body.HeadRenderer != null
-                    ? body.HeadRenderer.transform
-                    : winner.Torso.transform;
-                _camFollow.PunchIn(focus, winnerHeadOrtho, slowMoRealSeconds + 0.6f);
+                _camFollow.PunchIn(Systems_CameraFollow.FocusPoint(winner),
+                                   winnerHeadOrtho, slowMoRealSeconds + 0.6f);
             }
             else if (loser.Torso != null)
             {

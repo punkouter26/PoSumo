@@ -400,10 +400,7 @@ namespace PoSumo
             if (body != null)
             {
                 body.ResetPose();
-                for (int partIndex = 0; partIndex < body.Parts.Length; partIndex++)
-                {
-                    body.Parts[partIndex].simulated = true;
-                }
+                SetSimulated(body, true);
             }
             w.actionsEnabled = true;
         }
@@ -526,10 +523,7 @@ namespace PoSumo
             var body = w.GetComponent<Agent_BipedBody>();
             if (body == null) return;
             body.ResetPose();
-            for (int partIndex = 0; partIndex < body.Parts.Length; partIndex++)
-            {
-                body.Parts[partIndex].simulated = false;
-            }
+            SetSimulated(body, false);
             w.actionsEnabled = false;
         }
 
@@ -576,33 +570,36 @@ namespace PoSumo
 
         private static void Unfreeze(Agent_Biped w)
         {
-            var body = w.GetComponent<Agent_BipedBody>();
-            if (body != null)
-            {
-                for (int partIndex = 0; partIndex < body.Parts.Length; partIndex++)
-                {
-                    body.Parts[partIndex].simulated = true;
-                }
-            }
+            SetSimulated(w.GetComponent<Agent_BipedBody>(), true);
             w.actionsEnabled = true;
+        }
+
+        /// Toggle physics across every rigidbody of a body, optionally killing its
+        /// motion first. The walk-in pose, the neutral pose, Unfreeze and
+        /// FreezeFighter each walked body.Parts themselves; this is the one loop
+        /// they were all copies of.
+        private static void SetSimulated(Agent_BipedBody body, bool simulated, bool zeroVelocity = false)
+        {
+            if (body == null || body.Parts == null) return;
+            for (int partIndex = 0; partIndex < body.Parts.Length; partIndex++)
+            {
+                Rigidbody2D part = body.Parts[partIndex];
+                if (part == null) continue;
+                if (zeroVelocity)
+                {
+                    part.linearVelocity = Vector2.zero;
+                    part.angularVelocity = 0f;
+                }
+                part.simulated = simulated;
+            }
         }
 
         /// Presentation, audio and face-mood are runtime-spawned children so
         /// scenes stay manager-only and older scenes pick them up automatically.
         private void SpawnCompanionSystems()
         {
-            if (enablePresentation && FindAnyObjectByType<Systems_MatchPresentation>() == null)
-            {
-                var go = new GameObject("Presentation");
-                go.transform.SetParent(transform, false);
-                go.AddComponent<Systems_MatchPresentation>();
-            }
-            if (enableAudio && FindAnyObjectByType<Systems_MatchAudio>() == null)
-            {
-                var go = new GameObject("MatchAudio");
-                go.transform.SetParent(transform, false);
-                go.AddComponent<Systems_MatchAudio>();
-            }
+            SpawnCompanion<Systems_MatchPresentation>(enablePresentation, "Presentation");
+            SpawnCompanion<Systems_MatchAudio>(enableAudio, "MatchAudio");
             // One mood driver per fighter that actually has face art.
             if (enableFaceMood && FindAnyObjectByType<Systems_FaceMood>() == null)
             {
@@ -624,36 +621,23 @@ namespace PoSumo
                                    && wrestlerA.behaviorName == wrestlerB.behaviorName;
                 SpawnVoice(wrestlerB, mirrorMatch ? mirrorPitchScale : 1f);
             }
-            if (enableImpactFx && FindAnyObjectByType<Systems_ImpactFx>() == null)
-            {
-                var go = new GameObject("ImpactFx");
-                go.transform.SetParent(transform, false);
-                go.AddComponent<Systems_ImpactFx>();
-            }
-            if (enableLighting && FindAnyObjectByType<Systems_ArenaLighting>() == null)
-            {
-                var go = new GameObject("ArenaLighting");
-                go.transform.SetParent(transform, false);
-                go.AddComponent<Systems_ArenaLighting>();
-            }
-            if (recordCareerStats && FindAnyObjectByType<Systems_CareerRecorder>() == null)
-            {
-                var go = new GameObject("CareerRecorder");
-                go.transform.SetParent(transform, false);
-                go.AddComponent<Systems_CareerRecorder>();
-            }
-            if (enableAtmosphere && FindAnyObjectByType<Systems_ArenaAtmosphere>() == null)
-            {
-                var go = new GameObject("Atmosphere");
-                go.transform.SetParent(transform, false);
-                go.AddComponent<Systems_ArenaAtmosphere>();
-            }
-            if (enableMusic && FindAnyObjectByType<Systems_MusicDirector>() == null)
-            {
-                var go = new GameObject("Music");
-                go.transform.SetParent(transform, false);
-                go.AddComponent<Systems_MusicDirector>();
-            }
+            SpawnCompanion<Systems_ImpactFx>(enableImpactFx, "ImpactFx");
+            SpawnCompanion<Systems_ArenaLighting>(enableLighting, "ArenaLighting");
+            SpawnCompanion<Systems_CareerRecorder>(recordCareerStats, "CareerRecorder");
+            SpawnCompanion<Systems_ArenaAtmosphere>(enableAtmosphere, "Atmosphere");
+            SpawnCompanion<Systems_MusicDirector>(enableMusic, "Music");
+        }
+
+        /// Spawns one companion as a child of the manager, if its GameTuning flag is
+        /// on and the scene does not already have one. The per-fighter companions
+        /// (face mood, voice, body damage) keep their own helpers because they need
+        /// arguments; everything else is this one shape, and was six copies of it.
+        private void SpawnCompanion<T>(bool enabled, string objectName) where T : Component
+        {
+            if (!enabled || FindAnyObjectByType<T>() != null) return;
+            var go = new GameObject(objectName);
+            go.transform.SetParent(transform, false);
+            go.AddComponent<T>();
         }
 
         private void SpawnBodyDamage(Agent_Biped fighter)
@@ -918,11 +902,7 @@ namespace PoSumo
         private void PunchOnHead(Agent_Biped fighter)
         {
             if (_camFollow == null || fighter == null) return;
-            var body = fighter.GetComponent<Agent_BipedBody>();
-            Transform focus = body != null && body.HeadRenderer != null
-                ? body.HeadRenderer.transform
-                : fighter.Torso.transform;
-            _camFollow.PunchIn(focus, countdownHeadOrtho, 1.05f);
+            _camFollow.PunchIn(Systems_CameraFollow.FocusPoint(fighter), countdownHeadOrtho, 1.05f);
         }
 
         private void HideCountdown()
@@ -1395,32 +1375,12 @@ namespace PoSumo
         {
             if (fighter == null) return;
             fighter.actionsEnabled = false;
-            var body = fighter.GetComponent<Agent_BipedBody>();
-            if (body == null || body.Parts == null) return;
-            for (int partIndex = 0; partIndex < body.Parts.Length; partIndex++)
-            {
-                Rigidbody2D part = body.Parts[partIndex];
-                if (part == null) continue;
-                part.linearVelocity = Vector2.zero;
-                part.angularVelocity = 0f;
-                part.simulated = false;
-            }
+            SetSimulated(fighter.GetComponent<Agent_BipedBody>(), false, zeroVelocity: true);
         }
 
-        /// Raise a dialog now, or after a delay so the ragdoll lands first.
-        /// Routing through the HUD root means the dim backdrop and the mutual
-        /// exclusion with any other dialog come along automatically.
-        private void ShowModalAfter(VisualElement element, long delayMs)
-        {
-            if (delayMs <= 0L)
-            {
-                _hud.ShowModal(element);
-                return;
-            }
-            element.schedule.Execute(() => _hud.ShowModal(element)).StartingIn(delayMs);
-        }
-
-        /// Same, for a callout drawn over the arena rather than a dialog.
+        /// Raise a callout drawn over the arena now, or after a delay so the ragdoll
+        /// lands first. Routing through the HUD root means the mutual exclusion with
+        /// any other overlay comes along automatically.
         private void ShowCentreAfter(VisualElement element, long delayMs)
         {
             if (delayMs <= 0L)
@@ -1433,7 +1393,11 @@ namespace PoSumo
 
         private static string WrapName(string n, Color c) => $"<color=#{Hex(c)}>{n}</color>";
 
-        private void ResetMatch()
+        /// Public so MatchTestHarness can chain matches unattended without the
+        /// REMATCH button. It used to reach this through private reflection, which
+        /// meant renaming the method turned the harness into a silent no-op after
+        /// one match — and the harness tally is how fighters are judged here.
+        public void ResetMatch()
         {
             _scoreA = _scoreB = 0;
             _koA = _koB = 0;
