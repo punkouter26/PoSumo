@@ -19,52 +19,53 @@ namespace PoSumo
     /// shape on top of it rather than being the only illumination.
     public sealed class Systems_ArenaLighting : MonoBehaviour
     {
-        // FLAT LIGHTING. The rig used to be a bright key point-light over the
-        // dohyo with two rim point-lights and a volumetric cone, which is what
-        // produced the spotlit look and the darkness at the edges of the arena.
-        // A Light2D of type Global has no position and no falloff — it lights
-        // every sprite on its target layers identically — so carrying the whole
-        // scene on the global fill is what "well lit, no drop off" means here.
+        // SHAPED LIGHTING. The global fill alone lights every sprite on its
+        // target layers identically — no position, no falloff, and therefore no
+        // shading anywhere. It is here to set the floor of the exposure, not to
+        // carry the scene: the key point-light over the dohyo does the shaping,
+        // the two rim lights separate the wrestlers from the crowd behind them,
+        // and the key's light volume draws the visible cone under the tsuriyane.
         //
-        // The key and rim lights are still CREATED, at zero intensity, because
-        // Systems_ArenaAtmosphere reads KeyLight off Instance
-        // and a null there would be a new crash rather than a new look. Raise
-        // keyIntensity above zero to get the old shaping back.
+        // The global is deliberately BELOW 1 now. A normal-mapped tube lit by a
+        // 1.35 global plus a key blows its centreline straight to white and the
+        // bodies read as chrome — see the headroom term in PoSumo/BodyLit, which
+        // shapes the additive highlights but cannot rescue an over-bright base.
         [Header("Global fill")]
-        [Tooltip("Base illumination everything receives, with no falloff anywhere. Carries the whole scene now that the key and rim lights are off.")]
-        public float globalIntensity = 1.35f;
+        [Tooltip("Base illumination everything receives, with no falloff anywhere. Sets the exposure floor; the key light does the shaping.")]
+        public float globalIntensity = 0.78f;
         public Color globalColor = new Color(1f, 0.97f, 0.93f);
 
         [Header("Key light (above the dohyo) — 0 disables the spotlight look")]
-        public float keyIntensity = 0f;
+        public float keyIntensity = 0.7f;
         public Color keyColor = new Color(1f, 0.93f, 0.78f);
         public float keyHeight = 5.2f;
         public float keyOuterRadius = 7.5f;
 
         [Header("Rim lights (crowd side) — 0 keeps the edges as bright as the middle")]
-        public float rimIntensity = 0f;
+        public float rimIntensity = 0.35f;
         public Color rimColor = new Color(0.45f, 0.62f, 1f);
         public float rimSpread = 4.2f;
 
         [Header("Shadows")]
-        [Tooltip("Off until Agent_BipedBody.castShadows works — a shadow-casting light with no casters still allocates a shadow render texture every frame for nothing. Turn both on together.")]
-        public bool keyCastsShadows = false;
+        [Tooltip("Key-light shadows. Agent_BipedBody adds a ShadowCaster2D per part, so the casters and the casting light must be enabled together — a shadow-casting light with no casters still allocates a shadow render texture every frame for nothing.")]
+        public bool keyCastsShadows = true;
         [Range(0f, 1f)] public float shadowIntensity = 0.6f;
         public float shadowSoftness = 0.55f;
 
         [Header("Light volumes (god rays)")]
-        [Tooltip("Volumetric glow on the key light — the visible cone under the tsuriyane. Zero: the cone WAS the spotlight effect.")]
-        [Range(0f, 1f)] public float keyVolumeIntensity = 0f;
-        [Range(0f, 1f)] public float keyShadowVolumeIntensity = 0f;
+        [Tooltip("Volumetric glow on the key light — the visible cone under the tsuriyane. This IS the spotlight effect; it reads against the arena haze Systems_ArenaAtmosphere emits.")]
+        [Range(0f, 1f)] public float keyVolumeIntensity = 0.35f;
+        [Tooltip("Wrestlers carve dark shafts out of the cone as they move through it. Costs a second volumetric pass, so it stays well below keyVolumeIntensity.")]
+        [Range(0f, 1f)] public float keyShadowVolumeIntensity = 0.18f;
 
         [Header("Post-processing")]
         public bool enablePost = true;
         public float bloomIntensity = 0.85f;
         public float bloomThreshold = 0.82f;
-        // Zero: a vignette is darkening at the edge of frame, which is the same
-        // "drop off" the point lights were producing, just applied in screen
-        // space instead of world space.
-        public float vignette = 0f;
+        // Screen-space darkening at the edge of frame. It doubles the world-space
+        // drop-off the point lights produce rather than replacing it, so it stays
+        // gentle — this is framing, not the lighting.
+        public float vignette = 0.22f;
         public float contrast = 12f;
         public float saturation = 10f;
         public float grain = 0.18f;
@@ -191,12 +192,13 @@ namespace PoSumo
         private static readonly int SweatId = Shader.PropertyToID("_Sweat");
         private static Texture2D _normalMap;
 
-        /// Wrestlers render as FLAT tinted shapes — no cylindrical shading, no rim
-        /// light, no subsurface warmth, no sweat highlight. Set false to get the
-        /// rounded, shaded body treatment back (it also wants globalIntensity and
-        /// keyIntensity dropped to roughly 0.78 / 0.7, because shading a normal-
-        /// mapped tube under these levels blows the centreline out to white).
-        public static bool FlatBodyShading = true;
+        /// True renders wrestlers as FLAT tinted shapes — no cylindrical shading,
+        /// no rim light, no subsurface warmth, no sweat highlight. False is the
+        /// rounded, shaded treatment, and is what the exposure above is balanced
+        /// for (globalIntensity 0.78 / keyIntensity 0.7); raising those back
+        /// toward 1.35 / 0 while this is false blows the lit centreline out to
+        /// white and the bodies read as chrome.
+        public static bool FlatBodyShading = false;
 
         private static void SetIfPresent(Material material, int propertyId, float value)
         {

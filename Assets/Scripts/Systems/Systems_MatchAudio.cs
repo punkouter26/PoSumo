@@ -173,6 +173,12 @@ namespace PoSumo
             _murmurSource.loop = true;
             _crowdLowPass = crowdBus.AddComponent<AudioLowPassFilter>();
             _crowdLowPass.cutoffFrequency = LPF_OPEN;
+            // The crowd was the one bus with NO reverb, which is backwards: a hall
+            // full of people is the most reverberant thing in the building, and a
+            // bone-dry cheer sits in front of the wrestlers instead of around them.
+            // Wetter, longer and darker than the SFX send — a body hitting clay is
+            // a near-field transient, a crowd is the room itself.
+            AddReverb(crowdBus, room: -200f, decay: 2.6f, level: reverbLevel + 500f);
         }
 
         private static AudioSource NewSource(GameObject host)
@@ -187,18 +193,23 @@ namespace PoSumo
             return source;
         }
 
-        private void AddReverb(GameObject host)
+        /// Arena send. `room`, `decay` and `level` default to the near-field
+        /// settings the SFX bus has always used; the crowd bus passes wetter,
+        /// longer values so the two buses sit at different depths in the room.
+        private void AddReverb(GameObject host, float room = -400f, float decay = 1.4f, float level = float.NaN)
         {
             var reverb = host.AddComponent<AudioReverbFilter>();
             reverb.reverbPreset = AudioReverbPreset.Off;   // required before manual values take
             reverb.dryLevel = 0f;
-            reverb.room = -400f;
+            reverb.room = room;
             reverb.roomHF = -900f;
-            reverb.decayTime = 1.4f;
+            reverb.decayTime = decay;
             reverb.decayHFRatio = 0.55f;
             reverb.reflectionsLevel = -1400f;
             reverb.reflectionsDelay = 0.02f;
-            reverb.reverbLevel = reverbLevel;
+            // NaN rather than an overload: the caller's default has to be the
+            // serialized reverbLevel, which is not a compile-time constant.
+            reverb.reverbLevel = float.IsNaN(level) ? reverbLevel : level;
             reverb.reverbDelay = 0.035f;
             reverb.diffusion = 100f;
             reverb.density = 100f;

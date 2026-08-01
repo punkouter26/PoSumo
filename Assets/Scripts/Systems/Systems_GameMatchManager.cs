@@ -637,6 +637,15 @@ namespace PoSumo
                 SpawnBodyDamage(wrestlerA);
                 SpawnBodyDamage(wrestlerB);
             }
+            // Sweat and clay are terms in the BodyLit shader, so they ride the
+            // lighting flag rather than earning a GameTuning bool of their own —
+            // with the lighting rig off there is no shaded surface to wet or stain,
+            // and Systems_BodySurface disables itself on the flat-shading path.
+            if (enableLighting && FindAnyObjectByType<Systems_BodySurface>() == null)
+            {
+                SpawnBodySurface(wrestlerA);
+                SpawnBodySurface(wrestlerB);
+            }
             if (enableVoice && FindAnyObjectByType<Systems_FighterVoice>() == null)
             {
                 SpawnVoice(wrestlerA, 1f);
@@ -674,6 +683,19 @@ namespace PoSumo
             var go = new GameObject($"Damage_{fighter.behaviorName}");
             go.transform.SetParent(transform, false);
             go.AddComponent<Systems_BodyDamage>().body = body;
+        }
+
+        /// One sweat/clay driver per fighter. Bound to the body instance rather
+        /// than the behaviour name because a mirror bout has two wrestlers with the
+        /// same name and each needs its own material written.
+        private void SpawnBodySurface(Agent_Biped fighter)
+        {
+            if (fighter == null) return;
+            var body = fighter.GetComponent<Agent_BipedBody>();
+            if (body == null) return;
+            var go = new GameObject($"Surface_{fighter.behaviorName}");
+            go.transform.SetParent(transform, false);
+            go.AddComponent<Systems_BodySurface>().body = body;
         }
 
         /// One voice per fighter. Systems_FighterVoice disables itself when that

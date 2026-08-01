@@ -258,6 +258,44 @@ and the semifinal's left entrant), so `_winnerSlots` holds one entry **per chip*
 match, and `Refresh()` reads each chip's match from its `userData`. Keying that list by
 match index silently orphans the duplicate chips and they never repaint.
 
+### The look: one shader, and switches that must move together
+`Assets/Resources/Shaders/PoSumo_BodyLit.shader` is the **only authored shader in the
+project** — everything else is a runtime `new Material` on a stock URP sprite shader, and
+there are no `.mat` assets and no Shader Graph files at all. It is a 3-pass copy of
+`Sprite-Lit-Default` (all three passes must declare an IDENTICAL `UnityPerMaterial` CBUFFER
+or the SRP Batcher silently drops it) plus four terms: rim, subsurface wrap, sweat and clay.
+
+Three switches in two files gate that look and are only correct **together**:
+
+| Switch | File | Meaning |
+|---|---|---|
+| `FlatBodyShading` | `Systems_ArenaLighting` | `true` zeroes rim/wrap/sweat and skips the normal map — flat tinted primitives |
+| `keyCastsShadows` | `Systems_ArenaLighting` | the key light is the only shadow caster; the rims and global are explicitly cleared because `Light2D.m_ShadowsEnabled` defaults TRUE for code-created lights |
+| `castShadows` | `Agent_BipedBody` | adds the `ShadowCaster2D`s |
+
+Casters with no casting light do nothing; a casting light with no casters **still allocates a
+shadow render texture every frame**. `Systems_BodySurface` disables itself when
+`FlatBodyShading` is on rather than half-enabling the look behind its back.
+
+Hard-won specifics, so nobody re-derives them:
+- **Exposure is balanced for shaded bodies at `globalIntensity 0.78` / `keyIntensity 0.7`.**
+  A `Light2D.LightType.Global` has no position and no falloff, so at the old 1.35 with the
+  key and rims at zero there was literally no light shaping anywhere. Raising the global back
+  toward 1.35 while shading is on drives the lit centreline past white and the bodies read as
+  chrome — the shader's `headroom` term shapes the additive highlights but cannot rescue an
+  over-bright base.
+- **The `ShadowCaster2D` goes on the `Art` child, not the physics GameObject.** Its `Awake`
+  fills an empty shape path from the `Renderer` on the same object, so no shape has to be
+  authored — but it must therefore be added *after* the `SpriteRenderer`.
+- **Every wrestler needs exactly one `CompositeShadowCaster2D` on its root.**
+  `ShadowCasterGroup2DManager` walks up to the nearest group ancestor; without it the 14
+  heavily-overlapping parts shadow each other and the body interior fills in as a dark blob.
+  Same intent as the pairwise collision ignores: a biped is one object.
+- The key's volumetrics and `Systems_ArenaAtmosphere.showShafts` are **independent** and
+  stack on purpose — volumetrics give the cone its falloff and its shadow wedges, the shafts
+  give it discrete visible beams. Both read against the particle haze `Systems_DustPuff`
+  emits, so turning the haze off makes both nearly invisible.
+
 ### Presentation companions: spawned, never wired
 Nothing below is placed in a scene. `Systems_GameMatchManager` `new GameObject(...)`s each
 one in `Start`, gated by an `enable*` bool on `GameTuning`, and they talk back only through
@@ -269,7 +307,8 @@ a tick on one asset rather than an edit in three scenes.
 | `Systems_MatchPresentation` | slow-mo finish, camera punch-in, salt throw |
 | `Systems_MatchAudio` / `Systems_FighterVoice` / `Systems_VoiceGains` | impact + crowd + ceremony audio; per-fighter spoken lines (silent when a fighter has no clips) |
 | `Systems_MusicDirector` | adaptive layered score |
-| `Systems_ArenaLighting` / `Systems_ArenaAtmosphere` | 2D light rig + post volume; backdrop parallax, haze, crowd sway |
+| `Systems_ArenaLighting` / `Systems_ArenaAtmosphere` | 2D light rig + post volume; backdrop parallax, haze, crowd sway, light shafts |
+| `Systems_BodySurface` | writes `_Sweat` and `_Dirt` into one fighter's `PoSumo/BodyLit` material — sheen from exertion, clay from arena contact. Rides `enableLighting`; disables itself when `FlatBodyShading` is on |
 | `Systems_ImpactFx` / `Systems_DustPuff` / `Systems_SoftBodyJiggle` / `Systems_BlobShadow` | hit bursts, dust, flesh wobble, contact shadows |
 | `Systems_BodyDamage` / `Systems_RingBlood` | bruise decals where a fighter is hit, the bloody head KO, and blood left on the mat. **Owns the `Knockout` static event the referee's 3-KO rule reads**, so it is the one "presentation" system with a rules consequence |
 | `Systems_FaceMood` | expression driven by dominance |
@@ -456,6 +495,32 @@ else goes elsewhere —
 | `MatchTestHarness` | `MatchTestHarness.Run(n)` in Play mode: chains N matches unattended, logs a `HARNESS RESULT:` win/loss tally |
 | `GenerateAudio` | *Generate Audio* — synthesizes the match SFX bank in-editor; the clips are generated assets, not recordings |
 | `NormalizeVoice` | *Normalize Voice Levels* — evens out the per-fighter voice clips |
+
+**Both of these write assets that then go stale silently, and both had done so.** Fixing the
+generator does nothing until the menu item is re-run, and nothing in the game warns you:
+
+- The four `MUS_*.wav` stems must be **identical length**. `Systems_MusicDirector` starts all
+  four with a single `PlayScheduled` and `loop = true` and never re-syncs, so unequal lengths
+  drift permanently. The shipped stems were 7.500 / 7.600 / 7.850 / 7.880 s — drums lapped the
+  bed by 380 ms *per loop* and the arrangement was incoherent within a minute. `GenerateAudio`
+  has since shared one `MUSIC_LOOP_FADE` across all four and emits 7.5 s for every stem; the
+  WAVs simply predated it. **Check `MUSIC_SECONDS` against the files on disk before believing
+  the score is in sync** — the byte length is `(size - 44) / 88200` seconds.
+- `VoiceGains.asset` must be **attenuate-only**. `AudioSource.volume` clamps to 1 and
+  `Systems_FighterVoice` multiplies by 0.9, so any gain above ~1.11 silently pins at maximum.
+  The shipped table ran to 6.23 and 24 of its 30 clips were clamped, i.e. normalization was a
+  no-op. `NormalizeVoice` rebases so max gain is exactly 1.0; the asset had never been
+  regenerated after that fix.
+
+Audio content is uneven and this is not a bug: only **Matt and Nick have voice clips**, and
+only **Kim, Matt and Nick have face art** — Standard has neither. `Systems_FighterVoice` and
+`Systems_FaceMood` both disable themselves rather than warn, so a silent, faceless fighter
+looks intentional. The bracket seeds all four twice.
+
+`SCN_TOURNAMENT` has **no AudioListener in the scene** — the game boots into it (build index
+0), so `Systems_TournamentBracket.EnsureAudioListener()` adds one in `Start`. It is
+deliberately not persistent: `LoadScene(ARENA_SCENE)` is Single mode, so it dies with the
+scene rather than fighting `SCN_SUMO`'s own listener.
 
 **Android signing keeps the keystore and its password outside the repo**, at
 `C:/Users/punko/Downloads/PoSumo-Release/` (`keystore.pass`, one line), because Unity

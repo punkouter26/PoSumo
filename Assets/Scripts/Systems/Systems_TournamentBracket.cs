@@ -29,6 +29,28 @@ namespace PoSumo
         // code default (enableWalkIn, maxOrtho, wideOrtho). A const cannot drift,
         // and it makes the old serialized array in the scene file inert.
         private const string ARENA_SCENE = "SCN_SUMO";
+
+        /// SCN_TOURNAMENT shipped without an AudioListener — only SCN_SUMO has one
+        /// — and since the bracket is build index 0 the game always BOOTS into the
+        /// silent scene, logging a "no audio listener" warning on the first screen
+        /// the player ever sees. Added here rather than in the scene file so it
+        /// cannot be lost to a scene re-save, and deliberately NOT persistent:
+        /// LoadScene(ARENA_SCENE) is Single mode, so this dies with the scene and
+        /// never fights the arena's own listener.
+        private static void EnsureAudioListener()
+        {
+            if (FindAnyObjectByType<AudioListener>() != null)
+            {
+                return;
+            }
+            Camera target = Camera.main;
+            if (target != null)
+            {
+                target.gameObject.AddComponent<AudioListener>();
+                return;
+            }
+            new GameObject("AudioListener").AddComponent<AudioListener>();
+        }
         [Tooltip("Play the whole bracket unattended once it is seeded, pausing on this screen between matches.")]
         [SerializeField] private bool _autoPlay = true;
         [Tooltip("Seconds the updated bracket is shown before the next match starts.")]
@@ -72,6 +94,8 @@ namespace PoSumo
 
         private void Start()
         {
+            EnsureAudioListener();
+
             if (_roster == null || _roster.Length == 0)
             {
                 Debug.LogError("Systems_TournamentBracket: no roster assigned.");

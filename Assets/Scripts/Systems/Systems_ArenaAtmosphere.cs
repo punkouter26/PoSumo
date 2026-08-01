@@ -38,9 +38,12 @@ namespace PoSumo
         public float swayHz = 0.45f;
 
         [Header("Light shafts")]
-        // Off with the rest of the spotlight dressing: a shaft is a visible cone
-        // of light falling from the roof, which is exactly the look being removed.
-        public bool showShafts = false;
+        // Back on with the rest of the spotlight dressing. These are cheap sprite
+        // quads, NOT the key light's volumetric cone — the two stack deliberately:
+        // Light2D volumetrics give the cone its shape and its shadow wedges, and
+        // these give it visible structure (four discrete beams) that a single
+        // radial falloff cannot. Keep shaftOpacity low or they read as fog.
+        public bool showShafts = true;
         public int shaftCount = 4;
         public float shaftTopY = 6.1f;
         public float shaftLength = 6.4f;

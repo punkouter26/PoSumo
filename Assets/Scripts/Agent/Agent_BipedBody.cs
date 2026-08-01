@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering.Universal;
 
 namespace PoSumo
 {
@@ -44,12 +45,21 @@ namespace PoSumo
         //
         // The mawashi belt, the sagari cords and the chonmage topknot were built
         // and then REMOVED: at gameplay zoom the verlet cords and the knot read as
-        // loose floating beads beside the body rather than as cloth and hair. Real
-        // ShadowCaster2D shadows were removed for the same reason — see the note in
-        // Systems_ArenaLighting. Both are in git history if they get revisited.
+        // loose floating beads beside the body rather than as cloth and hair.
+        // They are in git history if they get revisited.
+        //
+        // ShadowCaster2D shadows were removed once too. They are back, with the
+        // fix for what made them read badly: every part is enrolled in ONE
+        // CompositeShadowCaster2D on the biped root, so the 14 heavily-overlapping
+        // parts are a single caster group and stop shadowing each other. Without
+        // that grouping the body interior fills with self-shadow and the wrestler
+        // reads as a dark blob instead of a lit figure.
         [Header("Dressing (visual only — cannot invalidate a trained brain)")]
         [Tooltip("Velocity-driven wobble on the torso art. Heavier fighters wobble more.")]
         public bool enableJiggle = true;
+
+        [Tooltip("Cast 2D shadows onto the dohyo. Needs Systems_ArenaLighting.keyCastsShadows on as well — casters with no casting light do nothing, and a casting light with no casters still allocates a shadow render texture every frame.")]
+        public bool castShadows = true;
 
         [HideInInspector] public Rigidbody2D Torso;   // pelvis (root mass, ring-out tracking)
         [HideInInspector] public Rigidbody2D Chest;   // top segment (posture/lean sensing)
@@ -357,6 +367,27 @@ namespace PoSumo
             return _circleSprite;
         }
 
+        /// Enrols one Art child in this wrestler's shadow caster group.
+        /// ShadowCaster2D.Awake derives an empty shape path from the Renderer on
+        /// the same GameObject, so no shape has to be authored here — but it means
+        /// the component must be added AFTER the SpriteRenderer, which is why this
+        /// is a call at the end of the part loop rather than part of the prefab-ish
+        /// setup above.
+        private void AddShadowCaster(GameObject art)
+        {
+            if (!castShadows)
+            {
+                return;
+            }
+            var caster = art.AddComponent<ShadowCaster2D>();
+            // CastShadow, not CastAndSelfShadow: the body is lit by the rig and the
+            // BodyLit shader, and self-shadowing on top of that only muddies the
+            // limbs. The shadow this wants to sell is the one on the clay.
+            caster.castingOption = ShadowCaster2D.ShadowCastingOptions.CastShadow;
+            caster.selfShadows = false;
+            caster.castsShadows = true;
+        }
+
         private void Build()
         {
             if (_footMat == null)
@@ -370,6 +401,16 @@ namespace PoSumo
             ArtRenderers = new SpriteRenderer[n];
             BodyMaterial = Systems_ArenaLighting.CreateBodyMaterial($"PoSumo_Body_{name}");
             var thighs = new List<Rigidbody2D>();
+
+            // One caster group for the whole wrestler. ShadowCasterGroup2DManager
+            // walks up from each ShadowCaster2D to the nearest ShadowCasterGroup2D
+            // ancestor, so putting this on the root before the parts are built is
+            // what stops the 14 overlapping parts self-shadowing into a dark blob.
+            // Same intent as the pairwise collision ignores: a biped is one object.
+            if (castShadows)
+            {
+                gameObject.AddComponent<CompositeShadowCaster2D>();
+            }
 
             bool IsTorsoPart(string name) =>
                 name == "Pelvis" || name == "LowerBack" || name == "UpperBack" || name == "Chest";
@@ -412,6 +453,12 @@ namespace PoSumo
                 // renderer, which costs no extra material.
                 sr.sharedMaterial = BodyMaterial;
                 ArtRenderers[index] = sr;
+
+                // Shadow shape comes from this renderer's bounds: ShadowCaster2D
+                // .Awake fills an empty shape path from the Renderer it sits on, so
+                // the caster must go on the Art child (which has the sprite), not on
+                // the physics GameObject (which has none).
+                AddShadowCaster(art);
 
 
                 var rb = go.AddComponent<Rigidbody2D>();
@@ -484,6 +531,11 @@ namespace PoSumo
                     var mask = head.AddComponent<SpriteMask>();
                     mask.alphaCutoff = 0.1f;
                     HeadMask = mask;
+
+                    // The head is the one part whose silhouette a viewer actually
+                    // tracks, so it casts too. It joins the same composite group as
+                    // the limbs, so it does not shadow the chest it sits on.
+                    AddShadowCaster(head);
                     _headCellW = parentW;
                     _headCellH = d.h;
                     if (headSprite != null)
