@@ -693,6 +693,16 @@ namespace PoSumo
             }
         }
 
+        /// The START / PLAY MATCH / RESET action, reachable without a pointer.
+        ///
+        /// The button is a UI Toolkit `clicked` callback, so until this existed the
+        /// only way to begin a tournament was a real tap: MatchTestHarness could
+        /// chain exhibition matches but could not touch the bracket at all, which
+        /// left the path the shipped game always takes — boot into SCN_TOURNAMENT,
+        /// press START — with no automated coverage. That is how two
+        /// NullReferenceExceptions per bout survived in it unnoticed.
+        public void PressAction() => OnAction();
+
         private void OnAction()
         {
             if (Systems_TournamentState.IsComplete)
