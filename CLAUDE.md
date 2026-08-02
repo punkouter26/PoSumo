@@ -7,7 +7,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 PoSumo: a Unity 6000.5.4f1 (2D URP) game where physics-ragdoll bipeds learn sumo
 wrestling via ML-Agents, then fight each other in a playable, presentation-dressed
 match/tournament layer. Portrait orientation, Android target
-(`com.punkouter26.posumo`). `DESIGN.md` is the original approved spec and is now
+(`com.punkoutersoftware.posumo` — this file said `com.punkouter26.posumo` until
+2026-08-01; the constant in `BuildAndroidAAB.APP_ID` is the one that actually ships
+and it matches `companyName`, so the doc was the stale side. An application id is
+permanent once published, so check the constant, never this sentence). `DESIGN.md` is the original approved spec and is now
 partly historical — where it disagrees with this file or the code, the code wins
 (notably: the ring is a raised dohyo, not `|x| > 7`; its half-width is **4.0 m** and is read
 from `GameTuning.asset` because the arena scenes serialize their own copy).
