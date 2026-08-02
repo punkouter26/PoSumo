@@ -10,10 +10,26 @@ the bracket's entrants are assigned in the scene.
 
 | Fighter | Behavior | Folder | Colour | Physique | Identity | Brain (run) |
 |---|---|---|---|---|---|---|
-| MATT | `Matt` | Matt_v01 | red | 1.00 / 1.00 / 1.00 | aggressive baseline — highest impact reward | `matt_sumo05` (8.0M) |
-| STANDARD | `Standard` | Standard_v01 | green | 1.00 / 1.00 / 1.00 | neutral reference + owns the shared walk brain | `standard_sumo01` (45.0M) |
-| NICK | `Nick` | Nick_v01 | blue | 0.72 / 0.82 / 0.85 | mobile lightweight — highest cadence, no deep-stance requirement | `nick_sumo02` (4.0M on 12.0M) |
-| KIM | `Kim` | Kim_v01 | purple | 1.45 / 1.30 / 1.50 | heavyweight anchor — deep stance, does not chase | `kim_sumo01` (12.0M) |
+| MATT | `Matt` | Matt_v01 | red | 1.00 / 1.00 / 1.00 | aggressive baseline — highest impact reward | `matt_unified02` (15.0M) |
+| STANDARD | `Standard` | Standard_v01 | green | 1.00 / 1.00 / 1.00 | neutral reference; no face art and no voice clips | `standard_unified01` (15.0M) |
+| NICK | `Nick` | Nick_v01 | blue | 0.72 / 0.82 / 0.85 | mobile lightweight — highest cadence, no deep-stance requirement | `nick_unified01` (15.0M) |
+| KIM | `Kim` | Kim_v01 | purple | 1.45 / 1.30 / 1.50 | heavyweight anchor — deep stance, does not chase | `kim_unified01` (15.0M) |
+
+**One brain per fighter, covering both walking and fighting.** The walk and fight
+policies were merged: a task flag in the observation vector tells the two jobs
+apart. There is no separate walk brain, walk config, walk scene or walk `.onnx`
+any more, and `Standard` no longer lends its gait to anyone.
+
+Audio and art coverage is uneven, and that is the current state rather than a bug
+— `Systems_FighterVoice` and `Systems_FaceMood` each disable themselves rather
+than warn, so a silent, faceless fighter looks intentional:
+
+| Fighter | Face art | Voice clips |
+|---|---|---|
+| Matt | yes (fallback constants — his asset leaves the name fields empty) | yes (15) |
+| Nick | yes | yes (15) |
+| Kim | yes | none |
+| Standard | none | none |
 
 Physique is mass / width / torque scale. Each folder's `MANIFEST.md` holds the
 full spec and the exact retrain command.
@@ -28,13 +44,19 @@ the authority — this table said "teal" for Kim while her asset has been purple
    `Assets/Agents/<Name>_v01/` folder, and set `behaviorName` to `<Name>`.
 2. Tune the build scales and reward shaping on the asset — style lives in data,
    never in `Agent_Biped`.
-3. Copy a config to `Training/configs/<Name>Sumo01.yaml`, change the `behaviors:`
-   key to `<Name>`, and record *why* its hyperparameters differ in the header
-   comment (that comment is the project's training log).
-4. Duplicate a training scene, point its `Systems_MatchRoster` at the new
-   character, add a `PoSumo/Build <Name> Training Env` entry, build, train.
+3. Copy a config to `Training/configs/<Name>Unified01.yaml`, change the
+   `behaviors:` key to `<Name>`, and record *why* its hyperparameters differ in
+   the header comment (that comment is the project's training log).
+4. Duplicate a training scene as `SCN_TRAIN_<NAME>`, point its
+   `Systems_MatchRoster` at the new character, add a `PoSumo/Build <Name>
+   Training Env` entry building to `Builds/<Name>Env/<Name>Env.exe`, build, train.
+   **Verify the assignment by reading the saved `.unity` file**, not the wiring
+   script's log — a pass once reported success while the scene on disk still held
+   `character: {fileID: 0}`, and the env trained the wrong policy for 1.5M steps.
 5. Deploy with a `PoSumo/Deploy <Name> Brain` entry, then add the character to
    `Systems_TournamentBracket._roster` in `SCN_TOURNAMENT`.
 
-The 44-observation / 13-action contract must stay identical across all fighters
-so any pair can share an arena.
+The **45**-observation / 13-action contract must stay identical across all
+fighters so any pair can share an arena. That is 42 base plus the 3 added by
+`extendedObservations`, which every shipped fighter has on;
+`Agent_Biped.ObservationCount` is the authority, not this line.

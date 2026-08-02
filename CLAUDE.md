@@ -33,11 +33,11 @@ The roster is exactly four trained fighters — **Matt**, **Standard**, **Nick**
 8-slot bracket seeds each of them twice. `Assets/Agents/ROSTER.md` is the roster
 overview; there is no code mirror of it.
 
-**`ROSTER.md` and the per-fighter `MANIFEST.md` files predate the walk+fight merge** and
-still describe 44 obs, separate walk brains and the old `*_sumoNN` runs. `Training/README.md`
-is current (it has the unified-run table); the character assets and `Agent_Biped` are
-authoritative over all of them. Fix a manifest when you touch its fighter rather than
-trusting it.
+`ROSTER.md` and the four per-fighter `MANIFEST.md` files were rewritten on 2026-08-02 and
+now describe 45 obs, one unified brain each, and the `*_unifiedNN` runs that actually back
+the shipped `.onnx` files. They had predated the walk+fight merge. The character assets and
+`Agent_Biped` remain authoritative over all prose — fix a manifest when you touch its
+fighter rather than trusting it.
 
 `Training/results/` is gitignored **and is not present in a fresh clone** — the deployed
 `.onnx` files under `Assets/Agents/` are the only brains that ship. Anything in this file
@@ -201,9 +201,13 @@ output layer.
   `Agent_CharacterDefinition.extendedObservations`) still says 44 — **the constant in
   `Agent_Biped` is the truth**. Obs count and decision period MUST match what the assigned
   `.onnx` was trained with, or inference is silently garbage.
-- Three `Mode`s: `Walk` (falling ends the episode), `Recover` (get up, then walk —
-  falling never ends it, but lying down bleeds reward; nothing references it any more),
-  `Sumo` (refereed externally; shaping only, ±1 comes from the referee).
+- Two `Mode`s: `Walk` (falling ends the episode) and `Sumo` (refereed externally;
+  shaping only, ±1 comes from the referee). A third, `Recover` (get up, then walk),
+  was **deleted 2026-08-02** along with `recoverShoveChance` and the `shove_chance`
+  curriculum read — nothing had referenced it since the walk-in switched to `Mode.Walk`.
+  Adding get-up training back means a new mode plus its own reward branch, not a
+  revert. Note the enum values: `Walk = 0`, `Sumo = 1` are unchanged by the removal
+  because `Recover` was last, so no scene's serialized `mode` shifted.
 - Configures its own `BehaviorParameters` / `DecisionRequester` in `Awake` — nothing to
   wire in the Inspector.
 - All observations pass through `San()` NaN/Inf sanitization.
@@ -211,8 +215,8 @@ output layer.
   ceremonial round-opening walk-in — flipping the task flag and pointing the four
   "opponent" slots at a virtual target — plus `suppressEpisodeControl` so the presentation
   layer can borrow the body safely. There is **no model swap**: `walkModel` and
-  `DeployWalk` no longer exist. The leftover `<Name>Walk.onnx` files in each agent folder
-  are pre-merge artifacts that nothing loads.
+  `DeployWalk` no longer exist, and the leftover `<Name>Walk.onnx` files were deleted
+  2026-08-02 (8.8 MB of pre-merge artifact that nothing loaded but every build shipped).
 
 ### Characters are ScriptableObjects
 `Agent_CharacterDefinition` (menu: *PoSumo/Character Definition*) is one asset per
@@ -364,12 +368,23 @@ The three that matter most here:
 
 `Systems_FightHud` is split by whether the fight is happening: an always-on
 **live strip** in the dock (two damage mannequins flanking one DOMINANCE
-tug-of-war bar, ~115pt) and a **detail card** in the stage band carrying the
-seven aggregate metrics, shown on `RoundEnded`/`MatchEnded` and hidden on
-`RoundStarted`. It was previously one ~484pt table pinned to the dock with no way
-to hide it — 39% of a 9:16 panel and ~52% of a 4:3 tablet in portrait,
-permanently over the bottom of the dohyo. Nobody parses a work-rate percentage
-while a bout is being decided; put new aggregate metrics on the detail card.
+tug-of-war bar, ~115pt) and a **detail card** in the stage band, shown on
+`RoundEnded`/`MatchEnded` and hidden on `RoundStarted`. It was previously one
+~484pt table pinned to the dock with no way to hide it — 39% of a 9:16 panel and
+~52% of a 4:3 tablet in portrait, permanently over the bottom of the dohyo.
+Nobody parses a work-rate percentage while a bout is being decided; put new
+aggregate metrics on the detail card.
+
+The card carries **three** rows — TERRITORY, KNOCKDOWNS DEALT, PUSH IN CONTACT.
+It carried six until 2026-08-02, and the test that removed the other three is
+worth reusing: SHOVES · BEST and BALANCE are already weighted into the DOMINANCE
+bar that is on screen the whole match (`RawDominance` blends territory 0.35, KD
+0.30, shoves 0.20, balance 0.15), so printing them again was the card restating
+its own inputs, and WORK RATE was a number nobody acted on that cost a
+13-iteration loop over `LastActions` per fighter per frame. Deleting the rows also
+retired `sumWork` and `bestPush`, and three accumulators — `sumSpd`, `sumLean`,
+`sumEdge` — that had been sampled every frame and **read by nothing at all**.
+`shoves` and `sumBal` stay: DOMINANCE still needs them.
 
 ### Presentation companions: spawned, never wired
 Nothing below is placed in a scene. `Systems_GameMatchManager` `new GameObject(...)`s each
@@ -418,10 +433,12 @@ winner back via `Systems_TournamentReporter`. `SCN_SUMO_ICE` and `SCN_SUMO_STICK
 deleted (2026-07-28) and the bracket no longer rotates arenas — `Systems_TournamentBracket`
 holds a `const string ARENA_SCENE = "SCN_SUMO"` rather than a serialized array, precisely so
 SCN_TOURNAMENT's stale serialized copy of the old three-scene list cannot resurrect them.
-`Systems_SumoArena.style` still has the ice/sticky values; they are simply unused.
-`SCN_WALKVIEW` views a locomotion brain and is **not** in build settings. Arena scenes are
-**baked**: an editor pass ran `Systems_SumoArena.Build()` and saved the children, so `Awake`
-only rebinds references.
+`Systems_SumoArena` has **no `style` field at all** any more — an earlier version of this
+line said it retained unused ice/sticky values, and that was already false when checked on
+2026-08-02. `SCN_WALKVIEW` and its only component, `Systems_FollowX`, were deleted the same
+day: the scene was not in build settings and viewed a standalone locomotion brain that
+stopped existing at the walk+fight merge. Arena scenes are **baked**: an editor pass ran
+`Systems_SumoArena.Build()` and saved the children, so `Awake` only rebinds references.
 
 Training scenes, one per surviving purpose — every one either produced a deployed brain or
 is the newest template for a training mode. Keep that rule when adding or retiring scenes:
@@ -429,7 +446,12 @@ a scene that produced a shipped brain is the only way to reproduce it.
 
 | Scene | Purpose |
 |---|---|
-| `SCN_TRAIN_MATT_AGGR` / `SCN_TRAIN_STANDARD` / `SCN_TRAIN_NICK` / `SCN_TRAIN_KIM` | **unified** self-play sumo + walk, one per fighter |
+| `SCN_TRAIN_MATT` / `SCN_TRAIN_STANDARD` / `SCN_TRAIN_NICK` / `SCN_TRAIN_KIM` | **unified** self-play sumo + walk, one per fighter |
+
+Matt's scene was `SCN_TRAIN_MATT_AGGR` (and its env `MattAggrEnv`) until 2026-08-02 — the
+only fighter whose scene carried a suffix, breaking the `SCN_TRAIN_<NAME>` schema this file
+mandates. Renamed to `SCN_TRAIN_MATT` / `Builds/MattEnv`; the `.meta` moved with the scene
+so its GUID and every reference survived. Older docs and commands still say `MattAggrEnv`.
 
 **One brain per fighter, trained on both tasks at once (2026-07-28).** Walk and fight used
 to be separate policies with separate scenes, and `BeginWalkIn` hot-swapped the model
@@ -447,9 +469,7 @@ team as the ghost and DISCARDS its experience, and walk agents sit on a team lik
 else, so an even split would quietly halve the walk sample rate.
 
 The retired `SCN_TRAIN_WALK_*` and `SCN_TRAIN_RECOVER4` scenes, their env build entries and
-their configs are gone. `Mode.Recover` still exists in `Agent_Biped` but nothing references
-it — the walk-in used to set it and now sets `Mode.Walk`. It is kept only because folding
-get-up training back in as a third lane is the obvious next use for it.
+their configs are gone, and `Mode.Recover` went with them on 2026-08-02.
 
 A gait still has to be learned on the physique it runs on — Kim's 1.45 mass does not accept
 a gait learned at 1.0 — which is why the walk lane lives in each fighter's own scene rather

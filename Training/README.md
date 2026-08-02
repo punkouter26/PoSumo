@@ -1,8 +1,10 @@
 # PoSumo — ML-Agents Training
 
 2D ragdoll-biped reinforcement learning for the PoSumo Unity project
-(Unity 6000.5.4f1, ML-Agents Release 23). Version pins and local patches are
+(Unity 6000.5.6f1, ML-Agents Release 23). Version pins and local patches are
 documented in the repo-root `CLAUDE.md` — do not upgrade anything in here.
+`ProjectSettings/ProjectVersion.txt` is authoritative for the editor version; this
+line said 6000.5.4f1 until 2026-08-02, after the editor had already moved.
 
 ## Versions (matched pair)
 - Unity package: `com.unity.ml-agents` **4.0.0**, installed from the local
@@ -36,7 +38,7 @@ it. There is no separate walk run, walk config, walk env or walk `.onnx` any mor
 
 | Config | Behavior | Run | Env | Backs |
 |---|---|---|---|---|
-| `MattUnified01.yaml` | Matt | `matt_unified02` (15.0M, cold) | MattAggrEnv | `Matt.onnx` |
+| `MattUnified02.yaml` | Matt | `matt_unified02` (15.0M, cold) | MattEnv | `Matt.onnx` |
 | `StandardUnified01.yaml` | Standard | `standard_unified01` (15.0M, cold) | StandardEnv | `Standard.onnx` |
 | `KimUnified01.yaml` | Kim | `kim_unified01` (15.0M, cold) | KimEnv | `Kim.onnx` |
 | `NickUnified01.yaml` | Nick | `nick_unified01` (15.0M, cold + resume) | NickEnv | `Nick.onnx` |
@@ -89,15 +91,29 @@ friction and HUD passes all landed in between, and the game-only rules (down-out
 without touching a brain. Three matches is also a small sample against ten — re-run at
 `Run(10)` before treating the reversal as settled. The part that DID hold is the
 finishing behaviour: longest fight 12.4s against a 20s limit, no round near the clock.
-| `MattSumo06/07/08`, `StandardSumo02/03/04`, `KimSumo02/03/04`, `NickSumo04/05/06` | — | — | — | pre-merge history, parked in `trunks/pre_merge/` |
 
 **These are COLD runs and had to be.** A 44-obs checkpoint cannot warm-start a 45-obs
 policy — the first layer shape no longer matches — so no pre-merge weights carry over.
 
-Retired on 2026-07-28: every `*Walk*` config (walking is a lane inside each unified
-scene now), `MattRecover05` (its scene is gone; the walk-in sets `Mode.Walk`, not
-`Mode.Recover`), plus the earlier round — `KimSumo01`, `MattSumo05`, `NickSumo01/02/03`,
-`StandardSumo01`.
+### Retired configs
+
+`configs/` holds **exactly the four above** and nothing else. Everything listed here
+is deleted; it is recorded so nobody goes looking for a file that was removed on
+purpose.
+
+- **2026-07-28** — every `*Walk*` config (walking is a lane inside each unified scene
+  now); `MattRecover05` (its scene is gone); `KimSumo01`, `MattSumo05`,
+  `NickSumo01/02/03`, `StandardSumo01`.
+- **2026-08-02** — the remaining 13 pre-merge configs: `MattSumo06/07/08`,
+  `MattUnified01`, `StandardSumo02/03/04`, `KimSumo02/03/04`, `NickSumo04/05/06`.
+  All are 44-obs-era. Their scenes and envs no longer exist and their checkpoints
+  cannot warm-start anything current, so they could not reproduce a run even in
+  principle — they were history in a directory that is supposed to hold recipes.
+
+**The sections below this line are that history.** They are kept because they explain
+*why* the current bodies, rewards and rules are shaped the way they are, and several
+of their traps are still live. But their `mlagents-learn` command lines name configs
+and envs that are gone — do not copy-paste one and expect it to run.
 
 A gait still has to be learned on the physique it runs on, so the walk lane lives in
 each fighter's own scene rather than one shared walk scene.

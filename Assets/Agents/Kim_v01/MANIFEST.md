@@ -8,14 +8,25 @@ chasing. She does not come to you.
 |---|---|
 | Behavior name | `Kim` (must match the YAML key exactly) |
 | Character asset | `Kim_Character.asset` — source of truth for build + shaping |
-| Observations / actions | 44 / 13 (`extendedObservations = true`, decision period 3) |
+| Observations / actions | 45 / 13 (`extendedObservations = true`, decision period 3) |
 | Build | massScale 1.45, widthScale 1.30, torqueScale 1.50 (~101 kg, sumo belly) |
-| Fight brain | `Kim.onnx` ← `kim_sumo02` final export (3.0M re-tune on the capsule-limb physics, on top of kim_sumo01's 12.0M) |
-| Walk brain | `KimWalk.onnx` ← `kim_walk02` (2.0M on capsule physics, on top of kim_walk01's 4.0M) — her own heavyweight gait |
-| Training scene / env | sumo `SCN_TRAIN_KIM` → `Builds/KimEnv` (spars against Standard); walk `SCN_TRAIN_WALK_KIM` → `Builds/KimWalkEnv` |
-| Configs | `Training/configs/KimSumo02.yaml`, `Training/configs/KimWalk02.yaml` |
-| Faces | `Assets/Resources/Kim_*.png`, named on the character asset |
+| Brain | `Kim.onnx` ← `kim_unified01` final export (15.0M, cold) |
+| Training scene / env | `SCN_TRAIN_KIM` → `Builds/KimEnv` (spars against Standard) |
+| Config | `Training/configs/KimUnified01.yaml` |
+| Faces | `Assets/Resources/Faces/Kim_*.png`, named on the character asset |
+| Voice | none — `Systems_FighterVoice` disables itself, so she is silent by design |
+| Colour | purple, `teamColor` (0.62, 0.32, 0.62) |
 | Inference | `InferenceDevice = Burst` |
+
+**One brain, both tasks.** Walking and fighting are a single policy told apart by
+a task flag in the observation vector — there is no separate walk brain, walk
+config, walk scene or walk `.onnx`. The flag took the vector from 44 to 45 slots,
+so no pre-merge checkpoint can warm-start this policy: the first layer shape no
+longer matches. `kim_unified01` was cold for that reason, not by preference.
+
+A gait has to be learned on the physique that runs it — Kim's 1.45 mass will not
+accept a gait learned at 1.0 — which is why her walk lane lives in her own scene
+rather than in a shared walk scene.
 
 Style (from the character asset): kneeBend + hipsLow both 0.0008 (deep planted
 stance), impact 0.014 cap 10 (wins with force), closing 0.0004 (does not chase),
@@ -24,28 +35,16 @@ dances), straightLegEarnFraction 0.15 (must be deep to earn anything).
 
 Her hyperparameters differ from the others deliberately — short credit horizon
 (gamma 0.99), low exploration (beta 3e-3), narrow self-play window drilling the
-strongest recent opponents. `KimSumo01.yaml`'s header explains each choice.
+strongest recent opponents. `KimUnified01.yaml`'s header explains each choice.
 
 ## Retrain
 
-Simplest path — warm-start from her own trained brain:
-
 ```powershell
-Training\venv\Scripts\mlagents-learn.exe Training/configs/KimSumo01.yaml --run-id=kim_sumo02 `
-  --initialize-from=kim_sumo01 --results-dir=Training/results `
+Training\venv\Scripts\mlagents-learn.exe Training/configs/KimUnified01.yaml `
+  --run-id=kim_unified01 --results-dir=Training/results `
   --env=Builds/KimEnv/KimEnv.exe --num-envs=3 --no-graphics
 ```
 
-To instead reproduce her *original* training, `kim_sumo01` was initialized from a
-**staged trunk**: Matt's aggressive `matt_sumo04` checkpoint copied under a `Kim/`
-folder, because `--initialize-from` resolves by the *new* behavior name. That
-trunk is kept at `Training/trunks/matt_sumo04` (outside the TensorBoard logdir,
-since it is weights rather than history worth viewing):
-
-```powershell
-New-Item -ItemType Directory -Force Training/results/kim_init/Kim
-Copy-Item Training/trunks/matt_sumo04/Matt/checkpoint.pt Training/results/kim_init/Kim/checkpoint.pt
-# ... then --initialize-from=kim_init, and delete kim_init once the run is stepping
-```
-Then *PoSumo → Deploy Kim Brain*. `network_settings` must stay 512 × 3 to match
-the trunk.
+Cold, not warm — see the 44 → 45 note above. Then *PoSumo → Deploy Kim Brain*
+(overwrites `Kim.onnx` in place, preserving the .meta GUID). `network_settings`
+stays 512 × 3 across this roster.

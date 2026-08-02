@@ -32,7 +32,7 @@ namespace PoSumo.EditorTools
         [MenuItem("PoSumo/Build Matt Training Env")]
         public static void BuildMatt()
         {
-            Build("Assets/Scenes/Training/SCN_TRAIN_MATT_AGGR.unity", "Builds/MattAggrEnv/MattAggrEnv.exe");
+            Build("Assets/Scenes/Training/SCN_TRAIN_MATT.unity", "Builds/MattEnv/MattEnv.exe");
         }
 
         [MenuItem("PoSumo/Build Standard Training Env")]

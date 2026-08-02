@@ -17,14 +17,14 @@ namespace PoSumo
     [RequireComponent(typeof(Agent_BipedBody))]
     public sealed class Agent_Biped : Agent
     {
-        public enum Mode { Walk, Sumo, Recover }
+        public enum Mode { Walk, Sumo }
 
         [Tooltip("Character sheet; when set, overrides behavior name, brain generation, and reward shaping at Awake.")]
         public Agent_CharacterDefinition character;
 
         public Mode mode = Mode.Walk;
         public int teamId;
-        public Agent_Biped opponent;         // null in Walk/Recover mode
+        public Agent_Biped opponent;         // null in Walk mode
         public float ringHalfWidth = 7f;
         public float arenaCenterX = 0f;
         [Tooltip("World Y of the mat surface. Only used by the sumo stance shaping to tell a planted foot from a raised one, so both referees must set it or that reward reads against the wrong plane.")]
@@ -39,9 +39,6 @@ namespace PoSumo
 
         [Tooltip("Sparring dummy: run the assigned model locally and never contact a connected trainer.")]
         public bool inferenceOnly = false;
-
-        [Tooltip("Recover mode: chance an episode starts with a knockdown shove. 0 for pure walking demos.")]
-        [Range(0f, 1f)] public float recoverShoveChance = 0.7f;
 
         [Tooltip("Optional trained model for in-editor inference playback (no Python needed).")]
         public Unity.InferenceEngine.ModelAsset inferenceModel;
@@ -177,7 +174,7 @@ namespace PoSumo
                 dr.TakeActionsBetweenDecisions = true;
             }
 
-            MaxStep = mode == Mode.Walk ? 1500 : mode == Mode.Recover ? 2000 : 0;
+            MaxStep = mode == Mode.Walk ? 1500 : 0;
 
             base.Awake();
         }
@@ -196,21 +193,6 @@ namespace PoSumo
             _lastSinglePlant = 0;
             _lastStepTime = 0f;
             for (int actionIndex = 0; actionIndex < ActionCount; actionIndex++) _prevActions[actionIndex] = 0f;
-
-            // Recovery school: episodes may start with a knockdown shove. The
-            // trainer's curriculum ramps the chance — gentle standing starts
-            // while walking is being learned, shoves once it's mastered.
-            if (mode == Mode.Recover && Academy.IsInitialized)
-            {
-                recoverShoveChance = Academy.Instance.EnvironmentParameters
-                    .GetWithDefault("shove_chance", recoverShoveChance);
-            }
-            if (mode == Mode.Recover && Random.value < recoverShoveChance)
-            {
-                var dir = new Vector2(Random.Range(-1f, 1f), Random.Range(-0.3f, 0.5f)).normalized;
-                _b.Chest.AddForce(dir * Random.Range(25f, 70f), ForceMode2D.Impulse);
-                _b.Chest.AddTorque(Random.Range(-25f, 25f), ForceMode2D.Impulse);
-            }
         }
 
         private float Fs => _b.facingSign;
@@ -294,7 +276,7 @@ namespace PoSumo
             bool fighting = mode == Mode.Sumo && opponent != null;
             sensor.AddObservation(fighting ? 1f : 0f);                            // 1
 
-            // Opponent torso (or, in Walk/Recover mode, a virtual target at ring center).
+            // Opponent torso (or, in Walk mode, a virtual target at ring center).
             Vector2 op, ov;
             if (fighting)
             {
@@ -441,7 +423,7 @@ namespace PoSumo
             _b.ClampAngularVelocities();
 
             // Presentation layer owns the body: motors only, no rewards or
-            // episode control (prevents Recover-mode terminations mid-walk-in).
+            // episode control (prevents Walk-mode terminations mid-walk-in).
             if (suppressEpisodeControl)
             {
                 _lastTorsoY = San(Torso.position.y);
@@ -477,41 +459,6 @@ namespace PoSumo
                 // characters' walk runs remain comparable to each other on TensorBoard.
                 if (IsDown) { SetReward(-1f); EndEpisode(); return; }
                 if (xLocal > -0.3f) { AddReward(3f); EndEpisode(); }
-            }
-            else if (mode == Mode.Recover)
-            {
-                // Recovery school: get up from anything, then WALK — standing,
-                // knees bent, stepping — to the target. Falling never ends the
-                // episode, but time spent down costs, so crawling can't pay.
-                if (IsDown || torsoY < 0.6f)
-                {
-                    // No passive income while down — ONLY rising pays, and every
-                    // step on the ground bleeds. Lying comfortably cannot profit.
-                    AddReward((torsoY - _lastTorsoY) * 0.08f);
-                    AddReward(-0.0012f);
-                    AddReward(-energy * 0.0001f);
-                }
-                else
-                {
-                    // Stricter stance gate than sumo: straight legs earn 15%.
-                    float strictGate = 0.15f + 0.85f * bend;
-                    AddReward(San(tv.x * Fs) * 0.004f * strictGate);
-                    AddReward(bend * 0.0006f);
-                    AddReward(upright * 0.001f);
-                    AddReward(HipsLowFactor() * 0.0005f);
-                    CadenceReward(0.002f);
-                    AddReward(-energy * 0.0002f);
-                    // Loitering bleeds: standing still must never be the best plan.
-                    if (Mathf.Abs(San(tv.x)) < 0.15f) AddReward(-0.0008f);
-                    // Graduation requires ARRIVING ON YOUR FEET.
-                    if (xLocal > -0.3f && upright > 0.9f && torsoY > 0.7f)
-                    {
-                        AddReward(3f);
-                        EndEpisode();
-                        return;
-                    }
-                }
-                AddReward(-jerk * 0.0002f);
             }
             else // Sumo
             {

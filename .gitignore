@@ -16,6 +16,20 @@
 
 # Build outputs (APKs etc. are artifacts, rebuild from source)
 /Builds/
+# Editor "build" scratch dir — Unity writes stop-build logs here. Artifact, not source.
+/build/
+
+# Art AUTHORING input, not build input. The shipped sprites are the PNGs under
+# Assets/Resources/Faces; these are the JPEG originals they were cut from. It was
+# 14 MB tracked for exactly ONE fighter of four (Kim) — Matt's and Nick's originals
+# were never committed and Standard has no face art at all — so tracking it bought
+# no reproducibility, only weight. Kept on disk, out of git.
+/SourceArt/
+
+# Misfired deploy target: DeployBrain writes to Assets/Agents/<Name>_v01/, and a
+# copy landing at the REPO ROOT is outside Assets/ where Unity never sees it. One
+# was tracked for months holding a stale Matt brain that looked current.
+/Matt_v01/
 
 # Python training environment (rebuild from Training/ml-agents source; see CLAUDE.md pins)
 /Training/venv/

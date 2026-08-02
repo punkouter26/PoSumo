@@ -19,10 +19,10 @@ namespace PoSumo
         public float wideOrtho = 14f;
 
         [Header("Ring")]
-        // The ring lives here rather than only on the arena scenes because it is
-        // serialized into all three of them, and a public field already written
-        // into a scene ignores any later change to its code default — the trap
-        // this asset exists to avoid.
+        // The ring lives here rather than only on the arena scene because it is
+        // serialized into it, and a public field already written into a scene
+        // ignores any later change to its code default — the trap this asset
+        // exists to avoid.
         [Tooltip("Half-width of the FIGHTING ring in metres. This is also the physical platform half-width and is fed to the agents as an edge-distance observation, so changing it changes what every brain sees.\n\n4.0, down from 5.5. The 5.5 ring was the documented reason bouts stopped finishing: with the fighters starting 0.9 m apart there was 4.6 m of mat to drive an opponent across, and measured sustained push in contact was only 71-500 N against 614 N of static friction. Shrinking the ring and widening the stand-off cuts that distance to about 1.5 m.")]
         public float ringHalfWidth = 4f;
 
@@ -70,10 +70,13 @@ namespace PoSumo
         // Which runtime companions the match manager spawns.
         //
         // These were per-scene booleans on Systems_GameMatchManager, which meant
-        // three arena scenes each carried their own serialized copy — and a public
-        // field already written into a scene IGNORES any later change to its code
+        // every arena scene carried its own serialized copy — and a public field
+        // already written into a scene IGNORES any later change to its code
         // default, so "I flipped the default and nothing happened" was a recurring
-        // trap. Here there is exactly one copy for every arena.
+        // trap. Here there is exactly one copy for every arena. (There were three
+        // arena scenes when this was written; SCN_SUMO_ICE and SCN_SUMO_STICKY
+        // were deleted 2026-07-28 and SCN_SUMO is now the only one — which makes
+        // the asset less necessary and no less correct.)
         [Header("Presentation companions")]
         [Tooltip("Slow-mo finishes, camera punch-in, salt throw.")]
         public bool enablePresentation = true;

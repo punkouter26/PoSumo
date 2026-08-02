@@ -8,9 +8,7 @@ namespace PoSumo
     ///   DOMINANCE — pairwise-normalized composite (territory/KD/shoves/balance)
     ///   TERRITORY — % of time the fight's midpoint is on the opponent's half
     ///   KD        — knockdowns dealt
-    ///   SHOVES    — big momentum transfers landed, plus the hardest one
-    ///   WORK      — average motor effort
-    ///   BALANCE / PUSH — time-averaged bars (push averaged only in contact)
+    ///   PUSH      — time-averaged bar, averaged only while in contact
     ///
     /// Two surfaces, split by whether the fight is happening right now.
     ///
@@ -22,6 +20,12 @@ namespace PoSumo
     /// tablet in portrait, permanently, over the bottom of the dohyo and the
     /// fighters' legs. Seven aggregate metrics is a between-rounds read; nobody
     /// parses a work-rate percentage while a bout is being decided.
+    ///
+    /// The card was then cut from six rows to three. SHOVES and BALANCE are already
+    /// weighted into the DOMINANCE bar that is on screen the entire match, so
+    /// printing them again was the card restating its own inputs; WORK RATE was a
+    /// number no player ever acted on, and it cost a 13-iteration loop per fighter
+    /// per frame to produce.
     ///
     /// So:
     ///   LIVE STRIP (dock, always on) — the two damage mannequins flanking a single
@@ -64,14 +68,14 @@ namespace PoSumo
         /// Whole-match accumulators for one wrestler.
         private class Agg
         {
-            public float sumSpd, sumLean, sumEdge, sumBal, sumWork, sumPush, bestPush;
+            public float sumBal, sumPush;
             public int territorySamples, touchSamples, shoves, kdDealt, kdSuffered;
             public float nextShoveTime, upSince;
             public bool downLatched;
 
             public void Reset()
             {
-                sumSpd = sumLean = sumEdge = sumBal = sumWork = sumPush = bestPush = 0f;
+                sumBal = sumPush = 0f;
                 territorySamples = touchSamples = shoves = kdDealt = kdSuffered = 0;
                 nextShoveTime = 0f;
                 upSince = 0f;
@@ -96,8 +100,8 @@ namespace PoSumo
         // Between-rounds detail
         private VisualElement _detailCard;
         private bool _detailVisible;
-        private ComparePair _territory, _knockdowns, _shoves, _work;
-        private BarPair _balance, _push;
+        private ComparePair _territory, _knockdowns;
+        private BarPair _push;
 
         // Display caches. Every one of these exists so the label is only written
         // when the value it shows actually changed: UpdateTable() used to rewrite
@@ -261,16 +265,20 @@ namespace PoSumo
             BuildHeader();
             _detailCard.Add(Systems_UiKit.Divider());
 
+            // Three metrics, not six. SHOVES · BEST, WORK RATE and BALANCE were
+            // cut: shoves and balance already reach the player as the DOMINANCE
+            // bar that is on screen the whole match (RawDominance weights them
+            // 0.20 and 0.15), so the card was restating its own inputs, and a
+            // work-rate percentage never changed how anyone played a round. What
+            // is left is the three things that decide a bout — where the fight is
+            // happening, who is putting the other down, and who is pushing harder.
             _territory = CompareRow("TERRITORY", Systems_UiKit.FONT_BODY);
             // "KNOCKDOWNS" alone reads as knockdowns SUFFERED, which inverts the
             // table: the winner of a 3-0 showed 4 against the loser's 8 and looked
             // beaten on his own result screen. These are knockdowns dealt.
             _knockdowns = CompareRow("KNOCKDOWNS DEALT", Systems_UiKit.FONT_BODY);
-            _shoves = CompareRow("SHOVES · BEST", Systems_UiKit.FONT_BODY);
-            _work = CompareRow("WORK RATE", Systems_UiKit.FONT_BODY);
 
             _detailCard.Add(Systems_UiKit.Divider());
-            _balance = MirrorBarRow("BALANCE");
             _push = MirrorBarRow("PUSH IN CONTACT");
 
             // This one sits over the middle of the arena rather than at the screen
@@ -408,8 +416,8 @@ namespace PoSumo
                 float pushB = Mathf.Max(0f, (_prevVelA.x - velA.x) * dirAB) * _bodyA.TotalMass / dt;
 
                 float midX = (a.TorsoX + b.TorsoX) * 0.5f;
-                SampleFighter(_aggA, a, _bodyA, velA, cx, midX, touching, pushA, now);
-                SampleFighter(_aggB, b, _bodyB, velB, cx, midX, touching, pushB, now);
+                SampleFighter(_aggA, _bodyA, cx, midX, touching, pushA, now);
+                SampleFighter(_aggB, _bodyB, cx, midX, touching, pushB, now);
 
                 // Knockdown attribution: your fall is their KD dealt.
                 TrackKnockdown(_aggA, _aggB, a.IsDown, now);
@@ -427,17 +435,15 @@ namespace PoSumo
             _prevVelA = velA; _prevVelB = velB;
         }
 
-        private void SampleFighter(Agg agg, Agent_Biped w, Agent_BipedBody body, Vector2 vel,
+        private void SampleFighter(Agg agg, Agent_BipedBody body,
                            float centerX, float midX, bool touching, float push, float now)
         {
-            agg.sumSpd += vel.magnitude;
-            agg.sumLean += Mathf.Abs(Vector2.SignedAngle(Vector2.up, body.Chest.transform.up));
-            agg.sumEdge += Mathf.Max(0f, w.ringHalfWidth - Mathf.Abs(w.TorsoX - w.arenaCenterX));
+            // Balance is the only per-frame posture sample kept: it is a term in
+            // RawDominance. sumSpd / sumLean / sumEdge were accumulated here and
+            // read by nothing at all, and sumWork fed only the deleted WORK RATE
+            // row — that one also cost a 13-iteration loop over LastActions every
+            // frame for a number nobody acted on.
             agg.sumBal += Mathf.Clamp01(Vector2.Dot(body.Chest.transform.up, Vector2.up));
-
-            float work = 0f;
-            for (int actionIndex = 0; actionIndex < Agent_Biped.ActionCount; actionIndex++) work += Mathf.Abs(w.LastActions[actionIndex]);
-            agg.sumWork += work / Agent_Biped.ActionCount;
 
             // Field position: the fight's midpoint sits on the opponent's half
             // (which lies in this wrestler's facing direction).
@@ -447,7 +453,6 @@ namespace PoSumo
             {
                 agg.sumPush += push;
                 agg.touchSamples++;
-                agg.bestPush = Mathf.Max(agg.bestPush, push);
                 if (push > SHOVE_FORCE_N && now >= agg.nextShoveTime)
                 {
                     agg.shoves++;
@@ -657,12 +662,6 @@ namespace PoSumo
             // so the old pair printed the same two figures mirrored on both sides
             // (2–3 on the left, 3–2 on the right) and read as four separate stats.
             SetCompare(_knockdowns, _aggA.kdDealt.ToString(), _aggB.kdDealt.ToString());
-            SetCompare(_shoves, $"{_aggA.shoves} · {_aggA.bestPush:F0}N",
-                                $"{_aggB.shoves} · {_aggB.bestPush:F0}N");
-            SetCompare(_work, $"{_aggA.sumWork / n * 100f:F0}%",
-                              $"{_aggB.sumWork / n * 100f:F0}%");
-
-            SetBar(_balance, _aggA.sumBal / n * 100f, _aggB.sumBal / n * 100f, 100f, "{0:F0}%");
 
             float pushA = Mathf.Clamp(_aggA.sumPush / Mathf.Max(1, _aggA.touchSamples), 0f, AVG_PUSH_MAX);
             float pushB = Mathf.Clamp(_aggB.sumPush / Mathf.Max(1, _aggB.touchSamples), 0f, AVG_PUSH_MAX);
