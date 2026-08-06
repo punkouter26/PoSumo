@@ -42,6 +42,17 @@ namespace PoSumo
         [Tooltip("Sparring dummy: run the assigned model locally and never contact a connected trainer.")]
         public bool inferenceOnly = false;
 
+        /// Drive this fighter from `Agent_ScriptedBrain` instead of a trained
+        /// policy. Sets BehaviorType.HeuristicOnly in Awake, which is ML-Agents'
+        /// own hook for a code-driven agent — so the body, both referees, the
+        /// damage model and every presentation system are untouched and a scripted
+        /// fighter can share a bout with a trained one.
+        ///
+        /// Deliberately NOT gated on `inferenceModel == null`: a scripted fighter
+        /// keeps its .onnx assigned so toggling this compares the two brains on
+        /// exactly the same character sheet.
+        public bool useScriptedBrain = false;
+
         [Tooltip("Optional trained model for in-editor inference playback (no Python needed).")]
         public Unity.InferenceEngine.ModelAsset inferenceModel;
 
@@ -98,6 +109,11 @@ namespace PoSumo
         /// Shared by both schools on purpose — see Reward_StepCadence.
         private readonly Reward_StepCadence _cadence = new Reward_StepCadence();
 
+        /// Allocated unconditionally rather than behind `useScriptedBrain`, because
+        /// the flag can be toggled in the Inspector at runtime and a null here
+        /// would be a NullReferenceException inside Heuristic on the next decision.
+        private readonly Agent_ScriptedBrain _scriptedBrain = new Agent_ScriptedBrain();
+
         protected override void Awake()
         {
             _b = GetComponent<Agent_BipedBody>();
@@ -110,6 +126,9 @@ namespace PoSumo
                 staminaObservation = character.staminaObservation;
                 decisionPeriod = character.decisionPeriod;
                 if (inferenceModel == null) inferenceModel = character.inferenceModel;
+                // ORed, not assigned: a scripted fighter can also be set per-agent
+                // in the scene, and the character sheet must not switch that back off.
+                useScriptedBrain |= character.useScriptedBrain;
             }
 
             // Both are configured unconditionally, including when `character` is
@@ -135,6 +154,11 @@ namespace PoSumo
                 bp.InferenceDevice = Unity.MLAgents.Policies.InferenceDevice.Burst;
             }
             if (inferenceOnly) bp.BehaviorType = BehaviorType.InferenceOnly;
+
+            // Checked AFTER inferenceOnly so it wins: a scripted fighter must not
+            // fall through to the model even when the character sheet asked for
+            // inference. HeuristicOnly routes every decision to Heuristic() below.
+            if (useScriptedBrain) bp.BehaviorType = BehaviorType.HeuristicOnly;
 
             if (GetComponent<DecisionRequester>() == null)
             {
@@ -396,7 +420,24 @@ namespace PoSumo
         public override void Heuristic(in ActionBuffers actionsOut)
         {
             var a = actionsOut.ContinuousActions;
-            for (int index = 0; index < a.Length; index++) a[index] = 0f;
+            if (!useScriptedBrain)
+            {
+                // Unchanged default: a limp ragdoll. This is what a fighter with no
+                // model and no script has always done, and several call sites rely
+                // on Heuristic being harmless.
+                for (int index = 0; index < a.Length; index++) a[index] = 0f;
+                return;
+            }
+
+            // The walk-in points the four "opponent" slots at a virtual target, so
+            // the scripted brain is fed the same target and walks to it rather than
+            // trying to wrestle a fighter who is not there.
+            bool hasTarget = opponent != null;
+            var ctx = new Agent_ScriptedContext(
+                Fs, arenaCenterX, ringHalfWidth,
+                hasTarget, hasTarget ? opponent.TorsoX : arenaCenterX,
+                Time.time);
+            _scriptedBrain.Decide(_b, in ctx, a);
         }
     }
 }
