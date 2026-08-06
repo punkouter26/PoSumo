@@ -81,7 +81,7 @@ namespace PoSumo
         private const float ARM_SIGN = 1f;
 
         // Proportional gain on NORMALISED angle error (error is degrees/180), so
-        // the command saturates at an error of 180/GAIN degrees.
+        // the command saturates at an error of 180/Gain degrees.
         //
         // This was 6, which saturates past 30 deg — and a saturated command asks
         // the joint for its FULL motor speed, 400-500 deg/s on the legs. Thirteen
@@ -90,7 +90,9 @@ namespace PoSumo
         // answer. At 2.5 the command stays proportional out to ~72 deg, which is
         // wider than any target this controller asks for, so the servo behaves like
         // a spring instead of a switch.
-        private const float GAIN = 2.5f;
+        /// NOT const: the sweep harness writes these. UpperCamel rather than
+        /// UPPER_SNAKE because they are static fields, not constants.
+        internal static float Gain = 2.5f;
 
         /// Uprightness below which the BOT stops trying to walk and just tries to
         /// stand. Stepping while already toppling is how the previous version threw
@@ -191,12 +193,12 @@ namespace PoSumo
         // at once; the trunk flipped through up = -0.37 -> +0.45 -> -0.49 in under a
         // second while the body was still at full height. The controller was doing
         // the falling over, not gravity.
-        private const float STAND_KP = 22f;
-        private const float STAND_KD = 4f;
+        internal static float StandKp = 22f;
+        internal static float StandKd = 4f;
 
         /// Degrees of correction per m/s of centre-of-mass drift. Moving forward
         /// leans the body back, which is how a person standing on a train stays put.
-        private const float STAND_KV = 26f;
+        internal static float StandKv = 26f;
 
         /// Lean setpoint per metre away from the ring centre — a gentle bias that
         /// makes the fighter drift back toward the middle instead of wandering off
@@ -220,6 +222,11 @@ namespace PoSumo
         /// the balance feedback into locomotion: without it the gait holds whatever
         /// velocity it happens to have, including a backward one.
         private const float WALK_SPEED_MPS = 0.9f;
+
+        /// Nominal hip-to-sole reach of an extended leg, metres, at widthScale 1.
+        /// From JOINT_DEFS: hip anchor 0.964, knee 0.533, ankle 0.10, so thigh and
+        /// shin are ~0.431 and ~0.433. Scaled per fighter by widthScale.
+        private const float LEG_REACH_M = 0.87f;
         private const float STAND_HIP_DEG = -4f;
 
         /// Nearly straight, and that is load-bearing rather than cosmetic. At 22 deg
@@ -232,7 +239,7 @@ namespace PoSumo
         /// It costs the sumo crouch, which matters for driving — that is why Drive()
         /// keeps its own deeper CROUCH_KNEE_DEG. Standing up is the prerequisite;
         /// crouching is only useful once the body can hold itself at all.
-        private const float STAND_KNEE_DEG = 7f;
+        internal static float StandKneeDeg = 7f;
         /// MEASURED at last (probe: gravity off, agent disabled, drive ankle 2 to
         /// each rail, read the SHIN in the FOOT's frame — with the foot planted that
         /// is exactly "which way does the body lean"):
@@ -249,7 +256,7 @@ namespace PoSumo
 
         /// How far the feet are split fore/aft when standing. Widens the support
         /// polygon the centre of mass has to stay inside.
-        private const float STANCE_SPLIT_DEG = 20f;
+        internal static float StanceSplitDeg = 20f;
 
         // Postures, in degrees, in the jointAngle convention documented above.
         private const float CROUCH_KNEE_DEG = 55f;   // bent: low centre of mass
@@ -268,6 +275,34 @@ namespace PoSumo
         private bool _swingLegIsNear = true;
         private float _swingTimer;
         private float _lastTime;
+
+        /// DEBOUNCED foot contact. Agent_BipedBody.FootDownNear/Far are sampled in
+        /// FixedUpdate from GetContacts and were measured FLICKERING between True
+        /// and False on consecutive frames while the foot demonstrably had contacts
+        /// — so any stance/swing decision reading them directly is reading noise,
+        /// and the gait was only ever swapping legs on its timeout.
+        ///
+        /// Asymmetric hysteresis on purpose: believe a landing quickly (2 frames at
+        /// 50 Hz = 40 ms) but a lift-off slowly (4 frames), because a spurious
+        /// "airborne" reading mid-stance is far more damaging than a late one — it
+        /// hands the balance loop a support leg that it thinks is not there.
+        /// Gains are authored against Matt: 69.6 kg at widthScale 1, the documented
+        /// baseline. Nick is 57.2 kg at widthScale 0.82 and is NOT the same plant —
+        /// a lighter body is accelerated further by the same joint torque, so one
+        /// gain set cannot serve both, which is why one fighter would hold a round
+        /// while the other went down in the same match.
+        ///
+        /// Scaled by the square root of the mass ratio rather than the ratio: the
+        /// correction is a target ANGLE, and what it has to overcome is a toppling
+        /// rate that goes with the pendulum's natural frequency, which is a square
+        /// root — not with weight directly.
+        private float _gainScale = 1f;
+        private const float BASELINE_MASS_KG = 69.6f;
+
+        private int _downRunNear, _downRunFar;
+        private bool _stableDownNear, _stableDownFar;
+        private const int CONTACT_ON_FRAMES = 2;
+        private const int CONTACT_OFF_FRAMES = 4;
 
         /// Eased joint targets and the timestep they advance on.
         private readonly float[] _smoothTarget = new float[13];
@@ -313,6 +348,7 @@ namespace PoSumo
                 _swingTimer = 0f;
             }
             _lastTime = ctx.Time;
+            _gainScale = Mathf.Sqrt(Mathf.Clamp(body.TotalMass / BASELINE_MASS_KG, 0.5f, 2f));
 
             // Everything below is in the facing-local frame, so "forward" is always
             // +x regardless of which way this fighter is turned.
@@ -374,7 +410,9 @@ namespace PoSumo
             _swingTimer += _dt;
 
             bool nearIsSwing = _swingLegIsNear;
-            bool swingFootDown = nearIsSwing ? body.FootDownNear : body.FootDownFar;
+            bool downNear = Debounce(body.FootDownNear, ref _downRunNear, ref _stableDownNear);
+            bool downFar = Debounce(body.FootDownFar, ref _downRunFar, ref _stableDownFar);
+            bool swingFootDown = nearIsSwing ? downNear : downFar;
 
             // Swap legs when the swing foot lands, or when the timer expires and it
             // has not — the timeout is what stops a leg hanging forever when the
@@ -405,10 +443,36 @@ namespace PoSumo
             // BACK => the body falls forward over it => it accelerates. Placing the
             // foot behind the centre of mass is how a biped speeds up; placing it in
             // front is a brake.
-            float speedError = v - WALK_SPEED_MPS * forward;
-            float swingHip = Mathf.Clamp(
-                SWING_HIP_BASE_DEG - (CD_DEG_PER_M * d + CV_DEG_PER_MPS * speedError) * forward,
-                SWING_HIP_MIN_DEG, SWING_HIP_MAX_DEG);
+            // ── CAPTURE POINT ──────────────────────────────────────────────
+            //
+            // Replaces the hand-tuned hip angles. Where a foot MUST land to arrest
+            // the body is not a matter of taste — for an inverted pendulum it is
+            //
+            //     x_capture = x_com + v * sqrt(h / g)
+            //
+            // measured from the centre of mass, with h the centre-of-mass height.
+            // Landing there brings the body exactly to rest; landing SHORT of it
+            // leaves residual forward velocity, which is how a walker accelerates,
+            // so the desired speed is expressed as a deliberate shortfall rather
+            // than as another gain to tune.
+            //
+            // The hip angle to put the foot there is then geometry, not a constant:
+            // for a leg of reach L the horizontal offset dx needs asin(dx / L). That
+            // is converted into this project's convention with the MEASURED sign —
+            // negative jointAngle swings the thigh forward — so the whole thing has
+            // exactly one place a sign could be wrong, and it is the one that was
+            // probed.
+            float comHeight = Mathf.Max(0.35f, com.y - (stanceFoot != null ? stanceFoot.position.y : com.y - 0.9f));
+            float capture = v * Mathf.Sqrt(comHeight / 9.81f);
+
+            // Aim SHORT of the capture point by the distance the body should still
+            // be travelling at the end of the step.
+            float desiredShortfall = WALK_SPEED_MPS * forward * Mathf.Sqrt(comHeight / 9.81f);
+            float footOffset = capture - desiredShortfall + d;
+
+            float legReach = Mathf.Max(0.3f, LEG_REACH_M * body.widthScale);
+            float hipGeometric = Mathf.Asin(Mathf.Clamp(footOffset / legReach, -0.95f, 0.95f)) * Mathf.Rad2Deg;
+            float swingHip = Mathf.Clamp(-hipGeometric, SWING_HIP_MIN_DEG, SWING_HIP_MAX_DEG);
 
             int swingHipJoint = nearIsSwing ? HIP_NEAR : HIP_FAR;
             int swingKneeJoint = nearIsSwing ? KNEE_NEAR : KNEE_FAR;
@@ -452,11 +516,11 @@ namespace PoSumo
             // correction, which drove the pelvis further backward and fed itself:
             // measured runaway to -1.5 m/s in the facing-local frame, both fighters,
             // straight off the back of the dohyo.
-            float correction = STAND_KP * leanError + STAND_KD * leanRate - STAND_KV * v;
+            float correction = (StandKp * leanError + StandKd * leanRate - StandKv * v) * _gainScale;
 
             // Stance hip near neutral now: its job is to hold, not to shove.
             Track(body, actions, stanceHipJoint, STANCE_HIP_NEUTRAL_DEG + correction);
-            Track(body, actions, stanceKneeJoint, STAND_KNEE_DEG);
+            Track(body, actions, stanceKneeJoint, StandKneeDeg);
             Track(body, actions, stanceAnkleJoint, Mathf.Clamp(correction * ANKLE_SHARE, -30f, 30f));
 
             // Spine rights the chest. NEGATIVE opposes a forward pitch, because the
@@ -536,7 +600,7 @@ namespace PoSumo
             // correction, which drove the pelvis further backward and fed itself:
             // measured runaway to -1.5 m/s in the facing-local frame, both fighters,
             // straight off the back of the dohyo.
-            float correction = STAND_KP * (lean - leanTarget) + STAND_KD * leanRate - STAND_KV * drift;
+            float correction = (StandKp * (lean - leanTarget) + StandKd * leanRate - StandKv * drift) * _gainScale;
 
             // Hips extend against a forward lean, pushing the pelvis back under the
             // chest; knees stay softly bent so the legs can absorb rather than
@@ -547,10 +611,10 @@ namespace PoSumo
             // Splitting the legs — one forward, one back — roughly doubles it, and
             // it is the sumo stance for exactly this reason. Hip flexion is negative
             // (measured), so the forward leg subtracts and the trailing leg adds.
-            Track(body, actions, HIP_NEAR, STAND_HIP_DEG - STANCE_SPLIT_DEG + correction);
-            Track(body, actions, HIP_FAR, STAND_HIP_DEG + STANCE_SPLIT_DEG + correction);
-            Track(body, actions, KNEE_NEAR, STAND_KNEE_DEG);
-            Track(body, actions, KNEE_FAR, STAND_KNEE_DEG);
+            Track(body, actions, HIP_NEAR, STAND_HIP_DEG - StanceSplitDeg + correction);
+            Track(body, actions, HIP_FAR, STAND_HIP_DEG + StanceSplitDeg + correction);
+            Track(body, actions, KNEE_NEAR, StandKneeDeg);
+            Track(body, actions, KNEE_FAR, StandKneeDeg);
             Track(body, actions, ANKLE_NEAR, Mathf.Clamp(correction * ANKLE_SHARE, -30f, 30f));
             Track(body, actions, ANKLE_FAR, Mathf.Clamp(correction * ANKLE_SHARE, -30f, 30f));
 
@@ -564,6 +628,19 @@ namespace PoSumo
             Track(body, actions, SHOULDER_FAR, 25f * ARM_SIGN);
             Track(body, actions, ELBOW_NEAR, -20f);
             Track(body, actions, ELBOW_FAR, -20f);
+        }
+
+        /// Hysteresis filter for one foot. Returns the debounced state.
+        private static bool Debounce(bool raw, ref int run, ref bool stable)
+        {
+            run = raw == stable ? 0 : run + 1;
+            int need = raw ? CONTACT_ON_FRAMES : CONTACT_OFF_FRAMES;
+            if (run >= need)
+            {
+                stable = raw;
+                run = 0;
+            }
+            return stable;
         }
 
         /// Trunk pitch: 0 upright, positive when the chest has pitched toward the
@@ -694,7 +771,7 @@ namespace PoSumo
                 _smoothTarget[joint], targetDegrees, TARGET_SLEW_DEG_PER_S * _dt);
 
             float error = (_smoothTarget[joint] / 180f) - body.JointAngleNorm(joint);
-            actions[joint] = Mathf.Clamp(error * GAIN, -1f, 1f);
+            actions[joint] = Mathf.Clamp(error * Gain, -1f, 1f);
         }
 
         /// Seed the eased targets from the body's ACTUAL pose, so the first decision
