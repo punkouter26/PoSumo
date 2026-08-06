@@ -80,12 +80,23 @@ namespace PoSumo
         /// +1 means "positive shoulder jointAngle swings the arm toward the opponent".
         private const float ARM_SIGN = 1f;
 
-        // Proportional gain on normalised angle error. High enough to actually
-        // reach a pose against gravity and passive joint resistance, low enough
-        // that the motor is not permanently railed — a railed motor is both the
-        // most expensive thing a joint can do (fatigue integrates the delivered
-        // torque) and the least controllable.
-        private const float GAIN = 6f;
+        // Proportional gain on NORMALISED angle error (error is degrees/180), so
+        // the command saturates at an error of 180/GAIN degrees.
+        //
+        // This was 6, which saturates past 30 deg — and a saturated command asks
+        // the joint for its FULL motor speed, 400-500 deg/s on the legs. Thirteen
+        // joints slamming at full rate is destabilising by itself: the body is
+        // thrown around by its own corrections faster than any balance law can
+        // answer. At 2.5 the command stays proportional out to ~72 deg, which is
+        // wider than any target this controller asks for, so the servo behaves like
+        // a spring instead of a switch.
+        private const float GAIN = 2.5f;
+
+        /// Uprightness below which the BOT stops trying to walk and just tries to
+        /// stand. Stepping while already toppling is how the previous version threw
+        /// itself down: the swing leg leaves the ground exactly when the body can
+        /// least afford to lose half its support.
+        private const float STAND_UPRIGHT_THRESHOLD = 0.86f;
 
         // Ranges in metres along the mat.
         private const float ENGAGE_RANGE = 1.30f;   // inside this, stop walking and drive
@@ -173,6 +184,34 @@ namespace PoSumo
         private const float TRUNK_HIP_KP = 38f;     // degrees of extra stance extension per unit lean
         private const float SPINE_LIMIT_DEG = 18f;  // of the 20 the joint allows
 
+        // Standing balance. Stiffer than the walking correction because there is no
+        // swing leg to place — the ankles and hips are the entire strategy.
+        // Measured down from 90/12, which did not merely overshoot — it inverted the
+        // fighter. A lean of 1.0 commanded a 90 deg target swing on hips and spine
+        // at once; the trunk flipped through up = -0.37 -> +0.45 -> -0.49 in under a
+        // second while the body was still at full height. The controller was doing
+        // the falling over, not gravity.
+        private const float STAND_KP = 22f;
+        private const float STAND_KD = 4f;
+        private const float STAND_HIP_DEG = -4f;
+
+        /// Nearly straight, and that is load-bearing rather than cosmetic. At 22 deg
+        /// the trunk stayed upright (0.92) but the whole body SANK — pelvis 1.06 ->
+        /// 0.26 — because a bent knee has to hold the body's weight on a long moment
+        /// arm and the joint only has 250 N-m, less once the Hill force-velocity
+        /// term and fatigue take their cut. A near-straight leg carries 69.6 kg on
+        /// its own geometry and asks the motor for almost nothing.
+        ///
+        /// It costs the sumo crouch, which matters for driving — that is why Drive()
+        /// keeps its own deeper CROUCH_KNEE_DEG. Standing up is the prerequisite;
+        /// crouching is only useful once the body can hold itself at all.
+        private const float STAND_KNEE_DEG = 7f;
+        /// Zero until the ankle's polarity is MEASURED. It was 0.45, feeding an
+        /// unmeasured sign straight into the balance loop — if it is backwards the
+        /// ankle drives the fall it is meant to arrest, and there is no way to tell
+        /// that apart from "gains too high" while both are in play at once.
+        private const float ANKLE_SHARE = 0f;
+
         // Postures, in degrees, in the jointAngle convention documented above.
         private const float CROUCH_KNEE_DEG = 55f;   // bent: low centre of mass
         private const float CROUCH_HIP_DEG = -35f;   // negative = flexed = thigh forward
@@ -233,6 +272,15 @@ namespace PoSumo
                 _lungeUntil = ctx.Time + 0.45f;
             }
             bool lunging = ctx.Time < _lungeUntil;
+
+            // Balance before locomotion. Both feet stay planted until the trunk is
+            // actually upright — a swing leg lifts half the support away, which is
+            // the last thing a toppling body needs.
+            if (upright < STAND_UPRIGHT_THRESHOLD)
+            {
+                Stand(body, actions);
+                return;
+            }
 
             if (driving)
             {
@@ -323,6 +371,48 @@ namespace PoSumo
             Track(body, actions, SHOULDER_FAR, ARM_REACH_DEG * 0.35f * forward * ARM_SIGN);
             Track(body, actions, ELBOW_NEAR, ELBOW_BENT_DEG);
             Track(body, actions, ELBOW_FAR, ELBOW_BENT_DEG);
+        }
+
+        /// Two-footed balance. No swing leg, no stepping — both feet planted, knees
+        /// softly bent, and the whole balance budget spent on holding the trunk over
+        /// the feet.
+        ///
+        /// This is the first milestone and the honest test of the balance law: if a
+        /// biped cannot stand still it certainly cannot walk, and every earlier
+        /// version went straight to stepping and so never separated the two
+        /// failures.
+        ///
+        /// Ankles are driven here (unlike the gait, which leaves them at zero
+        /// because their polarity is unmeasured) using the SAME sign convention the
+        /// hip probe established for the leg chain: a positive facing-local angle
+        /// rotates the child backwards. Leaning forward therefore wants a positive
+        /// ankle to push the shin back upright over the foot.
+        private void Stand(Agent_BipedBody body, ActionSegment<float> actions)
+        {
+            float lean = TrunkLean(body);
+            float leanRate = body.Chest != null ? body.Chest.angularVelocity * Mathf.Deg2Rad * body.facingSign : 0f;
+            float correction = STAND_KP * lean + STAND_KD * leanRate;
+
+            // Hips extend against a forward lean, pushing the pelvis back under the
+            // chest; knees stay softly bent so the legs can absorb rather than
+            // transmit, which is also the sumo stance.
+            Track(body, actions, HIP_NEAR, STAND_HIP_DEG + correction);
+            Track(body, actions, HIP_FAR, STAND_HIP_DEG + correction);
+            Track(body, actions, KNEE_NEAR, STAND_KNEE_DEG);
+            Track(body, actions, KNEE_FAR, STAND_KNEE_DEG);
+            Track(body, actions, ANKLE_NEAR, Mathf.Clamp(correction * ANKLE_SHARE, -30f, 30f));
+            Track(body, actions, ANKLE_FAR, Mathf.Clamp(correction * ANKLE_SHARE, -30f, 30f));
+
+            float spine = Mathf.Clamp(-correction / 3f, -SPINE_LIMIT_DEG, SPINE_LIMIT_DEG);
+            Track(body, actions, SPINE_1, spine);
+            Track(body, actions, SPINE_2, spine);
+            Track(body, actions, SPINE_3, spine);
+
+            // Arms out for balance, the way anyone teetering does it.
+            Track(body, actions, SHOULDER_NEAR, 25f * ARM_SIGN);
+            Track(body, actions, SHOULDER_FAR, 25f * ARM_SIGN);
+            Track(body, actions, ELBOW_NEAR, -20f);
+            Track(body, actions, ELBOW_FAR, -20f);
         }
 
         /// Trunk pitch: 0 upright, positive when the chest has pitched toward the
