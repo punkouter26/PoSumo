@@ -193,6 +193,10 @@ namespace PoSumo
         // the falling over, not gravity.
         private const float STAND_KP = 22f;
         private const float STAND_KD = 4f;
+
+        /// Degrees of correction per m/s of centre-of-mass drift. Moving forward
+        /// leans the body back, which is how a person standing on a train stays put.
+        private const float STAND_KV = 26f;
         private const float STAND_HIP_DEG = -4f;
 
         /// Nearly straight, and that is load-bearing rather than cosmetic. At 22 deg
@@ -206,11 +210,19 @@ namespace PoSumo
         /// keeps its own deeper CROUCH_KNEE_DEG. Standing up is the prerequisite;
         /// crouching is only useful once the body can hold itself at all.
         private const float STAND_KNEE_DEG = 7f;
-        /// Zero until the ankle's polarity is MEASURED. It was 0.45, feeding an
-        /// unmeasured sign straight into the balance loop — if it is backwards the
-        /// ankle drives the fall it is meant to arrest, and there is no way to tell
-        /// that apart from "gains too high" while both are in play at once.
-        private const float ANKLE_SHARE = 0f;
+        /// MEASURED at last (probe: gravity off, agent disabled, drive ankle 2 to
+        /// each rail, read the SHIN in the FOOT's frame — with the foot planted that
+        /// is exactly "which way does the body lean"):
+        ///
+        ///     facing-local ankle +37 deg -> shin x = -0.78  (body leans BACK)
+        ///     facing-local ankle -35 deg -> shin x = +0.49  (body leans FORWARD)
+        ///
+        /// So positive ankle pushes the body backwards, which is what counters a
+        /// forward lean — the original +correction sign was right all along, and
+        /// zeroing it removed a CORRECT term while chasing the gain problem. The
+        /// ankle is what regulates centre of pressure, so this is the cheapest
+        /// balance authority the body has.
+        private const float ANKLE_SHARE = 0.45f;
 
         /// How far the feet are split fore/aft when standing. Widens the support
         /// polygon the centre of mass has to stay inside.
@@ -395,7 +407,15 @@ namespace PoSumo
         {
             float lean = TrunkLean(body);
             float leanRate = body.Chest != null ? body.Chest.angularVelocity * Mathf.Deg2Rad * body.facingSign : 0f;
-            float correction = STAND_KP * lean + STAND_KD * leanRate;
+
+            // DRIFT. Holding the trunk vertical is not the same as holding still,
+            // and the difference was measured: a fighter left the dohyo at y -0.33
+            // while its uprightness was still 0.95. It did not fall over, it walked
+            // itself off the edge — the controller had no term that could even see
+            // horizontal motion. Damping centre-of-mass velocity gives it one.
+            CentreOfMass(body, out Vector2 comVelocity);
+            float drift = comVelocity.x * body.facingSign;
+            float correction = STAND_KP * lean + STAND_KD * leanRate + STAND_KV * drift;
 
             // Hips extend against a forward lean, pushing the pelvis back under the
             // chest; knees stay softly bent so the legs can absorb rather than
