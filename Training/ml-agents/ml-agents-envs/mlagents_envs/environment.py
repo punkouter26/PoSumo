@@ -1,5 +1,4 @@
 import atexit
-from distutils.version import StrictVersion
 
 import numpy as np
 import os
@@ -91,11 +90,16 @@ class UnityEnvironment(BaseEnv):
     def _check_communication_compatibility(
         unity_com_ver: str, python_api_version: str, unity_package_version: str
     ) -> bool:
+        # PATCH: StrictVersion is gone in py3.12 and raises on the perfectly
+        # ordinary version strings Unity sends, which killed worker auto-restarts.
+        # Only .version[0] and .version[1] are ever read, so a tuple parse is enough.
         def _parse_version_tuple(v):
             return tuple(int(x) for x in v.split('.')[:3])
+
         class _V:
             def __init__(self, v):
                 self.version = _parse_version_tuple(v)
+
         unity_communicator_version = _V(unity_com_ver)
         api_version = _V(python_api_version)
         if unity_communicator_version.version[0] == 0:

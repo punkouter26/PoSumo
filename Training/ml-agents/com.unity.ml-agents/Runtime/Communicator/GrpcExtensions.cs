@@ -1,4 +1,3 @@
-#if UNITY_EDITOR || UNITY_STANDALONE
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -21,6 +20,15 @@ namespace Unity.MLAgents
 {
     internal static class GrpcExtensions
     {
+#if UNITY_EDITOR
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStaticsOnLoad()
+        {
+            s_HaveWarnedTrainerCapabilitiesAgentGroup = false;
+            s_HaveWarnedTrainerCapabilitiesMultiPng = false;
+            s_HaveWarnedTrainerCapabilitiesMapping= false;
+        }
+#endif
         #region AgentInfo
         /// <summary>
         /// Static flag to make sure that we only fire the warning once.
@@ -540,4 +548,3 @@ namespace Unity.MLAgents
         #endregion
     }
 }
-#endif

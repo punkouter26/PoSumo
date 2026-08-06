@@ -6,7 +6,7 @@ coverage_test_platforms:
     - name: linux
       type: Unity::VM
       image: ml-agents/ubuntu-ci:v1.0.1
-      flavor: b1.medium
+      flavor: i1.xlarge
 
 coverage_test_packages:
     - name: com.unity.ml-agents

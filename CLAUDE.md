@@ -50,7 +50,7 @@ re-run training locally to recreate that directory.
 |---|---|---|---|
 | Engine | Unity Editor | **6000.5.6f1** (Unity 6.2) | changeset 0e0577a1a2ac. Was 6000.5.4f1 (d550df8bd089) — see the drift note below |
 | Engine | Unity Hub | 3.x | headless CLI broken — install modules via UI |
-| Package | com.unity.ml-agents | **4.0.0** (release_23) | LOCAL `file:` package with patches — never re-fetch |
+| Package | com.unity.ml-agents | **4.1.0** | LOCAL `file:` package with patches. Upgraded from 4.0.0 (release_23) on 2026-08-06 — re-fetching is now a documented procedure, not a prohibition, but it still LOSES the patches below |
 | Package | com.unity.ai.inference | 2.6.1 | auto-dependency of ML-Agents (`Unity.InferenceEngine.ModelAsset`). Was 2.2.1 |
 | Package | URP | 17.5.0 | project template |
 | MCP | unity-mcp-cli (npm) | **0.87.0** | keep in step with the Unity package below |
@@ -58,7 +58,9 @@ re-run training locally to recreate that directory.
 | MCP | com.coplaydev.unity-mcp | 10.1.0 | |
 | MCP | com.besty.unity-skills | 2.2.1 | HTTP server port 8090 |
 | Python | Python | **3.10.11** | hard range: >=3.10.1, <=3.10.12 |
-| Python | mlagents / ml-agents-envs | **1.2.0.dev0** | built from release_23 source; envs is patched |
+| Python | mlagents / ml-agents-envs | **1.2.0.dev0** | **editable** (`pip install -e`) against `Training/ml-agents/`, so the source patches ARE the installed copy. Built from 4.1.0 source; envs is patched |
+| Python | gymnasium / pettingzoo | 1.3.0 / 1.26.1 | **new requirements in 4.1.0** — 4.0.0 did not need gymnasium at all and shipped against pettingzoo 1.15 |
+| — | ML-Agents comms API | **1.5.0** | `Academy.k_ApiVersion` (C#) and `UnityEnvironment.API_VERSION` (py) must be EQUAL or the handshake is refused. Both moved 1.4.0 → 1.5.0 in 4.1.0, so C# and Python must be upgraded together |
 | Python | torch | **2.5.1** (+cpu) | PIN — 2.6+ breaks ONNX export |
 | Python | setuptools | **69.5.1** | PIN — 70+ removes pkg_resources |
 | Python | numpy | 1.23.5 | pinned by mlagents |
@@ -96,25 +98,53 @@ under a "required set" heading is how a project ends up debugging the wrong laye
 
 ## Critical version pins (do not "upgrade")
 
-- **ML-Agents**: local editable package at `Training/ml-agents/com.unity.ml-agents`
-  (release_23 / 4.0.0), referenced via `file:` in `Packages/manifest.json`. It contains
-  required local patches — see "Local patches" below. Re-cloning loses them.
-- **Python venv** `Training/venv`: `mlagents 1.2.0.dev0` (installed from the same
-  release_23 source), **torch 2.5.1** (newer torch breaks ONNX checkpoint export),
-  **setuptools 69.5.1** (newer removes `pkg_resources` and breaks `mlagents-learn`).
-  Never `pip install --upgrade` in this venv.
+- **ML-Agents**: local package at `Training/ml-agents/com.unity.ml-agents` (**4.1.0**),
+  referenced via `file:` in `Packages/manifest.json`. It contains required local patches
+  — see "Local patches" below. Re-fetching loses them; the upgrade procedure is recorded
+  there. The whole `Training/ml-agents` tree is **tracked in this repo** (~2300 files), so
+  a botched upgrade is recoverable with `git checkout` rather than a re-clone.
+- **Python venv** `Training/venv`: `mlagents 1.2.0.dev0` installed **editable**
+  (`pip install -e`) against that same tree — so patch 3 in the source IS the installed
+  code, and there is no second copy in `site-packages` to keep in sync. **torch 2.5.1**
+  (newer torch breaks ONNX checkpoint export; 4.1.0 permits `<=2.8.0`, but the export
+  problem is ours, not theirs — stay at 2.5.1), **setuptools 69.5.1** (newer removes
+  `pkg_resources` and breaks `mlagents-learn`). Never `pip install --upgrade` in this
+  venv; when a new dep is genuinely required, install it with `-c` against a constraints
+  file pinning torch/numpy/setuptools/protobuf/onnx, which is how gymnasium and pettingzoo
+  were added for 4.1.0 without disturbing anything else.
 
-## Local patches (re-apply if ml-agents source is re-cloned)
+## Local patches (re-apply if ml-agents source is re-fetched)
 
-1. `Runtime/Integrations/Match3/Match3ActuatorComponent.cs:63` — `GetInstanceID()` and the
-   `EntityId->int` cast are obsolete-as-error on Unity 6.2; uses `gameObject.GetHashCode()`.
+**Patch 1 is retired — do not re-apply it.** 4.1.0 fixed it upstream and better:
+`Match3ActuatorComponent` now guards with `#if UNITY_6000_3_OR_NEWER` and calls
+`gameObject.GetEntityId().GetHashCode()`. The old local patch used a plain
+`gameObject.GetHashCode()` unconditionally. Re-applying it would overwrite a correct
+upstream fix with a worse one. It is kept here only so the numbering below still matches
+older commits and notes.
+
 2. `Plugins/Google.Protobuf_MLAgents.dll` — renamed from `Google.Protobuf_Packed.dll`
    (file, meta, **and internal assembly name**, rewritten with Mono.Cecil) because
    `com.unity.ai.inference` ships an editor-only DLL with the identical original name and
-   player builds resolve the reference to the wrong one. All 7 asmdefs reference the new name.
-3. `mlagents_envs/environment.py::_check_communication_compatibility` (venv site-packages
-   AND source clone) — `StrictVersion` replaced with a manual tuple parse; the original
-   crashes worker auto-restarts.
+   player builds resolve the reference to the wrong one. All 7 asmdefs reference the new
+   name. **Still required at 4.1.0 / ai.inference 2.6.1** — both sides still ship the
+   colliding name, verified 2026-08-06.
+3. `mlagents_envs/environment.py::_check_communication_compatibility` — `StrictVersion`
+   replaced with a manual tuple parse; the original crashes worker auto-restarts. **Still
+   required at 4.1.0**, which still does `from distutils.version import StrictVersion`.
+   Now only ONE copy to patch (the source tree), because the venv install is editable.
+
+**How the 4.1.0 upgrade was actually done**, since the next one will look the same:
+clone upstream to a scratch dir, apply patches 2 and 3 to that *staging* copy, and only
+then swap it over `Training/ml-agents` — so the Editor never watches a half-patched
+package. The Cecil rename cannot be compiled against directly in the MCP `execute_code`
+sandbox (`Mono.Cecil` resolves at runtime but is not a compile-time reference), so drive
+it by **reflection** off `System.Reflection.Assembly.Load("Mono.Cecil")`. Carry the
+existing `.dll.meta` forward rather than taking upstream's, to keep the plugin GUID
+stable. Then `pip install -e` both python packages with `--no-deps`.
+
+Of 163 differing `Runtime/*.cs` files between 4.0.0 and 4.1.0, only **25** are real
+changes — the rest are CRLF-only. Diff with `--strip-trailing-cr` or you will badly
+over-estimate the blast radius.
 
 ## Commands at a glance
 

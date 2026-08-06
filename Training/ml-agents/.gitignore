@@ -24,6 +24,9 @@
 *.csproj
 *.unityproj
 *.sln
+# Allow C# projects and solutions in Tools directory
+!Tools/**/*.csproj
+!Tools/**/*.sln
 *.suo
 *.tmp
 *.user
@@ -98,3 +101,9 @@ coverage.xml
 
 # yamato-parser temporary output files:
 .yamato/unfolded/
+
+Tools/ci/obj/
+Tools/ci/bin/
+
+CLAUDE.md
+.claude/**

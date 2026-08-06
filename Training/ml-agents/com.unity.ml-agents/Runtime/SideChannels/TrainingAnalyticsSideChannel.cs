@@ -1,4 +1,3 @@
-#if UNITY_EDITOR || UNITY_STANDALONE
 using System;
 using Unity.MLAgents.Analytics;
 using Unity.MLAgents.CommunicatorObjects;
@@ -51,4 +50,3 @@ namespace Unity.MLAgents.SideChannels
         }
     }
 }
-#endif

@@ -318,9 +318,7 @@ namespace Unity.MLAgents
         /// You can also add your own DemonstrationWriter by calling
         /// DemonstrationRecorder.AddDemonstrationWriterToAgent()
         /// </summary>
-#if UNITY_EDITOR || UNITY_STANDALONE
         internal ISet<DemonstrationWriter> DemonstrationWriters = new HashSet<DemonstrationWriter>();
-#endif
 
         /// <summary>
         /// List of sensors used to generate observations.
@@ -575,9 +573,7 @@ namespace Unity.MLAgents
         /// <seealso cref="OnEnable"/>
         protected virtual void OnDisable()
         {
-#if UNITY_EDITOR || UNITY_STANDALONE
             DemonstrationWriters.Clear();
-#endif
 
             // If Academy.Dispose has already been called, we don't need to unregister with it.
             // We don't want to even try, because this will lazily create a new Academy!
@@ -621,7 +617,6 @@ namespace Unity.MLAgents
             m_Brain?.RequestDecision(m_Info, sensors);
 
             // We also have to write any to any DemonstationStores so that they get the "done" flag.
-#if UNITY_EDITOR || UNITY_STANDALONE
             if (DemonstrationWriters.Count != 0)
             {
                 foreach (var demoWriter in DemonstrationWriters)
@@ -629,7 +624,6 @@ namespace Unity.MLAgents
                     demoWriter.Record(m_Info, sensors);
                 }
             }
-#endif
 
             ResetSensors();
 
@@ -1144,7 +1138,6 @@ namespace Unity.MLAgents
             }
 
             // If we have any DemonstrationWriters, write the AgentInfo and sensors to them.
-#if UNITY_EDITOR || UNITY_STANDALONE
             if (DemonstrationWriters.Count != 0)
             {
                 foreach (var demoWriter in DemonstrationWriters)
@@ -1152,7 +1145,6 @@ namespace Unity.MLAgents
                     demoWriter.Record(m_Info, sensors);
                 }
             }
-#endif
         }
 
         void UpdateSensors()

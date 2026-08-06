@@ -1,5 +1,5 @@
 from typing import List, Optional, Tuple, Dict
-from mlagents.torch_utils import torch, nn
+from mlagents.torch_utils import torch, nn, default_device
 from mlagents.trainers.torch_entities.layers import LinearEncoder, Initialization
 import numpy as np
 
@@ -233,7 +233,8 @@ class ModelUtils:
         Converts a list of numpy arrays into a tensor. MUCH faster than
         calling as_tensor on the list directly.
         """
-        return torch.as_tensor(np.asanyarray(ndarray_list), dtype=dtype)
+        device = default_device()
+        return torch.as_tensor(np.asanyarray(ndarray_list), dtype=dtype, device=device)
 
     @staticmethod
     def list_to_tensor_list(
@@ -243,8 +244,10 @@ class ModelUtils:
         Converts a list of numpy arrays into a list of tensors. MUCH faster than
         calling as_tensor on the list directly.
         """
+        device = default_device()
         return [
-            torch.as_tensor(np.asanyarray(_arr), dtype=dtype) for _arr in ndarray_list
+            torch.as_tensor(np.asanyarray(_arr), dtype=dtype, device=device)
+            for _arr in ndarray_list
         ]
 
     @staticmethod
@@ -320,6 +323,7 @@ class ModelUtils:
         :param tensor: Tensor which needs mean computation.
         :param masks: Boolean tensor of masks with same dimension as tensor.
         """
+        masks = masks.to(tensor.device)
         if tensor.ndim == 0:
             return (tensor * masks).sum() / torch.clamp(
                 (torch.ones_like(tensor) * masks).float().sum(), min=1.0
@@ -415,10 +419,10 @@ class ModelUtils:
         """
         value_losses = []
         for name, head in values.items():
-            old_val_tensor = old_values[name]
-            returns_tensor = returns[name]
+            old_val_tensor = old_values[name].to(head.device)
+            returns_tensor = returns[name].to(head.device)
             clipped_value_estimate = old_val_tensor + torch.clamp(
-                head - old_val_tensor, -1 * epsilon, epsilon
+                head - old_val_tensor, -epsilon, epsilon
             )
             v_opt_a = (returns_tensor - head) ** 2
             v_opt_b = (returns_tensor - clipped_value_estimate) ** 2
@@ -442,7 +446,8 @@ class ModelUtils:
         :param old_log_probs: Past policy probabilities
         :param loss_masks: Mask for losses. Used with LSTM to ignore 0'ed out experiences.
         """
-        advantage = advantages.unsqueeze(-1)
+        advantage = advantages.unsqueeze(-1).to(log_probs.device)
+        old_log_probs = old_log_probs.to(log_probs.device)
         r_theta = torch.exp(log_probs - old_log_probs)
         p_opt_a = r_theta * advantage
         p_opt_b = torch.clamp(r_theta, 1.0 - epsilon, 1.0 + epsilon) * advantage

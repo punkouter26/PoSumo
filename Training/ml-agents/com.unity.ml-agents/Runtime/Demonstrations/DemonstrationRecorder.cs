@@ -1,4 +1,3 @@
-#if UNITY_EDITOR || UNITY_STANDALONE
 using System.IO.Abstractions;
 using System.Text.RegularExpressions;
 using UnityEngine;
@@ -227,4 +226,3 @@ namespace Unity.MLAgents.Demonstrations
         }
     }
 }
-#endif

@@ -54,7 +54,7 @@ public class PushAgentBasic : Agent
     protected override void Awake()
     {
         base.Awake();
-        m_PushBlockSettings = FindFirstObjectByType<PushBlockSettings>();
+        m_PushBlockSettings = FindAnyObjectByType<PushBlockSettings>();
     }
 
     public override void Initialize()
@@ -157,7 +157,7 @@ public class PushAgentBasic : Agent
                 dirToGo = transform.right * 0.75f;
                 break;
         }
-        transform.Rotate(rotateDir, Time.fixedDeltaTime * 200f);
+        transform.Rotate(rotateDir, Time.fixedDeltaTime * m_PushBlockSettings.agentRotationSpeed);
         m_AgentRb.AddForce(dirToGo * m_PushBlockSettings.agentRunSpeed,
             ForceMode.VelocityChange);
     }

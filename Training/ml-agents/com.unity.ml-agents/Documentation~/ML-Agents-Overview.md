@@ -28,8 +28,8 @@ The ML-Agents Toolkit contains five high-level components:
 - **Python Low-Level API** - which contains a low-level Python interface for interacting and manipulating a learning environment. Note that, unlike the Learning Environment, the Python API is not part of Unity, but lives outside and communicates with Unity through the Communicator. This API is contained in a dedicated `mlagents_envs` Python package and is used by the Python training process to communicate with and control the Academy during training. However, it can be used for other purposes as well. For example, you could use the API to use Unity as the simulation engine for your own machine learning algorithms. See [Python API](Python-LLAPI.md) for more information.
 - **External Communicator** - which connects the Learning Environment with the Python Low-Level API. It lives within the Learning Environment.
 - **Python Trainers** which contains all the machine learning algorithms that enable training agents. The algorithms are implemented in Python and are part of their own `mlagents` Python package. The package exposes a single command-line utility `mlagents-learn` that supports all the training methods and options outlined in this document. The Python Trainers interface solely with the Python Low-Level API.
-- **Gym Wrapper** (not pictured). A common way in which machine learning researchers interact with simulation environments is via a wrapper provided by OpenAI called [gym](https://github.com/openai/gym). We provide a gym wrapper in the `ml-agents-envs` package and [instructions](Python-Gym-API.md) for using it with existing machine learning algorithms which utilize gym.
-- **PettingZoo Wrapper** (not pictured) PettingZoo is python API for interacting with multi-agent simulation environments that provides a gym-like interface. We provide a PettingZoo wrapper for Unity ML-Agents environments in the `ml-agents-envs` package and [instructions](Python-PettingZoo-API.md) for using it with machine learning algorithms.
+- **Gym Wrapper** (not pictured). A common way in which machine learning researchers interact with simulation environments is via a wrapper provided by the Farama Foundation called [gymnasium](https://gymnasium.farama.org/) (formerly OpenAI `gym`). Unity provides a gym wrapper in the `ml-agents-envs` package and [instructions](Python-Gym-API.md) for using it with existing machine learning algorithms which utilize gymnasium.
+- **PettingZoo Wrapper** (not pictured) PettingZoo is python API for interacting with multi-agent simulation environments that provides a gym-like interface. Unity provides a PettingZoo wrapper for Unity ML-Agents environments in the `ml-agents-envs` package and [instructions](Python-PettingZoo-API.md) for using it with machine learning algorithms.
 
 <p align="center"> <img src="images/learning_environment_basic.png" alt="Simplified ML-Agents Scene Block Diagram" width="600" border="10" /> </p>
 
@@ -64,17 +64,17 @@ The [Running an Example](Sample.md) guide covers this training mode with the **3
 
 #### Cross-Platform Inference
 
-It is important to note that the ML-Agents Toolkit leverages the [Inference Engine](Inference-Engine.md) to run the models within a Unity scene such that an agent can take the _optimal_ action at each step. Given that Inference Engine supports all Unity runtime platforms, this means that any model you train with the ML-Agents Toolkit can be embedded into your Unity application that runs on any platform.
+It is important to note that the ML-Agents Toolkit leverages [Sentis](Inference-Engine.md) to run the models within a Unity scene such that an agent can take the _optimal_ action at each step. Given that Sentis supports all Unity runtime platforms, this means that any model you train with the ML-Agents Toolkit can be embedded into your Unity application that runs on any platform.
 
 ### Custom Training and Inference
 
-In the previous mode, the Agents were used for training to generate a PyTorch model that the Agents can later use. However, any user of the ML-Agents Toolkit can leverage their own algorithms for training. In this case, the behaviors of all the Agents in the scene will be controlled within Python. You can even turn your environment into a [gym.](Python-Gym-API.md)
+In the previous mode, the Agents were used for training to generate a PyTorch model that the Agents can later use. However, any user of the ML-Agents Toolkit can leverage their own algorithms for training. In this case, the behaviors of all the Agents in the scene will be controlled within Python. You can even turn your environment into a [gymnasium environment.](Python-Gym-API.md)
 
-We do not currently have a tutorial highlighting this mode, but you can learn more about the Python API [here](Python-LLAPI.md).
+Unity doesn't provide a tutorial highlighting this mode, but you can learn more about the Python API in [Unity ML-Agents Python Low Level API](Python-LLAPI.md).
 
 ## Flexible Training Scenarios
 
-While the discussion so-far has mostly focused on training a single agent, with ML-Agents, several training scenarios are possible. We are excited to see what kinds of novel and fun environments the community creates. For those new to training intelligent agents, below are a few examples that can serve as inspiration:
+While the discussion so-far has mostly focused on training a single agent, with ML-Agents, several training scenarios are possible. You can use ML-Agents to create novel and fun environments. For those new to training intelligent agents, some examples for inspiration are:
 
 - Single-Agent. A single agent, with its own reward signal. The traditional way of training an agent. An example is any single-player game, such as Chicken.
 - Simultaneous Single-Agent. Multiple independent agents with independent reward signals with same `Behavior Parameters`. A parallelized version of the traditional training scenario, which can speed-up and stabilize the training process. Helpful when you have multiple versions of the same character in an environment who should learn similar behaviors. An example might be training a dozen robot-arms to each open a door simultaneously.
@@ -89,9 +89,9 @@ The remaining sections overview the various state-of-the-art machine learning al
 
 This section specifically focuses on the training methods that are available regardless of the specifics of your learning environment.
 
-#### A Quick Note on Reward Signals
+#### A note on reward signals
 
-In this section we introduce the concepts of _intrinsic_ and _extrinsic_ rewards, which helps explain some of the training methods.
+This section introduces the concepts of _intrinsic_ and _extrinsic_ rewards, which helps explain some training methods.
 
 In reinforcement learning, the end goal for the Agent is to discover a behavior (a Policy) that maximizes a reward. You will need to provide the agent one or more reward signals to use during training. Typically, a reward is defined by your environment, and corresponds to reaching some goal. These are what we refer to as _extrinsic_ rewards, as they are defined external of the learning algorithm.
 
