@@ -120,10 +120,32 @@ namespace PoSumo
         private const float SWING_HIP_BASE_DEG = -32f;  // negative = flexed = thigh forward
         private const float SWING_KNEE_DEG = 68f;       // lift the foot clear of the mat
         private const float STANCE_KNEE_DEG = 16f;      // near-extension carries the weight
-        private const float STANCE_HIP_DEG = -6f;
         private const float SWING_HIP_MIN_DEG = -95f;   // stay inside the hip's -120..30
         private const float SWING_HIP_MAX_DEG = 18f;
-        private const float STANCE_ANKLE_PUSH_DEG = -10f;
+
+        /// The stance hip EXTENDS. This is where the propulsion comes from and
+        /// getting it wrong is what made the first SIMBICON pass walk backwards.
+        ///
+        /// MEASURED, not assumed (probe: gravity off, agent disabled, drive hip 0 to
+        /// each rail, read the thigh via pelvis.InverseTransformPoint):
+        ///
+        ///     facing-local jointAngle +31 deg -> thigh x = -0.42  (BEHIND the hip)
+        ///     facing-local jointAngle -121 deg -> thigh x = +0.70  (FORWARD)
+        ///
+        /// So negative is flexion/forward — which the swing target above already had
+        /// right — and POSITIVE is extension. The old stance target of -6 deg held
+        /// the support thigh FORWARD for the whole step, so the planted foot sat
+        /// ahead of the body and pushed it backwards: both fighters drifted outward
+        /// and off the far edge of the dohyo, which is exactly what was measured.
+        /// Rotating the stance thigh backwards against a planted foot is what
+        /// carries the pelvis forward over it.
+        private const float STANCE_HIP_DEG = 20f;
+
+        /// Left at zero deliberately. The ankle's polarity has NOT been measured,
+        /// and an unmeasured sign in the propulsion path is exactly the confounder
+        /// that made the last diagnosis take a probe to resolve. Worth revisiting
+        /// once the gait itself is stable.
+        private const float STANCE_ANKLE_PUSH_DEG = 0f;
 
         // Postures, in degrees, in the jointAngle convention documented above.
         private const float CROUCH_KNEE_DEG = 55f;   // bent: low centre of mass
