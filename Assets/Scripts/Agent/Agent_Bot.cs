@@ -128,7 +128,7 @@ namespace PoSumo
         private const float SWING_DURATION = 0.30f;
         private const float CD_DEG_PER_M = 115f;
         private const float CV_DEG_PER_MPS = 42f;
-        private const float SWING_HIP_BASE_DEG = -32f;  // negative = flexed = thigh forward
+        private const float SWING_HIP_BASE_DEG = -10f;  // negative = flexed = thigh forward
         private const float SWING_KNEE_DEG = 68f;       // lift the foot clear of the mat
         private const float STANCE_KNEE_DEG = 16f;      // near-extension carries the weight
         private const float SWING_HIP_MIN_DEG = -95f;   // stay inside the hip's -120..30
@@ -197,6 +197,20 @@ namespace PoSumo
         /// Degrees of correction per m/s of centre-of-mass drift. Moving forward
         /// leans the body back, which is how a person standing on a train stays put.
         private const float STAND_KV = 26f;
+
+        /// Trunk lean the walker is asked to HOLD while advancing, as a dot product
+        /// (0 = vertical, 1 = horizontal). Small on purpose: this is the entire
+        /// propulsion, and too much is a fall rather than a walk.
+        private const float WALK_LEAN_BIAS = 0.16f;
+
+        /// Stance hip while walking. Near neutral — it holds the body up, it does
+        /// not push. See the note at the leanError term.
+        private const float STANCE_HIP_NEUTRAL_DEG = 2f;
+
+        /// Target advance speed, m/s, in the facing-local frame. This is what turns
+        /// the balance feedback into locomotion: without it the gait holds whatever
+        /// velocity it happens to have, including a backward one.
+        private const float WALK_SPEED_MPS = 0.9f;
         private const float STAND_HIP_DEG = -4f;
 
         /// Nearly straight, and that is load-bearing rather than cosmetic. At 22 deg
@@ -246,6 +260,21 @@ namespace PoSumo
         private float _swingTimer;
         private float _lastTime;
 
+        /// Eased joint targets and the timestep they advance on.
+        private readonly float[] _smoothTarget = new float[13];
+        private bool _targetsSeeded;
+        private float _dt;
+
+        /// Degrees per second the eased target may travel. Fast enough to reach a
+        /// stance in a few tenths of a second, slow enough that no joint is ever
+        /// commanded to its full 400-500 deg/s motor speed by a step change.
+        private const float TARGET_SLEW_DEG_PER_S = 220f;
+
+        /// A gap longer than this means the round was frozen and the body reset, so
+        /// the eased targets must be re-seeded from the new pose rather than
+        /// continuing from the pose the fighter had when it fell over.
+        private const float RESET_GAP_SECONDS = 0.25f;
+
         /// Writes 13 continuous actions. Never touches rewards or episode state —
         /// it has no reference to the Agent, which is deliberate and mirrors the
         /// reward providers: a decision-maker that structurally cannot score itself.
@@ -259,6 +288,22 @@ namespace PoSumo
             {
                 return;
             }
+
+            // One timestep for the whole decision, from wall clock rather than an
+            // assumed step: the BOT runs at decisionPeriod 1 but that is a setting,
+            // not a guarantee.
+            float rawGap = _lastTime > 0f ? ctx.Time - _lastTime : 0f;
+            _dt = Mathf.Clamp(rawGap, 0f, 0.1f);
+            // A long gap means the round froze and the referee reset the body, so
+            // the eased targets have to restart from the NEW pose. Continuing from
+            // the pose the fighter had when it fell over would command a snap back
+            // to it — the very transient this is here to prevent.
+            if (!_targetsSeeded || rawGap > RESET_GAP_SECONDS || rawGap < 0f)
+            {
+                SeedTargets(body);
+                _swingTimer = 0f;
+            }
+            _lastTime = ctx.Time;
 
             // Everything below is in the facing-local frame, so "forward" is always
             // +x regardless of which way this fighter is turned.
@@ -317,9 +362,7 @@ namespace PoSumo
             // Heuristic runs once per DecisionRequester period (3 physics steps for
             // every shipped fighter), so assuming a step here would run the gait at
             // a third of its intended cadence.
-            float dt = _lastTime > 0f ? Mathf.Clamp(time - _lastTime, 0f, 0.2f) : 0f;
-            _lastTime = time;
-            _swingTimer += dt;
+            _swingTimer += _dt;
 
             bool nearIsSwing = _swingLegIsNear;
             bool swingFootDown = nearIsSwing ? body.FootDownNear : body.FootDownFar;
@@ -340,8 +383,22 @@ namespace PoSumo
             // THE feedback term. Both are facing-local, so "forward" is +.
             float d = stanceFoot != null ? (com.x - stanceFoot.position.x) * body.facingSign : 0f;
             float v = comVelocity.x * body.facingSign;
+            // THE MISSING TERM: a desired speed. Plain SIMBICON feedback regulates
+            // balance, not velocity — it catches whatever fall is happening, so a
+            // walker that starts drifting backwards is caught by a backward step and
+            // then keeps walking backwards, STABLY and forever. That is exactly what
+            // was measured: both fighters travelling outward at uprightness 0.94-1.00
+            // until they left the dohyo, under every propulsion model tried, with
+            // `forward` verified as +1 so it was never a direction-logic bug.
+            //
+            // Tracking (v - desired) instead of v fixes the sign of the whole gait:
+            // too slow => the term goes negative => the swing foot is placed further
+            // BACK => the body falls forward over it => it accelerates. Placing the
+            // foot behind the centre of mass is how a biped speeds up; placing it in
+            // front is a brake.
+            float speedError = v - WALK_SPEED_MPS * forward;
             float swingHip = Mathf.Clamp(
-                SWING_HIP_BASE_DEG - (CD_DEG_PER_M * d + CV_DEG_PER_MPS * v) * forward,
+                SWING_HIP_BASE_DEG - (CD_DEG_PER_M * d + CV_DEG_PER_MPS * speedError) * forward,
                 SWING_HIP_MIN_DEG, SWING_HIP_MAX_DEG);
 
             int swingHipJoint = nearIsSwing ? HIP_NEAR : HIP_FAR;
@@ -360,23 +417,45 @@ namespace PoSumo
             Track(body, actions, swingKneeJoint, swingKnee);
             Track(body, actions, swingAnkleJoint, 0f);
 
-            // Trunk balance. `lean` is 0 upright, positive pitched toward the
-            // opponent; `leanRate` damps it so the correction does not oscillate.
+            // WALKING IS STANDING WITH ONE LEG SWINGING. The previous version of
+            // this REPLACED the balance controller with its own weaker one, so the
+            // moment the gait engaged the fighter lost everything that was keeping
+            // it upright. The stance leg and trunk now run the SAME law that holds
+            // a stand — same gains, same measured ankle, same drift damping — and
+            // the gait's only job is the swing leg above.
             float lean = TrunkLean(body);
             float leanRate = body.Chest != null ? body.Chest.angularVelocity * Mathf.Deg2Rad * body.facingSign : 0f;
+            // LOCOMOTION COMES FROM A LEAN, NOT FROM A PUSH. Driving the stance hip
+            // into extension to "push off" pitches the trunk BACKWARD about the
+            // planted foot, and the balance law then steps back to catch it — which
+            // is exactly the outward travel that was measured, with `forward`
+            // verified as +1 for both fighters, so it was never a direction-logic
+            // bug. Walking is controlled falling: hold the trunk a little way
+            // toward the target, let gravity do the work, and let the swing leg
+            // catch it. So the balance controller is given a non-zero setpoint
+            // instead of a push.
+            float leanError = lean - WALK_LEAN_BIAS * forward;
+            // DRIFT TERM IS SUBTRACTED, and the sign follows from the measured hip
+            // convention rather than intuition. Positive hip = thigh backward, so
+            // with the foot planted a positive correction drives the pelvis FORWARD.
+            // To arrest a forward drift the correction must therefore be NEGATIVE.
+            // Adding +KV*v instead made a backward drift produce a negative
+            // correction, which drove the pelvis further backward and fed itself:
+            // measured runaway to -1.5 m/s in the facing-local frame, both fighters,
+            // straight off the back of the dohyo.
+            float correction = STAND_KP * leanError + STAND_KD * leanRate - STAND_KV * v;
 
-            // Falling forward => extend the stance hip harder, which drives the
-            // pelvis forward and puts the support back underneath the mass.
-            Track(body, actions, stanceHipJoint, STANCE_HIP_DEG + TRUNK_HIP_KP * lean);
-            Track(body, actions, stanceKneeJoint, STANCE_KNEE_DEG);
-            Track(body, actions, stanceAnkleJoint, STANCE_ANKLE_PUSH_DEG * forward);
+            // Stance hip near neutral now: its job is to hold, not to shove.
+            Track(body, actions, stanceHipJoint, STANCE_HIP_NEUTRAL_DEG + correction);
+            Track(body, actions, stanceKneeJoint, STAND_KNEE_DEG);
+            Track(body, actions, stanceAnkleJoint, Mathf.Clamp(correction * ANKLE_SHARE, -30f, 30f));
 
             // Spine rights the chest. NEGATIVE opposes a forward pitch, because the
             // probe showed positive spine angle carries the chest forward. Split
             // across the three joints since each only has 20 deg to give.
-            float spine = Mathf.Clamp(
-                -(TRUNK_SPINE_KP * lean + TRUNK_SPINE_KD * leanRate) / 3f,
-                -SPINE_LIMIT_DEG, SPINE_LIMIT_DEG);
+            // Same term the stand uses, for the same reason — one balance law, not
+            // two that disagree at the moment the gait engages.
+            float spine = Mathf.Clamp(-correction / 3f, -SPINE_LIMIT_DEG, SPINE_LIMIT_DEG);
             Track(body, actions, SPINE_1, spine);
             Track(body, actions, SPINE_2, spine);
             Track(body, actions, SPINE_3, spine);
@@ -415,7 +494,15 @@ namespace PoSumo
             // horizontal motion. Damping centre-of-mass velocity gives it one.
             CentreOfMass(body, out Vector2 comVelocity);
             float drift = comVelocity.x * body.facingSign;
-            float correction = STAND_KP * lean + STAND_KD * leanRate + STAND_KV * drift;
+            // DRIFT TERM IS SUBTRACTED, and the sign follows from the measured hip
+            // convention rather than intuition. Positive hip = thigh backward, so
+            // with the foot planted a positive correction drives the pelvis FORWARD.
+            // To arrest a forward drift the correction must therefore be NEGATIVE.
+            // Adding +KV*v instead made a backward drift produce a negative
+            // correction, which drove the pelvis further backward and fed itself:
+            // measured runaway to -1.5 m/s in the facing-local frame, both fighters,
+            // straight off the back of the dohyo.
+            float correction = STAND_KP * lean + STAND_KD * leanRate - STAND_KV * drift;
 
             // Hips extend against a forward lean, pushing the pelvis back under the
             // chest; knees stay softly bent so the legs can absorb rather than
@@ -550,14 +637,42 @@ namespace PoSumo
         /// action. `JointAngleNorm` is already `jointAngle * facingSign / 180`, so
         /// the error is computed in the same normalised, facing-local units the
         /// action space uses.
-        private static void Track(Agent_BipedBody body, ActionSegment<float> actions, int joint, float targetDegrees)
+        private void Track(Agent_BipedBody body, ActionSegment<float> actions, int joint, float targetDegrees)
         {
             if (joint >= actions.Length)
             {
                 return;
             }
-            float error = (targetDegrees / 180f) - body.JointAngleNorm(joint);
+
+            // RATE-LIMITED TARGET, and this is what stops the BOT jumping at the
+            // bell. The reset pose is a deep crouch — measured hip -80 deg, knee
+            // +95 deg, both feet together — while the standing stance wants hip ~-4
+            // and knee ~7. That is an ~88 deg knee error on frame one, which
+            // saturates the command and extends BOTH legs at full motor speed
+            // simultaneously. The fighter launches: measured with every part off
+            // the ground (zero contacts) at torso y 0.96, then a crash to 0.19.
+            //
+            // Easing the target in at a bounded rate means the pose is always
+            // reachable, the error stays small, and the servo never rails. It also
+            // makes the controller independent of whatever pose a round starts in,
+            // which is the general form of "start somewhere easy to balance from".
+            _smoothTarget[joint] = Mathf.MoveTowards(
+                _smoothTarget[joint], targetDegrees, TARGET_SLEW_DEG_PER_S * _dt);
+
+            float error = (_smoothTarget[joint] / 180f) - body.JointAngleNorm(joint);
             actions[joint] = Mathf.Clamp(error * GAIN, -1f, 1f);
+        }
+
+        /// Seed the eased targets from the body's ACTUAL pose, so the first decision
+        /// of a round asks for no movement at all and the stance is approached from
+        /// wherever the referee left the fighter.
+        private void SeedTargets(Agent_BipedBody body)
+        {
+            for (int joint = 0; joint < _smoothTarget.Length; joint++)
+            {
+                _smoothTarget[joint] = body.JointAngleNorm(joint) * 180f;
+            }
+            _targetsSeeded = true;
         }
     }
 }
