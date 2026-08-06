@@ -198,6 +198,15 @@ namespace PoSumo
         /// leans the body back, which is how a person standing on a train stays put.
         private const float STAND_KV = 26f;
 
+        /// Lean setpoint per metre away from the ring centre — a gentle bias that
+        /// makes the fighter drift back toward the middle instead of wandering off
+        /// the rim while perfectly upright, which is what was measured.
+        private const float STAND_KX = 0.05f;
+
+        /// Hard cap on that bias. A lean is the whole propulsion here, so an
+        /// uncapped one is a fall rather than a walk.
+        private const float LEAN_TARGET_LIMIT = 0.13f;
+
         /// Trunk lean the walker is asked to HOLD while advancing, as a dot product
         /// (0 = vertical, 1 = horizontal). Small on purpose: this is the entire
         /// propulsion, and too much is a fall rather than a walk.
@@ -339,7 +348,7 @@ namespace PoSumo
             // the last thing a toppling body needs.
             if (upright < STAND_UPRIGHT_THRESHOLD)
             {
-                Stand(body, actions);
+                Stand(body, actions, offCentre);
                 return;
             }
 
@@ -482,10 +491,35 @@ namespace PoSumo
         /// hip probe established for the leg chain: a positive facing-local angle
         /// rotates the child backwards. Leaning forward therefore wants a positive
         /// ankle to push the shin back upright over the foot.
-        private void Stand(Agent_BipedBody body, ActionSegment<float> actions)
+        private void Stand(Agent_BipedBody body, ActionSegment<float> actions, float offCentre)
         {
             float lean = TrunkLean(body);
             float leanRate = body.Chest != null ? body.Chest.angularVelocity * Mathf.Deg2Rad * body.facingSign : 0f;
+
+            // POSITION, not just posture and velocity. Nothing in this controller
+            // previously regulated WHERE the fighter was — it had ArenaCenterX and
+            // RingHalfWidth handed to it and used neither — so a slow bias in any
+            // direction was never corrected and the fighter eventually stepped off
+            // the rim while perfectly upright. That is the failure that was watched
+            // live: 1.8 m of clean upright travel, and then over the edge.
+            //
+            // offCentre is (torso - centre) * facingSign, so it is NEGATIVE while we
+            // are still on our own side of the mat and rises toward 0 at the centre.
+            // Moving toward the centre is therefore moving FORWARD in the facing
+            // frame, which wants a POSITIVE correction — hence the minus sign, by
+            // the same measured hip convention as the drift term.
+            //
+            // It doubles as the sumo objective: the centre is where you want to be,
+            // and the edge is what loses a round.
+            // Applied as a LEAN SETPOINT, not as another term in the correction.
+            // Injecting it straight into `correction` drove the hip, ankle and spine
+            // all at once against the balance loop and made things strictly worse —
+            // measured, both fighters down within a second where they had been
+            // holding a full round. Asking the body to lean slightly toward the
+            // centre instead lets the existing balance law do the work, which is
+            // also how a person walks somewhere: you lean, you do not shove your
+            // own hip.
+            float leanTarget = Mathf.Clamp(-STAND_KX * offCentre, -LEAN_TARGET_LIMIT, LEAN_TARGET_LIMIT);
 
             // DRIFT. Holding the trunk vertical is not the same as holding still,
             // and the difference was measured: a fighter left the dohyo at y -0.33
@@ -502,7 +536,7 @@ namespace PoSumo
             // correction, which drove the pelvis further backward and fed itself:
             // measured runaway to -1.5 m/s in the facing-local frame, both fighters,
             // straight off the back of the dohyo.
-            float correction = STAND_KP * lean + STAND_KD * leanRate - STAND_KV * drift;
+            float correction = STAND_KP * (lean - leanTarget) + STAND_KD * leanRate - STAND_KV * drift;
 
             // Hips extend against a forward lean, pushing the pelvis back under the
             // chest; knees stay softly bent so the legs can absorb rather than
