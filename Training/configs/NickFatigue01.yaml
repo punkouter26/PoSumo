@@ -1,0 +1,78 @@
+# Nick FATIGUE-CORRECTIVE 01 — generated 2026-08-06 for a time-boxed run.
+#
+# Derived mechanically from NickUnified01.yaml. Hyperparameters are UNCHANGED
+# except the two that only matter because this run is short:
+#
+#   checkpoint_interval 250000 -> 50000   the stock interval would not have
+#     produced a single .onnx inside a ~30 minute budget, and the numbered
+#     checkpoints are the only artifact that survives a hard kill of the trainer.
+#   keep_checkpoints 5 -> 12              so the frequent checkpoints are not
+#     rotated away before they can be compared.
+#
+# WHY THIS RUN EXISTS: muscle fatigue was added 2026-08-05 and changed the
+# dynamics every shipped brain was fitted against. This is the corrective pass.
+# It warm-starts from matt_unified03 (~2.75M steps, trained 2026-08-02, i.e.
+# BEFORE fatigue) — for Nick that trunk is CROSS-CHARACTER (Matt's physique) — expect a worse start.
+#
+# staminaObservation is deliberately still OFF. Turning it on is the right thing
+# eventually, but it would take the vector 45 -> 46 and invalidate the warm start
+# AND the drop-in compatibility with the shipped .onnx, which is a bad trade
+# inside a time box this small.
+#
+# DO NOT DEPLOY without measuring against the shipped brain. Judge on the SHAPE
+# of the self-play ELO curve, not mean reward.
+
+behaviors:
+  Nick:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 0.0003
+      beta: 0.005
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:
+      normalize: true
+      hidden_units: 512
+      num_layers: 3
+      vis_encode_type: simple
+    reward_signals:
+      extrinsic:
+        gamma: 0.997
+        strength: 1.0
+    keep_checkpoints: 12
+    checkpoint_interval: 50000
+    max_steps: 15000000
+    time_horizon: 1000
+    summary_freq: 30000
+    threaded: true
+    self_play:
+      window: 25
+      play_against_latest_model_ratio: 0.25
+      save_steps: 50000
+      swap_steps: 50000
+      team_change: 250000
+environment_parameters:
+  platform_difficulty:
+    curriculum:
+    - name: wide
+      completion_criteria:
+        measure: progress
+        behavior: Nick
+        signal_smoothing: true
+        min_lesson_length: 100
+        threshold: 0.3
+      value: 0.0
+    - name: mixed
+      completion_criteria:
+        measure: progress
+        behavior: Nick
+        signal_smoothing: true
+        min_lesson_length: 100
+        threshold: 0.6
+      value: 0.5
+    - name: full
+      value: 1.0
