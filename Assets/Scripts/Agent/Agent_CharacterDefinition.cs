@@ -50,8 +50,9 @@ namespace PoSumo
         [Tooltip("Trained model for inference playback.")]
         public Unity.InferenceEngine.ModelAsset inferenceModel;
 
-        [Tooltip("Drive this fighter from hand-written rules (Agent_ScriptedBrain) instead of its .onnx.\n\nThis is the ONLY reliable place to enable it. Setting the flag on Agent_Biped at runtime does not survive: Systems_GameMatchManager respawns both fighters between rounds, Awake runs again, and the serialized value comes back. Awake re-reads this asset every time, so a scripted fighter stays scripted for the whole match.\n\nThe .onnx stays assigned — toggling this compares a scripted and a trained brain on exactly the same character sheet, physique and reward setup.\n\nNo retraining implication: it changes who decides, not what is observed, so the observation vector is untouched.")]
-        public bool useScriptedBrain = false;
+        [Tooltip("Drive this fighter as the BOT (Agent_Bot, hand-written rules) instead of from its .onnx.\n\nThis is the ONLY reliable place to enable it. Setting the flag on Agent_Biped at runtime does not survive: Systems_GameMatchManager respawns both fighters between rounds, Awake runs again, and the serialized value comes back. Awake re-reads this asset every time, so the BOT stays the BOT for the whole match.\n\nThe .onnx stays assigned — toggling this compares the BOT and a trained brain on exactly the same character sheet, physique and reward setup.\n\nNo retraining implication: it changes who decides, not what is observed, so the observation vector is untouched.")]
+        [UnityEngine.Serialization.FormerlySerializedAs("useScriptedBrain")]
+        public bool useBot = false;
 
         [Header("Sumo reward shaping (training only)")]
         public float uprightReward = 0.0005f;

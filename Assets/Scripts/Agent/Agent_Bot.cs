@@ -3,12 +3,12 @@ using UnityEngine;
 
 namespace PoSumo
 {
-    /// Inputs a scripted fighter needs, gathered once per decision by the agent.
+    /// Inputs the BOT needs, gathered once per decision by the agent.
     ///
     /// A `readonly struct` passed by `in` for the same reason `Reward_Context` is:
     /// one per agent per decision, and a class would be hundreds of heap
     /// allocations a second in the hottest path in the project.
-    public readonly struct Agent_ScriptedContext
+    public readonly struct Agent_BotContext
     {
         public readonly float FacingSign;
         public readonly float ArenaCenterX;
@@ -17,7 +17,7 @@ namespace PoSumo
         public readonly float OpponentX;
         public readonly float Time;
 
-        public Agent_ScriptedContext(
+        public Agent_BotContext(
             float facingSign, float arenaCenterX, float ringHalfWidth,
             bool hasOpponent, float opponentX, float time)
         {
@@ -30,7 +30,7 @@ namespace PoSumo
         }
     }
 
-    /// A sumo fighter driven by hand-written rules instead of a trained policy.
+    /// The BOT: a sumo fighter driven by hand-written rules instead of a trained policy.
     ///
     /// WHY THIS CAN EXIST AT ALL. An "action" here is not a torque, it is a target
     /// motor SPEED: `Agent_BipedBody.ApplyMotor` does
@@ -63,7 +63,7 @@ namespace PoSumo
     /// shoulder lean toward the opponent — are isolated in LEAN_SIGN and
     /// ARM_SIGN below so they can be flipped from one place after watching a bout,
     /// rather than by hunting through the posture tables.
-    public sealed class Agent_ScriptedBrain
+    public sealed class Agent_Bot
     {
         // Joint indices. These mirror JOINT_DEFS order exactly; if that table is
         // reordered these must move with it or the bot drives the wrong limbs.
@@ -113,7 +113,7 @@ namespace PoSumo
         /// Writes 13 continuous actions. Never touches rewards or episode state —
         /// it has no reference to the Agent, which is deliberate and mirrors the
         /// reward providers: a decision-maker that structurally cannot score itself.
-        public void Decide(Agent_BipedBody body, in Agent_ScriptedContext ctx, ActionSegment<float> actions)
+        public void Decide(Agent_BipedBody body, in Agent_BotContext ctx, ActionSegment<float> actions)
         {
             for (int index = 0; index < actions.Length; index++)
             {
