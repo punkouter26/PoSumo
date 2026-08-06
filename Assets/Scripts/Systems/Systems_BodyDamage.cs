@@ -41,10 +41,14 @@ namespace PoSumo
         public float maxSize = 0.16f;
         [Tooltip("Radius in metres around the head centre that head decals are kept within. Loosened now that the SpriteMask hard-clips to the face silhouette: the clamp only has to keep the blob's CENTRE on the head, and the mask trims whatever hangs over the jaw or the hairline. A tighter value bunched every mark in the middle of the face.")]
         public float headDecalRadius = 0.18f;
-        [Tooltip("Hard cap on decals per fighter. Oldest are recycled past this.")]
-        public int maxDecals = 40;
+        [Tooltip("Hard cap on decals per fighter. Oldest are recycled past this.\n\n40 -> 110. This is what a fighter can WEAR, and at 40 it was the binding limit on how bloody anyone could get: a single decapitation splash plus a round of bruising filled the budget, after which every new spot silently erased an older one and a fighter in the final looked no worse than one in the quarters. The decals share one sprite and one material, so they batch — the cost is transform overhead, not draw calls.")]
+        public int maxDecals = 110;
         [Tooltip("Minimum gap between marks so one scrum does not paint a fighter black.")]
         public float cooldown = 0.18f;
+        [Tooltip("Impact speed against the HEAD below which nothing is marked at all. Far above the general minSpeed: heads are in constant light contact while grappling, and counting those as damage is what made decapitation a once-a-match event no gate could hold back.\n\nSet just under koSpeed (7.5) so the blows that damage a head are the same class of blow that can knock one out.")]
+        public float headMinSpeed = 5.5f;
+        [Tooltip("Minimum gap between HEAD marks. Much longer than the general cooldown so a single clinch cannot tick head damage several times a second.")]
+        public float headCooldown = 0.45f;
 
         [Header("Head KO")]
         [Tooltip("Impact speed against the HEAD that triggers the KO. Deliberately high — this should be a moment, not a regular event.")]
@@ -55,38 +59,42 @@ namespace PoSumo
         public float koKnockbackSpeed = 4.5f;
         [Tooltip("Share of the knockback aimed upward. Some lift gets the body off the clay so it is carried toward the edge rather than skidding on friction; all lift would launch it straight up.")]
         [Range(0f, 1f)] public float koKnockbackLift = 0.35f;
-        [Tooltip("Minimum gap between blood spots thrown onto this fighter by the other's spray. A KO throws 26 droplets at once, so without a gap one burst would spend the whole decal budget in a single frame.")]
-        public float splashCooldown = 0.04f;
+        [Tooltip("Minimum gap between blood spots thrown onto this fighter by the other's spray. A KO throws 26 droplets at once, so without a gap one burst would spend the whole decal budget in a single frame.\n\n0.04 -> 0.02. Splashing is the ONLY mechanism that dirties an opponent, and at 0.04 it passed ~25 spots a second while a severed stump was throwing far more than that — so most of a jet aimed at the other fighter was discarded. Halving it doubles what gets through; the raised maxDecals is what stops that eating the budget.")]
+        public float splashCooldown = 0.02f;
 
         [Header("Region damage / dismemberment")]
         [Tooltip("Summed mark strength at which a region reads fully RED on the HUD mannequin. Marks are 0..1 each and cooldown-limited, so this is roughly 'a handful of solid hits to the same limb'.")]
         public float regionRedAt = 2.5f;
-        [Tooltip("Multiple of regionRedAt past which an ARM or LEG tears off. Above 1 on purpose: red must be a WARNING the player can act on, not the same instant as losing the limb.\n\nRaised from 1.6 to 8 — limbs are ~5x harder to remove. At 1.6 both fighters were routinely dismembered inside the first 15 seconds of a round, which is also what made them permanently 'down'.")]
-        public float detachAtRedMultiple = 8f;
-        [Tooltip("Same, for the HEAD. Deliberately far LOWER than the limb figure so decapitation is the spectacular, relatively common finish while arms and legs mostly stay on. 0.8 = a gate of 2.0 damage; at 1.2 (gate 3.0) a measured bout reached the low 2s and never crossed.")]
-        public float headDetachAtRedMultiple = 0.8f;
+        [Tooltip("Multiple of regionRedAt past which an ARM or LEG tears off. Above 1 on purpose: red must be a WARNING the player can act on, not the same instant as losing the limb.\n\n1.6 -> 8 -> 16 -> 3. The climb to 16 (a gate of 40 summed damage) was aimed at a real problem: at 1.6 both fighters were dismembered inside 15 seconds, and a fighter missing a leg can never satisfy IsDown again, so the round always ran the clock out. But 16 overshot into never — a measured 7-match tournament recorded ZERO limb losses, which also meant decapitation was the only bleeding wound in the game and the mat finished a bracket with about four stains on it.\n\nThe stall that justified 16 is now handled twice over and neither fix existed then: downOutSeconds retires a fighter who cannot get up after 3 s, and the shrinking ring takes the floor away entirely. Measured outcomes went from 64% decided on the clock to 6%. So the gate can come back down to where limbs actually come off — 3 = 7.5 summed damage, in the same range head damage reaches in a round, and still roughly twice the original 1.6.")]
+        public float detachAtRedMultiple = 3f;
+        [Tooltip("Same, for the HEAD. Far LOWER than the limb figure so decapitation stays the spectacular finish while arms and legs mostly stay on.\n\n0.8 -> 1.2 (gate 2.0 -> 3.0) on 2026-08-05. At 0.8 a measured 7-match tournament produced EIGHT decapitations — 1.1 per match, every one crossing at 2.1-3.0 damage, i.e. squeaking over a gate it was sitting on top of. A head that comes off every match is wallpaper, not a finish.\n\nAn earlier pass tried 1.2 and reported it never crossed, but that was measured on one bout of an older build; the tournament above reached 3.0 repeatedly, so the damage distribution does now reach this gate. Note those 8 readings are CENSORED — they are the damage at the instant 2.0 was crossed, not how far a bout would have gone — so the true rate at 3.0 can only be measured, not predicted. DecapitationCount exists for exactly that: run a tournament and read the summary rather than re-deriving this from first principles.")]
+        public float headDetachAtRedMultiple = 1.2f;
         [Tooltip("Master switch for dismemberment. Turning this off leaves the mannequin colouring intact, which is the safe fallback if detachment ever proves too swingy.")]
         public bool allowDetach = true;
 
         [Header("Dismemberment bleeding")]
-        [Tooltip("Droplets in the opening spray from EACH end of the break — the stump left on the body and the cut end of the severed limb.")]
-        public int severBurstDroplets = 24;
-        [Tooltip("Seconds each cut end keeps bleeding after the limb comes off. The droplets that land are what dirties the mat and the bodies, so this is how much blood the break contributes over time.")]
-        public float bleedSeconds = 7f;
+        [Tooltip("Droplets in the opening spray from EACH end of the break — the stump left on the body and the cut end of the severed limb. 24 -> 70: the two opposed jets are the whole point of the moment and read as one puff at the old count.")]
+        public int severBurstDroplets = 110;
+        [Tooltip("Seconds each cut end keeps bleeding after the limb comes off. The droplets that land are what dirties the mat and the bodies, so this is how much blood the break contributes over time.\n\n8 -> 20. A round now typically finishes in 10-19 s (measured), so at 8 s a stump stopped pumping around halfway through and the second half of the bout was fought by a clean-ish fighter with a missing arm. 20 s outlasts the round, which is the point: once you are opened up you bleed until the bell.")]
+        public float bleedSeconds = 20f;
         [Tooltip("Seconds between droplet puffs while a cut end bleeds.")]
-        public float bleedInterval = 0.1f;
-        [Tooltip("Droplets per puff while bleeding. Small — the accumulation over bleedSeconds is what reads, not any single puff.")]
-        public int bleedDroplets = 3;
+        public float bleedInterval = 0.07f;
+        [Tooltip("Droplets per puff while bleeding. The accumulation over bleedSeconds is what reads, but at 3 a stump was leaking rather than pumping.\n\n9 -> 16. Every droplet that lands becomes a lasting mark — on the clay via Systems_RingBlood, or on whichever fighter it hits via SplashAt — so this number is directly how fast the arena gets dirty.")]
+        public int bleedDroplets = 16;
+        [Tooltip("Speed multiplier for the jets out of a break — see Systems_DustPuff.BloodSpray. Above 1 the droplets leave faster and in a tighter cone, which is what makes a stump SHOOT rather than dribble down its own limb.")]
+        public float severJetSpeed = 2.2f;
 
         [Header("Decapitation bleeding")]
-        [Tooltip("Opening burst from EACH wound the instant the head comes off — the neck stump and the cut face of the head.")]
-        public int decapBurstDroplets = 40;
+        [Tooltip("Opening burst from EACH wound the instant the head comes off — the neck stump and the cut face of the head. 40 -> 140: this is the single most spectacular thing that happens in a bout and it was throwing less blood than a scene of it warrants.")]
+        public int decapBurstDroplets = 140;
         [Tooltip("Seconds the two wounds pour for. Flow decays as (1-t)^2, so it is a hard pour at the start and a trickle by the end.")]
-        public float decapBleedSeconds = 5f;
-        [Tooltip("Droplets per puff at full flow. Decays to 1 by decapBleedSeconds.")]
-        public int decapPeakDroplets = 12;
+        public float decapBleedSeconds = 7f;
+        [Tooltip("Droplets per puff at full flow. Decays to 1 by decapBleedSeconds. Systems_DustPuff's blood budget is sized against this figure — raising it further without raising that budget silently drops emits.")]
+        public int decapPeakDroplets = 30;
         [Tooltip("Seconds between puffs at full flow. Stretches to 4x this as the flow dies.")]
-        public float decapPeakInterval = 0.045f;
+        public float decapPeakInterval = 0.03f;
+        [Tooltip("Speed multiplier for the neck geyser. Higher than severJetSpeed: this is the carotid, and it should throw an arc clear of the body rather than run down the chest.")]
+        public float decapJetSpeed = 3.2f;
 
         /// Coarse body regions for the HUD mannequin. Six is the useful number on a
         /// portrait phone — the body has 14 parts, but nobody can read 14 swatches.
@@ -419,13 +427,35 @@ namespace PoSumo
                 return;   // the KO paints its own, much heavier marks
             }
 
+            // THE HEAD IS RATE-LIMITED SEPARATELY, and this is what actually
+            // governs how often a fighter is decapitated.
+            //
+            // Two measured attempts at raising headDetachAtRedMultiple (2.0 -> 3.0
+            // -> 6.0) barely moved the rate: 1.1 decapitations per match, then
+            // 0.86, then 0.86. The readings show why — the damage at which heads
+            // came off tracked the gate exactly (4.1-4.2 at a gate of 3.0, then
+            // 6.0-7.2 at a gate of 6.0). Head damage in a clinch accumulates
+            // without bound, so ANY gate is eventually crossed and raising it only
+            // postpones the moment. The gate was never the lever.
+            //
+            // The cause is that heads touch constantly while grappling, and at the
+            // shared 3 m/s threshold with a 0.18 s cooldown every one of those
+            // touches was a damage tick — up to ~5.5 per second. A decapitation
+            // should be the product of a few genuine BLOWS, so the head takes a
+            // much higher speed threshold and a much longer cooldown; incidental
+            // contact now leaves nothing at all.
+            float markMinSpeed = headHit ? headMinSpeed : minSpeed;
+            if (speed < markMinSpeed)
+            {
+                return;
+            }
             if (Time.time < _nextMarkTime)
             {
                 return;
             }
-            _nextMarkTime = Time.time + cooldown;
+            _nextMarkTime = Time.time + (headHit ? headCooldown : cooldown);
 
-            float strength = Mathf.Clamp01((speed - minSpeed) / Mathf.Max(0.01f, maxSpeed - minSpeed));
+            float strength = Mathf.Clamp01((speed - markMinSpeed) / Mathf.Max(0.01f, maxSpeed - markMinSpeed));
             AddMark(contact.point, headHit ? -1 : PartIndexOf(sensor.transform), strength, blood: false);
         }
 
@@ -604,6 +634,7 @@ namespace PoSumo
             OpenBleed(parentPart, breakPoint);
             OpenBleed(limbPart, breakPoint);
             Dismembered?.Invoke(body, region, breakPoint);
+            LimbLossCount++;
             Debug.Log($"[DAMAGE] {name} lost {region} at {_regionDamage[(int)region]:F1} damage — " +
                       $"bleeding from stump '{(parentPart == null ? "none" : parentPart.name)}' and " +
                       $"cut end '{(limbPart == null ? "none" : limbPart.name)}' at {breakPoint}");
@@ -633,13 +664,43 @@ namespace PoSumo
             Vector3 headCut = head.transform.position - head.transform.up * headRadius;
             Vector2 headCutDir = -head.transform.up;
 
-            OpenBleed(body.Chest, neck, Vector2.up,
-                      decapBurstDroplets, decapBleedSeconds, decapPeakDroplets, decapPeakInterval);
+            // The neck hole faces along the CHEST's own up axis, not world up. A
+            // world-up geyser looks right only while the torso is upright, and a
+            // decapitated fighter is on the clay within a second or two — after
+            // which the blood was fountaining out of the fighter's shoulder.
+            Vector2 neckDir = body.Chest != null ? (Vector2)body.Chest.transform.up : Vector2.up;
+
+            OpenBleed(body.Chest, neck, neckDir,
+                      decapBurstDroplets, decapBleedSeconds, decapPeakDroplets, decapPeakInterval,
+                      decapJetSpeed);
             OpenBleed(head, headCut, headCutDir,
-                      decapBurstDroplets, decapBleedSeconds, decapPeakDroplets, decapPeakInterval);
+                      decapBurstDroplets, decapBleedSeconds, decapPeakDroplets, decapPeakInterval,
+                      decapJetSpeed);
 
             Dismembered?.Invoke(body, Region.Head, neck);
+            DecapitationCount++;
             Debug.Log($"[DAMAGE] {name} DECAPITATED at {_regionDamage[(int)Region.Head]:F1} damage — neck at {neck}");
+        }
+
+        /// Decapitations this session, across every match.
+        ///
+        /// Static, and cleared on SubsystemRegistration like the other session
+        /// statics here, because the interesting number is a RATE across a whole
+        /// tournament — each bout builds fresh damage components, so a per-instance
+        /// counter could only ever say "0 or 1" and never "1.1 per match", which is
+        /// the figure that showed the gate was mistuned.
+        public static int DecapitationCount { get; private set; }
+
+        /// Arms and legs torn off this session. Same reasoning as the decapitation
+        /// counter, and it exists because the honest answer to "how often do limbs
+        /// come off" was ZERO for a long time and nothing said so.
+        public static int LimbLossCount { get; private set; }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetDamageCounters()
+        {
+            DecapitationCount = 0;
+            LimbLossCount = 0;
         }
 
         /// One bleeding cut end. Stored in the PART's local space, not world space,
@@ -656,6 +717,7 @@ namespace PoSumo
             public float nextEmit;
             public int peakDroplets;    // per puff at t=0
             public float peakInterval;  // seconds between puffs at t=0
+            public float jetSpeed;      // droplet speed multiplier at full flow
         }
 
         private readonly List<Bleeder> _bleeders = new List<Bleeder>();
@@ -669,7 +731,7 @@ namespace PoSumo
         private void OpenBleed(Rigidbody2D part, Vector3 breakPoint)
         {
             OpenBleed(part, breakPoint, Vector2.zero, severBurstDroplets, bleedSeconds,
-                      bleedDroplets, bleedInterval);
+                      bleedDroplets, bleedInterval, severJetSpeed);
         }
 
         /// Opens one cut end: an immediate burst, then a bleed that DECAYS from a
@@ -679,7 +741,8 @@ namespace PoSumo
         /// centre-of-mass -> break point — a severed head's wound faces its own
         /// local down, wherever the head has tumbled to.
         private void OpenBleed(Rigidbody2D part, Vector3 breakPoint, Vector2 dirOverride,
-                               int burst, float duration, int peakDroplets, float peakInterval)
+                               int burst, float duration, int peakDroplets, float peakInterval,
+                               float jetSpeed)
         {
             if (part == null) return;
 
@@ -691,10 +754,11 @@ namespace PoSumo
             }
             outward.Normalize();
 
-            Systems_DustPuff.BloodSpray(breakPoint, outward, burst);
+            Systems_DustPuff.BloodSpray(breakPoint, outward, burst, jetSpeed);
 
             _bleeders.Add(new Bleeder
             {
+                jetSpeed = jetSpeed,
                 part = part,
                 localPoint = part.transform.InverseTransformPoint(breakPoint),
                 localDir = part.transform.InverseTransformDirection(outward),
@@ -736,10 +800,14 @@ namespace PoSumo
                 bleeder.nextEmit = Time.time + interval;
                 _bleeders[bleederIndex] = bleeder;
 
+                // Pressure falls with the flow: the opening jet shoots, and what is
+                // left at the end of the bleed runs out under its own weight.
+                float jet = Mathf.Lerp(1f, Mathf.Max(1f, bleeder.jetSpeed), flow);
+
                 Transform partTransform = bleeder.part.transform;
                 Systems_DustPuff.BloodSpray(partTransform.TransformPoint(bleeder.localPoint),
                                             partTransform.TransformDirection(bleeder.localDir),
-                                            droplets);
+                                            droplets, jet);
             }
         }
 

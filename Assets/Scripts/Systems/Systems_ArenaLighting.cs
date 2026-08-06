@@ -102,6 +102,42 @@ namespace PoSumo
         public float saturation = 10f;
         public float grain = 0.18f;
 
+        /// MASTER SWITCH for every lighting EFFECT in the arena, and the single
+        /// place to flip the look. FALSE (shipped) means:
+        ///   - no key light, no rim lights — so no direction, no falloff, no
+        ///     shaping anywhere,
+        ///   - no volumetric cone and no shadows,
+        ///   - no post-processing volume (bloom, vignette, grain, split toning),
+        ///   - no cylinder normal map and no rim/subsurface/sweat terms on the
+        ///     wrestlers: every part is one solid tinted shape.
+        ///
+        /// What it does NOT do is remove light altogether, and that distinction is
+        /// the whole design of this switch. A single `Light2D.LightType.Global` has
+        /// no position and no falloff, so it cannot shade anything — it is a flat
+        /// exposure multiplier and nothing more. But it is still the only thing
+        /// standing between a URP 2D LIT sprite and solid black.
+        ///
+        /// Handing every sprite an unlit material instead was tried first and is
+        /// the trap: it renders, but at 1.0x where the old rig delivered roughly
+        /// 1.7x across the middle of the mat, and the arena art is authored dark on
+        /// the assumption of that gain. A live capture showed the dohyo, the crowd
+        /// and the backdrop all collapse into an unreadable brown void with the
+        /// fighters floating in it. Keep the materials lit and keep one flat light.
+        ///
+        /// Systems_GameMatchManager must therefore go on spawning this component
+        /// when the switch is false — it is not dead weight, it carries the only
+        /// light in the scene.
+        public static bool LightingEffects = false;
+
+        [Tooltip("Intensity of the single flat global light used when LightingEffects is off. Approximates what the old rig delivered across the middle of the mat (global 0.42 + key 1.25 + two rims), so turning the effects off changes the SHAPING without darkening the arena.")]
+        public float flatGlobalIntensity = 1.5f;
+
+        /// True when the wrestlers should get the shaped, normal-mapped treatment:
+        /// the rig is on AND flat shading has not been asked for. Systems_BodySurface
+        /// reads this before writing sweat and clay into a material whose terms are
+        /// all zeroed and whose normal map was never assigned.
+        public static bool BodyShadingActive => LightingEffects && !FlatBodyShading;
+
         private static Material _litSprite;
         private static Shader _bodyShader;
         private static bool _bodyShaderMissingLogged;
@@ -129,6 +165,15 @@ namespace PoSumo
                     shader = Shader.Find("Sprites/Default");
                 }
                 _litSprite = new Material(shader) { name = "PoSumo_LitSprite" };
+
+                if (!LightingEffects)
+                {
+                    // Flat: no normal map, so the one global light falls on an even
+                    // surface and every sprite takes a single solid colour. The
+                    // material is still LIT — that global is the only light there
+                    // is, and an unlit material would ignore it and render dark.
+                    return _litSprite;
+                }
 
                 // A cylindrical normal map turns every flat quad into a rounded
                 // tube under the 2D lights: limbs and torso pick up a highlight
@@ -180,7 +225,7 @@ namespace PoSumo
 
             var material = new Material(_bodyShader) { name = materialName };
 
-            if (FlatBodyShading)
+            if (FlatBodyShading || !LightingEffects)
             {
                 // FLAT: no cylinder normal map, so the 2D lights see an even
                 // surface and each part takes one solid tinted colour — the look
@@ -276,6 +321,18 @@ namespace PoSumo
         private void Awake()
         {
             Instance = this;
+            if (!LightingEffects)
+            {
+                // One flat, positionless, unshadowable light and nothing else. This
+                // is not a reduced rig, it is an exposure: a Global Light2D applies
+                // the same value to every pixel on its target layers, which is
+                // exactly "no lighting effect" while still keeping the lit sprites
+                // out of black. No key, no rims, no volumetrics, no post.
+                GlobalLight = CreateLight("Light_Flat", Light2D.LightType.Global, Color.white,
+                                          flatGlobalIntensity, Vector3.zero, 0f, 0f);
+                DisableShadows(GlobalLight);
+                return;
+            }
             BuildLights();
             if (enablePost)
             {

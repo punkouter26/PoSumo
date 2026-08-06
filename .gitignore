@@ -40,6 +40,9 @@
 # Trunk checkpoints kept only as --initialize-from sources (outside the TB logdir)
 /Training/trunks/
 
+# Live session record written by Start-Training.ps1 (PIDs and ports — machine-local)
+/Training/.session.json
+
 # OS noise
 Thumbs.db
 .DS_Store

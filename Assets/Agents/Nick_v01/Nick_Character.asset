@@ -25,11 +25,13 @@ MonoBehaviour:
   - Nick_Sad_1
   - Nick_Sad_2
   - Nick_Sad_3
-  massScale: 0.72
+  massScale: 1
   widthScale: 0.82
-  torqueScale: 0.85
+  torqueScale: 1
   extendedObservations: 1
   decisionPeriod: 3
+  contactObservations: 0
+  staminaObservation: 0
   inferenceModel: {fileID: 5022602860645237092, guid: 1f15b9a7469d7cc4daafd2020713ebc9, type: 3}
   uprightReward: 0.0008
   closingReward: 0.0055
@@ -43,6 +45,7 @@ MonoBehaviour:
   riseReward: 0.025
   effortPenalty: 0.0015
   stanceReward: 0.0009
+  driveReward: 0
   energyPenalty: 0.0002
   jerkPenalty: 0.00015
   straightLegEarnFraction: 0.75

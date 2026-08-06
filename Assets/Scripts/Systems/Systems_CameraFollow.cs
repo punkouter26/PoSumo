@@ -34,6 +34,19 @@ namespace PoSumo
         // black for the arena dressing above. It cannot go much lower without
         // pushing the roof and banners off the top, and cropping WIDTH instead
         // was already tried and reverted (see minOrtho/maxOrtho above).
+        // MEASURED DEAD END, 2026-08-05 — do not retry this without reading first.
+        // Roughly 27% of a portrait frame below the dohyo is pure black during a
+        // bout, and lowering feetDrop looks like the obvious lever for it. It is
+        // not. Dropping the asset value 0.95 -> 0.4 and capturing a live bout put
+        // the fighters entirely OFF-SCREEN below the frame: the clamp further down
+        // pins the mat relative to the frame centre, so shrinking this does not
+        // slide the action down into the black, it slides the whole clamped frame
+        // and takes the fighters with it. Reverted to 0.95.
+        //
+        // The dead space is structural, not a mistuning: portrait aspect is ~0.462,
+        // so covering the +/-2.5 m opening stand-off needs ortho >= ~5.4, which buys
+        // ~11 m of VERTICAL view for about 2 m of fighter. No camera value fixes
+        // that. The space has to be FILLED (backdrop or HUD), not squeezed out.
         public float feetDrop = 0.95f;
         public float horizontalMargin = 0.5f;
         public float smoothing = 4f;

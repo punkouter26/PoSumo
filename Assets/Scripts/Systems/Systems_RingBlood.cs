@@ -23,7 +23,7 @@ namespace PoSumo
     public sealed class Systems_RingBlood : MonoBehaviour
     {
         [Tooltip("Hard cap on stains. Oldest are recycled past this, so a long bracket cannot grow the renderer count without bound.\n\n300, up from 140: a decapitation alone throws well over a hundred droplets that land, and at 140 the pour recycled its own stains mid-flow — the mat never actually looked soaked.")]
-        public int maxStains = 300;
+        public int maxStains = 1000;
         [Tooltip("Smallest stain, in metres.")]
         public float minSize = 0.06f;
         [Tooltip("Largest stain, in metres.")]
@@ -49,6 +49,11 @@ namespace PoSumo
         /// Wipe the ring. Called by the tournament reset alongside
         /// Systems_BodyDamage.ClearAll so bodies and mat come clean together.
         public static void ClearAll() => Store.Clear();
+
+        /// Stains currently on the mat. Reported in the match summary so "is the
+        /// ring actually getting bloody" is a number rather than an impression —
+        /// it was FOUR after two and a half matches before limbs could come off.
+        public static int StainCount => Store.Count;
 
         private static Sprite _stainSprite;
 

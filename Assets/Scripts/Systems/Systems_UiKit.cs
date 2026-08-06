@@ -74,6 +74,12 @@ namespace PoSumo
         // ---- Palette --------------------------------------------------------
         public static readonly Color Ink = new Color(0.05f, 0.045f, 0.06f, 0.95f);
         public static readonly Color Panel = new Color(0.04f, 0.04f, 0.06f, 0.78f);
+        /// A raised group background: lighter than a screen's own backdrop, darker
+        /// than Chip, so a card can hold chips and still read as the surface behind
+        /// them. Panel and Ink are both within a hundredth of the bracket screen's
+        /// own background and are invisible on it — they are for cards that sit
+        /// over the ARENA, which is why neither could do this job.
+        public static readonly Color Surface = new Color(0.085f, 0.08f, 0.095f, 1f);
         public static readonly Color Chip = new Color(0.12f, 0.11f, 0.13f, 0.8f);
         public static readonly Color Line = new Color(1f, 1f, 1f, 0.12f);
         public static readonly Color Track = new Color(0.2f, 0.2f, 0.24f);

@@ -66,8 +66,25 @@ namespace PoSumo
         // that grouping the body interior fills with self-shadow and the wrestler
         // reads as a dark blob instead of a lit figure.
         [Header("Dressing (visual only — cannot invalidate a trained brain)")]
-        [Tooltip("Velocity-driven wobble on the torso art. Heavier fighters wobble more.")]
-        public bool enableJiggle = true;
+        /// Soft-tissue wobble on the torso art. OFF, and a const rather than the
+        /// serialized bool it used to be.
+        ///
+        /// It is off because it is the one thing in the build that deliberately
+        /// draws a body part somewhere its collider is not: the wobble slides the
+        /// Art child up to 0.055 * widthScale * sqrt(massScale) metres off the
+        /// rigidbody it rides, which on an 0.18 m pelvis is a third of the segment.
+        /// Everything else here follows the rule that the drawn edge IS the
+        /// colliding edge, and a shove that connects a visible gap early is the
+        /// exact complaint that rule exists to answer.
+        ///
+        /// A const and not a public field because Agent_BipedBody sits on scene
+        /// GameObjects: a public bool is SERIALIZED, so the four training scenes
+        /// and SCN_SUMO each carry their own `enableJiggle: 1` and changing a code
+        /// default would have done nothing at all. The stale scene values are now
+        /// inert — the same reason Systems_TournamentBracket.ARENA_SCENE is a const.
+        /// Flip this to true to get the wobble back; Systems_SoftBodyJiggle is
+        /// untouched and still does its job.
+        private const bool ENABLE_JIGGLE = false;
 
         [Tooltip("Cast 2D shadows onto the dohyo. Needs Systems_ArenaLighting.keyCastsShadows on as well — casters with no casting light do nothing, and a casting light with no casters still allocates a shadow render texture every frame. OFF because measured captures showed no visible shadow at gameplay framing; see the note in Systems_ArenaLighting.")]
         public bool castShadows = false;
@@ -157,6 +174,42 @@ namespace PoSumo
         /// force-velocity scaling and the activation lag. Persisted because the
         /// lag is a first-order filter over time, not a per-step function.
         private float[] _appliedTorque;
+
+        /// PERIPHERAL FATIGUE, per joint, 0 = fresh and 1 = fully fatigued.
+        ///
+        /// The Hill curve above already makes fast motion weak, but it is memoryless:
+        /// a joint that has been driven flat out for fifteen seconds delivers exactly
+        /// as much torque as one that just started. That is the last place the body
+        /// was an ideal machine rather than a muscle, and it is what let a bout be
+        /// decided purely on who could hold full torque longest — which was always
+        /// both of them.
+        ///
+        /// The model is the two-state reduction of Xia's three-compartment muscle
+        /// fatigue model: a fraction of the joint's capacity moves from rested to
+        /// fatigued at a rate proportional to the load being asked of it, and drains
+        /// back at a rate proportional to how much of the capacity is idle. Both
+        /// terms are scaled by the remaining pool, so fatigue saturates smoothly at
+        /// 1 instead of running off, and recovery cannot overshoot below 0.
+        private float[] _fatigue;
+
+        /// Fatigue accumulation rate at full load, per second. The time constant is
+        /// 1/rate ≈ 17 s against a 20 s round (`GameTuning.roundTimeoutSeconds`), so a
+        /// fighter that holds maximum effort for a whole round arrives at the bell
+        /// around 0.70 fatigued and a fighter that paces itself does not. Faster than
+        /// this and the round is decided by the clock rather than by the wrestling;
+        /// slower and the term may as well not exist.
+        private const float FATIGUE_RATE = 0.06f;
+        /// Recovery rate at zero load, per second — deliberately slower than a real
+        /// unloaded muscle's, because the only genuinely unloaded moments in a bout
+        /// are between rounds, and `ResetPose` already clears fatigue outright there.
+        /// What this actually governs is how much a joint recovers during the parts of
+        /// a bout it is not driving, which is a partial, loaded recovery.
+        private const float RECOVERY_RATE = 0.10f;
+        /// Fraction of the torque budget that fatigue can take away. At 1.0 a tired
+        /// fighter would go completely limp, which is not what happens — a fatigued
+        /// muscle loses a large share of its maximum voluntary contraction but keeps
+        /// working. 0.35 leaves a fully spent joint at 65% strength.
+        private const float FATIGUE_DEPTH = 0.35f;
 
         /// End-range passive stiffening. Real joints are slack in mid-range and get
         /// very stiff in the last stretch before the stop; a single linear spring
@@ -499,9 +552,6 @@ namespace PoSumo
                 gameObject.AddComponent<CompositeShadowCaster2D>();
             }
 
-            bool IsTorsoPart(string name) =>
-                name == "Pelvis" || name == "LowerBack" || name == "UpperBack" || name == "Chest";
-
             for (int index = 0; index < n; index++)
             {
                 var d = PART_DEFS[index];
@@ -549,7 +599,7 @@ namespace PoSumo
 
 
                 var rb = go.AddComponent<Rigidbody2D>();
-                rb.mass = d.mass * massScale;
+                rb.mass = d.mass * SegmentMassScale(d.name);
                 // Soft tissue. Real limbs are not frictionless linkages: muscle,
                 // fat and skin dissipate energy continuously, which is most of why
                 // a living body does not ring like a pendulum. At the old 0.05 the
@@ -589,7 +639,7 @@ namespace PoSumo
                 // Soft-tissue lag on the trunk. Lives on the Art child, which
                 // carries no collider, so this is pure rendering: the physics body
                 // it reads from is never written back to.
-                if (enableJiggle && IsTorsoPart(d.name))
+                if (ENABLE_JIGGLE && IsTorsoPart(d.name))
                 {
                     var jiggle = art.AddComponent<Systems_SoftBodyJiggle>();
                     jiggle.source = rb;
@@ -638,7 +688,12 @@ namespace PoSumo
                     {
                         hsr.sprite = CircleSprite();
                         hsr.color = new Color(0.95f, 0.8f, 0.65f);
-                        head.transform.localScale = new Vector3(0.312f / parentW, 0.312f / d.h, 1f);
+                        // headDiameter, not the old 0.312: CircleSprite is one world
+                        // unit across, so this draws the head at exactly the size of
+                        // the CircleCollider2D built below. At 0.312 the plain head
+                        // was drawn 38% smaller than the thing that gets hit.
+                        head.transform.localScale =
+                            new Vector3(headDiameter / parentW, headDiameter / d.h, 1f);
                     }
                     // Head hitbox on its OWN child, deliberately NOT the art
                     // transform.
@@ -705,6 +760,7 @@ namespace PoSumo
             _passiveStiffness = new float[JOINT_DEFS.Length];
             _passiveDamping = new float[JOINT_DEFS.Length];
             _appliedTorque = new float[JOINT_DEFS.Length];
+            _fatigue = new float[JOINT_DEFS.Length];
             for (int jointDefIndex = 0; jointDefIndex < JOINT_DEFS.Length; jointDefIndex++)
             {
                 var d = JOINT_DEFS[jointDefIndex];
@@ -767,6 +823,20 @@ namespace PoSumo
 
         public void ResetPose()
         {
+            // Fresh legs every episode. Carrying fatigue across the reset would make
+            // an episode's difficulty depend on how hard the PREVIOUS one was fought,
+            // which is a hidden non-stationary term in the reward — the agent would be
+            // scored against a body whose capability it had no way to observe at t=0.
+            // In the game this is the between-rounds rest; in training it is the only
+            // thing that keeps episodes comparable to each other.
+            //
+            // Cleared BEFORE RestoreMotors, which now scales the torque it writes back
+            // by StrengthFactor and would otherwise re-arm the body at last round's
+            // exhaustion.
+            if (_fatigue != null)
+            {
+                System.Array.Clear(_fatigue, 0, _fatigue.Length);
+            }
             RestoreMotors();   // a limp body from last round must drive again
             for (int partIndex = 0; partIndex < Parts.Length; partIndex++)
             {
@@ -813,7 +883,10 @@ namespace PoSumo
                 if (joint == null) continue;
                 joint.useMotor = true;
                 var motor = joint.motor;
-                motor.maxMotorTorque = _maxTorque[jointIndex];
+                // Fatigue-scaled, like every other write of maxMotorTorque. ApplyMotor
+                // overwrites this on the next decision anyway, but a body restored
+                // mid-round would otherwise get one free step at full strength.
+                motor.maxMotorTorque = _maxTorque[jointIndex] * StrengthFactor(jointIndex);
                 joint.motor = motor;
             }
         }
@@ -919,7 +992,9 @@ namespace PoSumo
             sr.flipX = HeadRenderer.flipX;
 
             var rb = free.AddComponent<Rigidbody2D>();
-            rb.mass = HEAD_MASS * massScale;
+            // Head mass rides the CHEST's scale, because that is the body it is
+            // folded into — a compound collider on Chest, not a body of its own.
+            rb.mass = HEAD_MASS * SegmentMassScale("Chest");
             rb.linearDamping = 0.25f;
             rb.angularDamping = 0.8f;
             // Carry the chest's motion plus an upward kick, so it visibly pops off
@@ -936,7 +1011,7 @@ namespace PoSumo
             if (HeadCollider != null) HeadCollider.enabled = false;
             HeadRenderer.enabled = false;
             if (HeadMask != null) HeadMask.enabled = false;
-            Chest.mass = Mathf.Max(0.1f, Chest.mass - HEAD_MASS * massScale);
+            Chest.mass = Mathf.Max(0.1f, Chest.mass - HEAD_MASS * SegmentMassScale("Chest"));
 
             return rb;
         }
@@ -991,7 +1066,18 @@ namespace PoSumo
             float speedFrac = Mathf.Clamp01(Mathf.Abs(joint.jointSpeed) / Mathf.Max(1f, _maxSpeed[jointIndex]));
             bool concentric = joint.jointSpeed * m.motorSpeed > 0f;
             float fv = concentric ? (1f - speedFrac) / (1f + HILL_A_F0 * speedFrac * 4f) : ECCENTRIC_GAIN;
-            float target = _maxTorque[jointIndex] * Mathf.Clamp(fv, 0f, ECCENTRIC_GAIN);
+            // FATIGUE multiplies the budget rather than the command, so a tired
+            // fighter still reaches for the same joint angles — it just cannot hold
+            // them against as much load. Scaling motorSpeed instead would read as a
+            // fighter that has decided to move slowly, which is a different thing.
+            //
+            // It stacks with the Hill term on purpose: force-velocity is how weak you
+            // are RIGHT NOW because of how fast you are moving, fatigue is how weak
+            // you are because of what you have already spent. Eccentric bracing keeps
+            // its 1.5x gain but pays the same fatigue tax, so a fighter can be worn
+            // down while holding a shove — which is exactly how a real bout is won.
+            float target = _maxTorque[jointIndex] * Mathf.Clamp(fv, 0f, ECCENTRIC_GAIN)
+                           * StrengthFactor(jointIndex);
 
             // ACTIVATION DYNAMICS. Muscle torque cannot step: it rises over ~50 ms
             // and falls over ~70 ms. At decision period 3 (60 ms) the policy could
@@ -1003,6 +1089,67 @@ namespace PoSumo
 
             m.maxMotorTorque = _appliedTorque[jointIndex];
             joint.motor = m;
+        }
+
+        /// Remaining strength at one joint, 1 = fresh down to 1-FATIGUE_DEPTH spent.
+        /// Null-guarded because RestoreMotors can be reached from a body that has
+        /// been built but never stepped.
+        private float StrengthFactor(int jointIndex) =>
+            _fatigue == null ? 1f : 1f - FATIGUE_DEPTH * _fatigue[jointIndex];
+
+        /// Whole-body stamina, 1 = fresh and 0 = fully spent, averaged over the
+        /// POWERED joints only. The unpowered toe hinges never load a motor, so
+        /// including them would peg stamina near 2/15 of fresh forever.
+        ///
+        /// This is the number the agent observes and the HUD reads. It is a mean
+        /// rather than a minimum because a single exhausted ankle is not the same
+        /// as an exhausted fighter, and a minimum would make the signal jump around
+        /// as different joints take turns being the worst.
+        public float Stamina
+        {
+            get
+            {
+                if (_fatigue == null) return 1f;
+                float sum = 0f;
+                for (int jointIndex = 0; jointIndex < Agent_Biped.ActionCount; jointIndex++)
+                {
+                    sum += _fatigue[jointIndex];
+                }
+                return 1f - sum / Agent_Biped.ActionCount;
+            }
+        }
+
+        /// Integrates one physics step of the fatigue model for every powered joint.
+        ///
+        /// Load is read from `GetMotorTorque`, the torque the solver ACTUALLY applied
+        /// this step, not from the commanded action. That distinction is the whole
+        /// point: bracing against a shove is a near-zero action holding a near-maximum
+        /// torque, and any measure taken from the action vector would score that as
+        /// resting. Isometric work is most of what a sumo bout is.
+        private void IntegrateFatigue(float dt)
+        {
+            for (int jointIndex = 0; jointIndex < Agent_Biped.ActionCount; jointIndex++)
+            {
+                HingeJoint2D joint = Joints[jointIndex];
+                // A limp body, a severed limb or a disabled joint is doing no work.
+                // Falling through to the recovery branch (load 0) is correct for all
+                // three — a torn-off arm should read as resting, not as straining.
+                float load = 0f;
+                if (!IsLimp && joint != null && joint.enabled && joint.useMotor
+                    && _maxTorque[jointIndex] > 0f)
+                {
+                    load = Mathf.Clamp01(Mathf.Abs(joint.GetMotorTorque(dt))
+                                         / _maxTorque[jointIndex]);
+                }
+
+                float f = _fatigue[jointIndex];
+                float rest = 1f - f;
+                // Explicit Euler is safe here because both rates are ~0.1/s against a
+                // 0.02 s step — the per-step change is under 0.2% of the pool, orders
+                // of magnitude inside the stability limit.
+                f += (load * FATIGUE_RATE * rest - (1f - load) * RECOVERY_RATE * f) * dt;
+                _fatigue[jointIndex] = Mathf.Clamp01(f);
+            }
         }
 
         /// Clamp all body-part angular velocities against physics destabilization.
@@ -1043,6 +1190,14 @@ namespace PoSumo
             SampleFootLoad(FootFar, out FootDownFar, out FootLoadFar);
 
             if (Joints == null || _passiveStiffness == null) return;
+
+            // Fatigue integrates HERE, at 50 Hz, and not in ApplyMotor. ApplyMotor is
+            // driven by OnActionReceived, which stops being called the moment the
+            // referee cuts actions or the presentation layer takes the body — and a
+            // fighter standing between rounds must still be recovering. Physics time,
+            // not decision time, is what a muscle runs on.
+            IntegrateFatigue(Time.fixedDeltaTime);
+
             for (int jointIndex = 0; jointIndex < Joints.Length; jointIndex++)
             {
                 HingeJoint2D joint = Joints[jointIndex];
@@ -1079,8 +1234,15 @@ namespace PoSumo
             }
         }
 
-        /// Swap the face sprite, aspect-fitting to ~0.39 m tall regardless of
-        /// the source image size (mood images vary a few pixels each).
+        /// Swap the face sprite, aspect-fitting it into the HEAD HITBOX regardless
+        /// of the source image size (mood images vary a few pixels each).
+        ///
+        /// Fitted to headDiameter on the sprite's LONGEST side, so the drawn face
+        /// is inscribed in the circle that actually collides. It used to fit 0.39 m
+        /// on the height alone: a square photo was therefore drawn 22% smaller than
+        /// the 0.5 m hitbox around it — every fighter's head got hit through a ring
+        /// of empty space — and a wide photo overflowed the hitbox the other way.
+        /// Fitting the longest side makes both cases land inside the collider.
         public void SetHeadSprite(Sprite s)
         {
             if (HeadRenderer == null || s == null) return;
@@ -1098,10 +1260,11 @@ namespace PoSumo
             // Rig geometry is right-facing; left-facing source art flips the
             // other way so every character looks where it is walking.
             HeadRenderer.flipX = _faceArtFacesLeft ? facingSign > 0 : facingSign < 0;
-            float sy = Mathf.Max(0.0001f, s.bounds.size.y);
-            const float TARGET_H = 0.39f;
+            Vector3 spriteSize = s.bounds.size;
+            float longestSide = Mathf.Max(0.0001f, Mathf.Max(spriteSize.x, spriteSize.y));
             HeadRenderer.transform.localScale =
-                new Vector3(TARGET_H / (sy * _headCellW), TARGET_H / (sy * _headCellH), 1f);
+                new Vector3(headDiameter / (longestSide * _headCellW),
+                            headDiameter / (longestSide * _headCellH), 1f);
         }
 
         /// Per-foot ground contact and the normal force carried through it,
@@ -1142,7 +1305,60 @@ namespace PoSumo
         public Rigidbody2D FootNear => Parts[3];
         public Rigidbody2D FootFar => Parts[6];
 
-        /// Baseline skeleton is 69.6 kg at massScale 1.
-        public float TotalMass => 69.6f * massScale;
+        /// Mass multiplier for one segment, DERIVED FROM ITS SIZE.
+        ///
+        /// Weight follows geometry, which it did not until 2026-08-05: `widthScale`
+        /// changed how wide the trunk was drawn and collided, `massScale` changed
+        /// how heavy every part was, and nothing tied them together. A fighter could
+        /// be built wide and light or narrow and heavy — physically incoherent in a
+        /// game whose whole objective is shoving, because the shove is decided by
+        /// mass while the player is looking at width. Nick was the proof: drawn at
+        /// widthScale 0.82 but given massScale 0.72, he was 12% lighter than even his
+        /// slim build implied, and went 0-24 lifetime.
+        ///
+        /// SQUARED, because widthScale is a transverse scale. The segment is a solid
+        /// scaled in both horizontal axes while its LENGTH is fixed by Winter's
+        /// anthropometry, so volume — and at constant density, mass — goes with the
+        /// square. Using width linearly would under-weight a wide fighter by the
+        /// same factor it over-weights a narrow one.
+        ///
+        /// Only TORSO parts take it, matching Build() (`IsTorsoPart` gates the width
+        /// scaling too). That is anatomically right as well as consistent: extra
+        /// bodyweight sits on the trunk, not in the shins.
+        ///
+        /// `massScale` survives as a pure DENSITY trim on top — bone-dense or doughy
+        /// at the same size. It must be 1.0 unless that is deliberately what you
+        /// want, or it silently re-introduces the decoupling this exists to remove.
+        private float SegmentMassScale(string partName) =>
+            massScale * (IsTorsoPart(partName) ? widthScale * widthScale : 1f);
+
+        /// The four trunk segments — the only parts `Build` applies widthScale to,
+        /// and therefore the only ones whose mass moves with it.
+        ///
+        /// Was a local function inside Build. Promoted to a member so the width
+        /// scaling and the mass scaling read the SAME list: two copies of "which
+        /// parts count as torso" is exactly how weight and size drift apart again.
+        private static bool IsTorsoPart(string name) =>
+            name == "Pelvis" || name == "LowerBack" || name == "UpperBack" || name == "Chest";
+
+        /// Actual total, summed from the built bodies rather than assumed.
+        ///
+        /// Was `69.6f * massScale`, which stopped being true the moment mass became
+        /// size-derived: the trunk is ~54.6% of the baseline, so a fighter at
+        /// widthScale w now masses 69.6 * massScale * (0.546*w^2 + 0.454) and no
+        /// single multiplier describes it. Reading the rigidbodies cannot drift.
+        public float TotalMass
+        {
+            get
+            {
+                if (Parts == null) return 69.6f * massScale;
+                float total = 0f;
+                for (int partIndex = 0; partIndex < Parts.Length; partIndex++)
+                {
+                    if (Parts[partIndex] != null) total += Parts[partIndex].mass;
+                }
+                return total;
+            }
+        }
     }
 }

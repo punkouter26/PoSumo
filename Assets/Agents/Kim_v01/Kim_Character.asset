@@ -25,11 +25,13 @@ MonoBehaviour:
   - Kim_Sad_1
   - Kim_Sad_2
   - Kim_Sad_3
-  massScale: 1.45
+  massScale: 1
   widthScale: 1.3
-  torqueScale: 1.5
+  torqueScale: 1.3
   extendedObservations: 1
   decisionPeriod: 3
+  contactObservations: 0
+  staminaObservation: 0
   inferenceModel: {fileID: 5022602860645237092, guid: d40789c9a1a3bdc4891f8fa0702ded5e, type: 3}
   uprightReward: 0.0004
   closingReward: 0.0019999999
@@ -43,6 +45,7 @@ MonoBehaviour:
   riseReward: 0.015
   effortPenalty: 0.0015
   stanceReward: 0.0009
+  driveReward: 0
   energyPenalty: 0.0006
   jerkPenalty: 0.0005
   straightLegEarnFraction: 0.15

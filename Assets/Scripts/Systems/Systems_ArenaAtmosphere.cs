@@ -38,12 +38,16 @@ namespace PoSumo
         public float swayHz = 0.45f;
 
         [Header("Light shafts")]
-        // Back on with the rest of the spotlight dressing. These are cheap sprite
-        // quads, NOT the key light's volumetric cone — the two stack deliberately:
-        // Light2D volumetrics give the cone its shape and its shadow wedges, and
-        // these give it visible structure (four discrete beams) that a single
-        // radial falloff cannot. Keep shaftOpacity low or they read as fog.
-        public bool showShafts = true;
+        // OFF, with the rest of the lighting effects. These are cheap sprite quads,
+        // NOT the key light's volumetric cone — they were the structure (four
+        // discrete beams) laid over the cone's radial falloff. With
+        // Systems_ArenaLighting.LightingEffects off there is no cone and no key
+        // light to fan from, so four bright quads hanging in front of everything at
+        // sorting order 20 read as smears on the lens rather than as light.
+        //
+        // Gated on LightingEffects in Start as well, so this bool and the master
+        // switch cannot disagree; keep both true to get the beams back.
+        public bool showShafts = false;
         public int shaftCount = 4;
         public float shaftTopY = 6.1f;
         public float shaftLength = 6.4f;
@@ -90,7 +94,7 @@ namespace PoSumo
             _camera = Camera.main;
 
             Collect();
-            if (showShafts)
+            if (showShafts && Systems_ArenaLighting.LightingEffects)
             {
                 BuildShafts();
             }

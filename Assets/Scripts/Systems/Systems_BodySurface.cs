@@ -60,7 +60,11 @@ namespace PoSumo
             // assigns the normal map, so a sweat highlight written here would sit
             // on an unshaded tube and read as a stripe. Respect the flag rather
             // than half-enabling the look behind its back.
-            if (Systems_ArenaLighting.FlatBodyShading)
+            //
+            // BodyShadingActive also covers the master switch: with
+            // LightingEffects off the body material is a stock UNLIT sprite that
+            // has neither _Sweat nor _Dirt at all.
+            if (!Systems_ArenaLighting.BodyShadingActive)
             {
                 enabled = false;
                 return;

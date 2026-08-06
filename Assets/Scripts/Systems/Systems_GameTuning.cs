@@ -37,6 +37,12 @@ namespace PoSumo
 
         [Tooltip("Friction inside the tawara band. Deliberately slick so 'almost out' becomes 'out'.")]
         public float tawaraFriction = 0.18f;
+
+        [Tooltip("Seconds into a round before the ring starts closing in. 0 disables the shrinking ring entirely.\n\nMEASURED REASON: a 14-round tournament finished 57% on a timeout decision and 7% on a timeout draw — 64% settled by the clock — against a single ring-out. The [ROUND] logs show why: at the bell the fighters are bunched within ~2 m of the centre, so nobody is anywhere near an edge. They lock up in the middle and grind. A shrinking ring converts a stalemate into the sport's own win condition instead of handing it to a judge.\n\nThe machinery is not new: Systems_SumoArena.SetPlatformHalfWidth already resizes the platform collider and the walk-in has always used it. Ring-out detection needs no change either, because OutOfRing is purely vertical — it fires when a foot drops below the mat surface, so withdrawing the floor is detected for free.")]
+        public float shrinkStartSeconds = 8f;
+
+        [Tooltip("Half-width the ring closes to by the time the round clock expires. Reached by a linear contraction from ringHalfWidth starting at shrinkStartSeconds.\n\n1.8 m leaves a mat about two body-widths across at the bell: tight enough that a grapple in the middle runs out of floor, wide enough that it is still wrestling rather than a coin toss. Set equal to ringHalfWidth to disable the contraction while keeping the timer.")]
+        public float shrinkToHalfWidth = 1.8f;
         [Tooltip("Play the ceremonial walk-in at the start of each match. Lives here because the arena scenes each serialize their own copy of the flag, and SCN_SUMO had it switched OFF — so the ceremony was silently never running no matter what the code default said.")]
         public bool enableWalkIn = true;
         [Tooltip("Platform half-width during the ceremonial walk-in. The mat contracts to ringHalfWidth before the bell.")]
@@ -86,7 +92,7 @@ namespace PoSumo
         public bool enableFaceMood = true;
         [Tooltip("Per-fighter spoken lines. Fighters with no recorded clips stay silent.")]
         public bool enableVoice = true;
-        [Tooltip("2D light rig plus the post-processing volume.")]
+        [Tooltip("2D light rig plus the post-processing volume.\n\nMUST STAY ON. Systems_ArenaLighting.LightingEffects is false, so the rig currently builds exactly one flat global light and nothing else — but every sprite in the arena uses a LIT material, and with no Light2D at all they render solid black. This switch decides whether there is a rig; that one decides what it builds.")]
         public bool enableLighting = true;
         [Tooltip("Dust and sweat bursts scaled by hit strength.")]
         public bool enableImpactFx = true;

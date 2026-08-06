@@ -135,7 +135,15 @@ namespace PoSumo
         /// Blood from a head KO. Heavier and darker than sweat, thrown along the
         /// impact direction, and it falls fast — Systems_BodyDamage separately
         /// paints the lasting stains, because a particle cannot leave a mark.
-        public static void BloodSpray(Vector3 position, Vector2 direction, int count = 18)
+        ///
+        /// `speedScale` is what separates a spatter from a JET. An open artery is
+        /// pressurised and the droplets leave in a tight, fast column; a spatter is
+        /// slow and wide. At 1 the cone is the original 0.7-radian spatter at
+        /// 1.5-4.5 m/s. Above 1 the droplets go faster AND the cone narrows in
+        /// proportion, so a severed limb and a neck stump throw a readable arc
+        /// across the mat instead of dribbling onto their own feet.
+        public static void BloodSpray(Vector3 position, Vector2 direction, int count = 18,
+                                      float speedScale = 1f)
         {
             Systems_DustPuff instance = Instance;
             if (instance == null || instance._blood == null)
@@ -143,15 +151,19 @@ namespace PoSumo
                 return;
             }
             Vector2 unit = direction.sqrMagnitude > 0.0001f ? direction.normalized : Vector2.up;
+            float speed = Mathf.Max(0.1f, speedScale);
+            // Tighter cone the harder it is pumping, floored so even a big jet keeps
+            // some spread and does not read as a single rigid line.
+            float cone = Mathf.Max(0.18f, 0.7f / speed);
             for (int countIndex = 0; countIndex < count; countIndex++)
             {
                 var emitParams = MakeParams(position, 0.05f);
                 // Cone around the impact direction, biased upward so it arcs.
-                float spread = Random.Range(-0.7f, 0.7f);
+                float spread = Random.Range(-cone, cone);
                 Vector2 dir = new Vector2(
                     unit.x + spread * unit.y,
                     unit.y - spread * unit.x + 0.5f).normalized;
-                emitParams.velocity = dir * Random.Range(1.5f, 4.5f);
+                emitParams.velocity = dir * Random.Range(1.5f, 4.5f) * speed;
                 emitParams.applyShapeToPosition = true;
                 instance._blood.Emit(emitParams, 1);
             }
@@ -322,11 +334,15 @@ namespace PoSumo
 
         private ParticleSystem BuildBlood()
         {
-            // 200 was sized for impact spatter. A decapitation pours from two wounds
-            // at once — ~12 droplets per puff every 45 ms each, which is ~530/s at
-            // full flow, and at a 0.5-1.3 s lifetime that is ~480 alive at the peak.
-            // At 200 the pour would silently starve and read as a dribble.
-            ParticleSystem system = CreateSystem("Blood", 800, 7);
+            // 200 was sized for impact spatter, then 800 for a decapitation pouring
+            // from two wounds at ~12 droplets per 45 ms each (~530/s, ~480 alive at
+            // a 0.5-1.3 s lifetime). The neck geyser is now 30 per puff every 30 ms
+            // from the stump plus the head's own wound, which is ~1,900/s and ~1,700
+            // alive at the peak — and a severed limb can be bleeding underneath it.
+            // A budget that is too small does not error, it silently drops emits and
+            // the showpiece finish reads as a dribble, so this is sized for the
+            // worst case rather than the common one.
+            ParticleSystem system = CreateSystem("Blood", 5200, 7);
             ParticleSystem.MainModule main = system.main;
             main.startLifetime = new ParticleSystem.MinMaxCurve(0.5f, 1.3f);
             main.startSize = new ParticleSystem.MinMaxCurve(0.02f, 0.055f);

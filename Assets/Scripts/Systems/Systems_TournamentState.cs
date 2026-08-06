@@ -125,6 +125,55 @@ namespace PoSumo
                 int j = rng.Next(index + 1);
                 (_seeds[index], _seeds[j]) = (_seeds[j], _seeds[index]);
             }
+
+            SeparateFirstRoundMirrors();
+        }
+
+        /// Repairs any opening-round pair that drew the same fighter twice.
+        ///
+        /// The roster is four fighters in eight slots, so every fighter appears
+        /// twice and a plain shuffle regularly pairs a fighter against itself. A
+        /// mirror bout is the worst match in the game: the two sides are the same
+        /// policy, so the result is a coin flip, and `Systems_CareerStats.RecordMatch`
+        /// guards `winner == loser` — it banks no Elo, no W/L, no head-to-head and
+        /// moves nobody on the banzuke. Measured play produced one in the
+        /// quarterfinals AND a Kim-v-Kim final.
+        ///
+        /// **This can only fix the FIRST round, and that limit is structural.** Later
+        /// mirrors depend on who wins, not on the draw: with two copies of a fighter
+        /// alive in opposite halves, nothing in a seeding pass can stop them meeting
+        /// in the final. The only real cure is a roster that fills eight slots
+        /// without duplicates. Four of the seven matches are the opening round, so
+        /// this removes the bulk of them and the ones that remain are at least an
+        /// earned "beat your own clone" rather than a bad draw.
+        private static void SeparateFirstRoundMirrors()
+        {
+            for (int pair = 0; pair < SEED_COUNT / 2; pair++)
+            {
+                int left = pair * 2;
+                int right = left + 1;
+                if (_seeds[left] != _seeds[right]) continue;
+
+                // Swap the right-hand slot with any slot from another pair where the
+                // exchange leaves BOTH pairs clean. With each of four fighters
+                // appearing exactly twice such a slot always exists — a mirror-free
+                // opening round is always constructible (A B / C D / A B / C D) — so
+                // this cannot loop or fail to find one.
+                for (int other = 0; other < SEED_COUNT; other++)
+                {
+                    if (other == left || other == right) continue;
+                    int otherPartner = (other % 2 == 0) ? other + 1 : other - 1;
+                    if (otherPartner == left || otherPartner == right) continue;
+
+                    bool fixesThisPair = _seeds[other] != _seeds[left];
+                    bool keepsOtherPairClean = _seeds[right] != _seeds[otherPartner];
+                    if (fixesThisPair && keepsOtherPairClean)
+                    {
+                        (_seeds[right], _seeds[other]) = (_seeds[other], _seeds[right]);
+                        break;
+                    }
+                }
+            }
         }
 
         public static void BeginTournament()

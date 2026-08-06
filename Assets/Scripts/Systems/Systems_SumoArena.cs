@@ -365,10 +365,42 @@ namespace PoSumo
             {
                 RebindBaked();
                 ApplyLitMaterial();
+                ApplyPaintedLightVisibility();
                 return;
             }
             Build();
             ApplyLitMaterial();
+            ApplyPaintedLightVisibility();
+        }
+
+        /// Painted-on light: the two "Spotlight" cone sprites over the ring and the
+        /// five "LanternHalo" glows under the roof. They are scenery, not lights —
+        /// soft alpha quads that stand in for a beam and a bulb bloom.
+        ///
+        /// Hidden while Systems_ArenaLighting.LightingEffects is off, because that
+        /// is precisely what they are: a lighting effect. With the key light, the
+        /// volumetric cone and the post stack all gone, a live capture showed the
+        /// two cones as a pair of grey smudges hanging over the dohyo with nothing
+        /// in the scene to justify them.
+        ///
+        /// Disabled rather than destroyed, and matched by NAME rather than by a
+        /// flag, because the arena scenes are BAKED: these children are saved into
+        /// SCN_SUMO, so gating them inside Build() would do nothing — Build does not
+        /// run on a baked scene. Same reason the switch has to be applied after
+        /// RebindBaked as well as after Build.
+        private void ApplyPaintedLightVisibility()
+        {
+            if (Systems_ArenaLighting.LightingEffects)
+            {
+                return;
+            }
+            foreach (Transform child in transform)
+            {
+                if (child.name == "Spotlight" || child.name == "LanternHalo")
+                {
+                    child.gameObject.SetActive(false);
+                }
+            }
         }
 
         /// Put every renderer the ARENA owns onto the lit material so the 2D light
@@ -498,13 +530,26 @@ namespace PoSumo
             }
 
             // --- Warm gridded backdrop (1 m cells, heavy line each 5 m).
+            //
+            // Spans y = -8.8 to 11.2. It used to be centred at 4.4 with a height of
+            // 12, i.e. it stopped at y = -1.6 — barely below the crowd floor at
+            // -1.1. That is the source of the black band under the dohyo: at the
+            // portrait aspect the camera sits near y = 0 with an ortho around 5-7,
+            // so it sees down to roughly y = -7, and everything past -1.6 was
+            // simply nothing being drawn.
+            //
+            // Extending DOWN rather than tightening the camera is the fix that
+            // works — see the measured dead end recorded on
+            // Systems_CameraFollow.feetDrop. It costs one tiled sprite's worth of
+            // extra area on a renderer that is already in the scene, behind
+            // everything at sortingOrder -10.
             var grid = new GameObject("Grid");
             grid.transform.SetParent(transform, false);
-            grid.transform.localPosition = new Vector3(0f, 4.4f, 0f);
+            grid.transform.localPosition = new Vector3(0f, 1.2f, 0f);
             var gsr2 = grid.AddComponent<SpriteRenderer>();
             gsr2.sprite = GridSprite();
             gsr2.drawMode = SpriteDrawMode.Tiled;
-            gsr2.size = new Vector2(floorWidth, 12f);
+            gsr2.size = new Vector2(floorWidth, 20f);
             gsr2.sortingOrder = -10;
 
             if (!showPosts) return;

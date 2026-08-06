@@ -24,6 +24,8 @@ MonoBehaviour:
   torqueScale: 1
   extendedObservations: 1
   decisionPeriod: 3
+  contactObservations: 0
+  staminaObservation: 0
   inferenceModel: {fileID: 5022602860645237092, guid: 239f499b7abb2934f8d71d52682b5f23, type: 3}
   uprightReward: 0.0005
   closingReward: 0.0045
@@ -37,6 +39,7 @@ MonoBehaviour:
   riseReward: 0.02
   effortPenalty: 0.0015
   stanceReward: 0.0009
+  driveReward: 0
   energyPenalty: 0.0003
   jerkPenalty: 0.0003
   straightLegEarnFraction: 0.3

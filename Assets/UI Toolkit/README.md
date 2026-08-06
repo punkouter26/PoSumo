@@ -14,7 +14,15 @@ Systems_SafeArea           notch / gesture-bar insets, one watcher per screen
 Systems_GameMatchManager   top bar, callouts, result card, pause card
 Systems_FightHud           live strip (dock) + between-rounds detail card (stage)
 Systems_TournamentBracket  the bracket screen, its own UIDocument
+Systems_CareerScreen       the banzuke overlay, a LAYER inside the bracket's document
 ```
+
+`Systems_CareerScreen` is the worked example of the layering rule below: it is a
+full-screen modal that does **not** add a second `UIDocument`. The bracket's root
+is unpadded and hosts three layers — the bracket screen, the drag ghost, and the
+career overlay — and `Systems_SafeArea.Attach` is given the bracket's content
+layer and the overlay's modal layer as two targets, so the scrim between them
+stays full-bleed. That is what `Attach`'s `params` signature is for.
 
 ## Things that will bite you
 
@@ -72,11 +80,15 @@ in use and a font that lacks them renders boxes:
 
 | Glyph | Where |
 |---|---|
-| `·` U+00B7 | round footer, SHOVES · BEST, bracket status line, career toggle |
-| `—` U+2014 | empty stat values, empty bracket chips, CHAMPION line |
+| `·` U+00B7 | round footer, SHOVES · BEST, bracket status line, career button, banzuke rung holders |
+| `—` U+2014 | empty stat values, empty bracket chips, CHAMPION line, empty banzuke rungs |
 | `→` U+2192 | bracket round arrows |
-| `★` U+2605 | career table titles column |
-| `▴` `▾` U+25B4/U+25BE | career toggle disclosure |
+| `★` U+2605 | titles column on the career screen's fighter cards |
+| `▸` U+25B8 | career button (opens the banzuke overlay) |
+
+`▴` / `▾` U+25B4/U+25BE were retired with the collapsed career table the career
+screen replaced. Nothing draws them any more — do not re-add them to a font's
+character set on this table's account.
 
 The pause button is drawn as two `VisualElement` bars rather than a glyph
 precisely so it has no font dependency. Keep it that way.

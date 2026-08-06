@@ -34,6 +34,8 @@ namespace PoSumo
         public bool extendedObservations = false;
         [Tooltip("Adds 4 proprioceptive observations: per-foot ground contact and normalised load. OFF for every shipped brain — it changes the vector length, so it can only be switched on together with a retrain.")]
         public bool contactObservations = false;
+        [Tooltip("Adds 1 observation: whole-body stamina (1 fresh, 0 spent). OFF for every shipped brain — it changes the vector length, so it can only be switched on together with a retrain. Turn it on for the next run so the policy can perceive the fatigue that Agent_BipedBody now applies to it.")]
+        public bool staminaObservation = false;
         [Tooltip("ML-Agents DecisionRequester period. Legacy brains trained at 5; the extended Matt brain at 3.")]
         public int decisionPeriod = 5;
 
@@ -73,13 +75,6 @@ namespace PoSumo
         public const int ObservationCount = 42;
         public const int ActionCount = 13;      // hips, knees, ankles, 3 spine, shoulders, elbows
 
-        /// Height below which a foot counts as planted; the foot centre sits ~0.04
-        /// when flat. Shared by StanceFactor and CadenceReward, which both judge
-        /// "planted" and were drifting apart as two separate 0.12 literals.
-        /// StanceFactor measures it against arenaGroundY, CadenceReward against
-        /// world Y — that difference is deliberate and unchanged.
-        private const float PLANTED_HEIGHT = 0.12f;
-
         /// Last motor commands as sent to the joints (for HUD display).
         [System.NonSerialized] public float[] LastActions = new float[ActionCount];
 
@@ -91,29 +86,17 @@ namespace PoSumo
         private readonly float[] _prevActions = new float[ActionCount];
         private float _pendingImpact;
         private float _lastTorsoY;
-        private int _lastSinglePlant;
-        private float _lastStepTime;
 
-        // Sumo reward coefficients — defaults here; overridden by `character`.
-        private float _rUpright = 0.0005f, _rClosing = 0.0006f, _rLunge = 0.001f, _lungeThresh = 1.5f;
-        private float _rImpact = 0.01f, _impactCap = 8f, _rKnee = 0.0004f, _rHips = 0.0003f;
-        private float _rCadence = 0.0015f, _rRise = 0.02f, _pEnergy = 0.0004f, _pJerk = 0.0003f;
-        private float _bendFloor = 0.3f;
-        // New in the realism pass. Unlike the coefficients above these do NOT
-        // default to the constant the branch used before, because there was no
-        // such constant — neither term existed. They are deliberate behavioural
-        // change and every fighter needs a corrective run to pick them up.
-        private float _pEffort = 0.0015f, _rStance = 0.0009f;
-        // Defaults to 0 — unlike the coefficients above, this one must NOT change
-        // what an untuned character trains, because every shipped brain was trained
-        // without it. Set it on the character sheet for the next run.
-        private float _rDrive = 0f;
-
-        // Walk-school coefficients — defaults are the constants this branch used
-        // before they became per-character, so an unassigned character trains the
-        // identical gait it always did.
-        private float _wForward = 0.004f, _wStanceFloor = 0.15f, _wBend = 0.0006f;
-        private float _wUpright = 0.001f, _wCadence = 0.002f, _wEnergy = 0.0003f, _wStall = 0.0008f;
+        /// Objective / penalty providers, one per school. Every reward coefficient
+        /// lives inside these; the agent owns only the terminals and the episode.
+        ///
+        /// Constructed as fields rather than resolved per step — an agent's school
+        /// changes (BeginWalkIn switches mode mid-round) but its providers do not,
+        /// and both carry configured state that must survive the switch.
+        private readonly Reward_SumoObjective _sumoObjective = new Reward_SumoObjective();
+        private readonly Reward_WalkObjective _walkObjective = new Reward_WalkObjective();
+        /// Shared by both schools on purpose — see Reward_StepCadence.
+        private readonly Reward_StepCadence _cadence = new Reward_StepCadence();
 
         protected override void Awake()
         {
@@ -124,39 +107,25 @@ namespace PoSumo
                 behaviorName = character.behaviorName;
                 extendedObservations = character.extendedObservations;
                 contactObservations = character.contactObservations;
+                staminaObservation = character.staminaObservation;
                 decisionPeriod = character.decisionPeriod;
                 if (inferenceModel == null) inferenceModel = character.inferenceModel;
-                _rUpright = character.uprightReward;
-                _rClosing = character.closingReward;
-                _rLunge = character.lungeBonus;
-                _lungeThresh = character.lungeThreshold;
-                _rImpact = character.impactReward;
-                _impactCap = character.impactCap;
-                _rKnee = character.kneeBendReward;
-                _rHips = character.hipsLowReward;
-                _rCadence = character.cadenceReward;
-                _rRise = character.riseReward;
-                _pEnergy = character.energyPenalty;
-                _pJerk = character.jerkPenalty;
-                _pEffort = character.effortPenalty;
-                _rStance = character.stanceReward;
-                _rDrive = character.driveReward;
-                _bendFloor = character.straightLegEarnFraction;
-                _wForward = character.walkForwardReward;
-                _wStanceFloor = character.walkStanceFloor;
-                _wBend = character.walkBendReward;
-                _wUpright = character.walkUprightReward;
-                _wCadence = character.walkCadenceReward;
-                _wEnergy = character.walkEnergyPenalty;
-                _wStall = character.walkStallPenalty;
             }
+
+            // Both are configured unconditionally, including when `character` is
+            // null: Configure no-ops on null and leaves the provider on the
+            // pre-per-character constants, which is what an unassigned fighter has
+            // always trained against.
+            _sumoObjective.Configure(character);
+            _walkObjective.Configure(character);
 
             var bp = GetComponent<BehaviorParameters>();
             if (bp == null) bp = gameObject.AddComponent<BehaviorParameters>();
             bp.BehaviorName = behaviorName;
             bp.TeamId = teamId;
             bp.BrainParameters.VectorObservationSize =
-                ObservationCount + (extendedObservations ? 3 : 0) + (contactObservations ? 4 : 0);
+                ObservationCount + (extendedObservations ? 3 : 0) + (contactObservations ? 4 : 0)
+                + (staminaObservation ? 1 : 0);
             bp.BrainParameters.NumStackedVectorObservations = 1;
             bp.BrainParameters.ActionSpec = ActionSpec.MakeContinuous(ActionCount);
 
@@ -190,8 +159,7 @@ namespace PoSumo
             NonFootGroundContacts = 0;
             _pendingImpact = 0f;
             _lastTorsoY = _b.Torso.position.y;
-            _lastSinglePlant = 0;
-            _lastStepTime = 0f;
+            _cadence.Reset();
             for (int actionIndex = 0; actionIndex < ActionCount; actionIndex++) _prevActions[actionIndex] = 0f;
         }
 
@@ -303,6 +271,15 @@ namespace PoSumo
                 sensor.AddObservation(San(_b.FootLoadFar));
             }
 
+            if (staminaObservation)                                               // +1
+            {
+                // Appended AFTER the contact block and BEFORE the extended block is
+                // not arbitrary — the order here IS the input layer's layout, and the
+                // only rule that matters is that it never changes again once a brain
+                // has been trained on it.
+                sensor.AddObservation(San(_b.Stamina));
+            }
+
             if (extendedObservations)                                             // +3
             {
                 if (fighting)
@@ -330,60 +307,6 @@ namespace PoSumo
             float near = Mathf.Clamp01(_b.JointAngleNorm(1) * 180f / 60f);
             float far = Mathf.Clamp01(_b.JointAngleNorm(4) * 180f / 60f);
             return (near + far) * 0.5f;
-        }
-
-        private float HipsLowFactor() => Mathf.Clamp01((0.95f - San(Torso.position.y)) / 0.3f);
-
-        /// How much this looks like a sumo stance, 0..1: both feet planted, and
-        /// planted APART. Multiplied by knee bend so it cannot be farmed by
-        /// standing straight-legged with the feet spread.
-        ///
-        /// Ground contact is judged against the mat plane rather than a collision
-        /// query so it costs nothing per step; a foot within ankle height of the
-        /// surface is planted. Spread saturates at SUMO_STANCE_WIDTH, roughly a
-        /// shoulder-and-a-half, past which wider is not better.
-        private float StanceFactor()
-        {
-            const float SUMO_STANCE_WIDTH = 0.55f;
-
-            float nearY = San(_b.FootNear.position.y) - arenaGroundY;
-            float farY = San(_b.FootFar.position.y) - arenaGroundY;
-            float nearDown = Mathf.Clamp01(1f - nearY / PLANTED_HEIGHT);
-            float farDown = Mathf.Clamp01(1f - farY / PLANTED_HEIGHT);
-            // Product, not average: one foot planted is standing, not a stance.
-            float grounded = nearDown * farDown;
-
-            float spread = Mathf.Abs(San(_b.FootNear.position.x) - San(_b.FootFar.position.x));
-            float wide = Mathf.Clamp01(spread / SUMO_STANCE_WIDTH);
-
-            return grounded * wide * KneeBendFactor();
-        }
-
-        /// Step-cadence bonus: pays once per alternation of the single planted
-        /// foot (near->far or far->near), i.e. actual stepping, not skating.
-        private void CadenceReward(float scale)
-        {
-            // Heights are ARENA-RELATIVE, exactly as StanceFactor measures them.
-            // Against absolute world Y this test was meaningless for the walk
-            // lane, which sits at y = -60: every foot was trivially below 0.12, so
-            // plantedness collapsed to the velocity gate alone and the apex of a
-            // swing — airborne but momentarily slow — counted as a step. The same
-            // line behaved correctly in the sumo lane at y = 0, so one reward term
-            // meant two different things inside a single training scene.
-            bool nearPlanted = San(_b.FootNear.position.y) - arenaGroundY < PLANTED_HEIGHT
-                && Mathf.Abs(_b.FootNear.linearVelocity.x) < 0.5f;
-            bool farPlanted = San(_b.FootFar.position.y) - arenaGroundY < PLANTED_HEIGHT
-                && Mathf.Abs(_b.FootFar.linearVelocity.x) < 0.5f;
-            int pattern = (nearPlanted ? 1 : 0) | (farPlanted ? 2 : 0);
-            if ((pattern == 1 && _lastSinglePlant == 2) || (pattern == 2 && _lastSinglePlant == 1))
-            {
-                if (Time.time - _lastStepTime > 0.25f)
-                {
-                    AddReward(scale);
-                    _lastStepTime = Time.time;
-                }
-            }
-            if (pattern == 1 || pattern == 2) _lastSinglePlant = pattern;
         }
 
         public override void OnActionReceived(ActionBuffers actions)
@@ -431,107 +354,40 @@ namespace PoSumo
             }
 
             float upright = Mathf.Clamp01(Vector2.Dot(_b.Chest.transform.up, Vector2.up));
-            Vector2 tv = Torso.linearVelocity;
             float torsoY = San(Torso.position.y);
             float xLocal = (Torso.position.x - arenaCenterX) * Fs;
-            float bend = KneeBendFactor();
-            float bendGate = _bendFloor + (1f - _bendFloor) * bend; // straight legs earn the floor fraction
+            bool hasOpponent = opponent != null;
+
+            var ctx = new Reward_Context(
+                Fs, arenaGroundY, Torso.position, Torso.linearVelocity, _lastTorsoY,
+                upright, KneeBendFactor(), energy, effort, jerk, _pendingImpact,
+                IsDown, hasOpponent, hasOpponent ? opponent.TorsoX : 0f);
 
             if (mode == Mode.Walk)
             {
-                // The proven walk-school structure: falling ENDS the episode, so
-                // no on-the-ground reward exploit can exist. Stance/cadence
-                // shaping keeps the gait crouched and stepping. The coefficients
-                // come from the character sheet, so a fighter's gait can carry the
-                // same personality as its fight style (a driver rewards forward
-                // speed, a dancer rewards cadence).
-                float walkGate = _wStanceFloor + (1f - _wStanceFloor) * bend;
-                AddReward(San(tv.x * Fs) * _wForward * walkGate);
-                AddReward(bend * _wBend);
-                AddReward(upright * _wUpright);
-                CadenceReward(_wCadence);
-                AddReward(-energy * _wEnergy);
-                if (Mathf.Abs(San(tv.x)) < 0.15f) AddReward(-_wStall); // no statue farming
+                AddReward(_walkObjective.Evaluate(_b, _cadence, in ctx));
 
                 // Catastrophic posture failure is an absolute episode termination gate.
                 // The two terminals stay hardcoded on purpose: shaping is per-character,
                 // but fall (-1) and graduation (+3) fix the reward scale so different
                 // characters' walk runs remain comparable to each other on TensorBoard.
+                //
+                // They also stay HERE rather than in Reward_WalkObjective, which is
+                // structurally unable to end an episode. Note that SetReward discards
+                // this step's shaping outright — a fall is worth exactly -1 no matter
+                // what was earned on the way down — so the order of these two lines
+                // against the Evaluate above is load-bearing.
                 if (IsDown) { SetReward(-1f); EndEpisode(); return; }
                 if (xLocal > -0.3f) { AddReward(3f); EndEpisode(); }
             }
             else // Sumo
             {
                 // Shaping only; win/loss (+1/-1) is assigned by Systems_SumoMatchManager.
-                AddReward(upright * _rUpright);
-
-                if (opponent != null)
-                {
-                    float toward = Mathf.Sign(opponent.TorsoX - Torso.position.x);
-                    float closing = San(tv.x) * toward;
-                    AddReward(closing * _rClosing * bendGate);
-                    // Lunge: explosive bursts toward the opponent pay extra.
-                    if (closing > _lungeThresh) AddReward((closing - _lungeThresh) * _rLunge * bendGate);
-                }
-
-                // Impact reward: momentum actually delivered into the opponent.
-                float impact = Mathf.Min(_pendingImpact, _impactCap);
+                AddReward(_sumoObjective.Evaluate(_b, _cadence, in ctx));
+                // Consumed by the impact term above. Cleared HERE and not in Walk
+                // mode, exactly as before — a walk-in that brushes the other fighter
+                // banks that momentum for the first sumo step after EndWalkIn.
                 _pendingImpact = 0f;
-                if (impact > 0f) AddReward(impact * _rImpact);
-
-                if (!IsDown && upright > 0.6f)
-                {
-                    AddReward(bend * _rKnee);
-                    AddReward(HipsLowFactor() * _rHips);
-                    CadenceReward(_rCadence);
-                }
-                else if (IsDown)
-                {
-                    // Getting back up mid-round pays (falls are not losses).
-                    AddReward(Mathf.Max(0f, tv.y) * 0.0005f);
-                    AddReward((torsoY - _lastTorsoY) * _rRise);
-                }
-
-                // SUSTAINED DRIVE. Every other term here pays for a collision —
-                // closing speed, lunge, impact momentum — so the policy learned to
-                // hit rather than to push, and measured push in contact was 71-500 N
-                // against a human's sustained 350-700 N. Sumo is not a striking
-                // sport: it is won by holding a load through the feet and walking
-                // the opponent backwards.
-                //
-                // Paid only when BOTH feet are carrying weight and the fighter is
-                // actually moving toward the opponent, which is the one posture that
-                // cannot be farmed by flailing. Costs nothing at inference; like all
-                // shaping it only exists during training.
-                if (opponent != null && _b.FootDownNear && _b.FootDownFar)
-                {
-                    float toward = Mathf.Sign(opponent.TorsoX - Torso.position.x);
-                    float drive = San(tv.x) * toward;
-                    if (drive > 0f)
-                    {
-                        float grip = Mathf.Min(_b.FootLoadNear, _b.FootLoadFar);
-                        AddReward(drive * grip * _rDrive);
-                    }
-                }
-
-                // Sumo base: a wide, low, two-footed stance. Nothing rewarded this
-                // before, and it showed — the fighters were measured mid-bout with
-                // the chest 0.87 m above the mat at a 61-degree lean, and in
-                // another sample standing on one foot with the other 0.48 m in the
-                // air. That is a collapse, not a stance.
-                AddReward(StanceFactor() * _rStance);
-
-                // Useless effort costs; driving toward the opponent is cheap.
-                float useful = Mathf.Clamp01(Mathf.Abs(San(tv.x)) / 1.5f);
-                AddReward(-energy * _pEnergy * (1f - useful));
-                AddReward(-jerk * _pJerk);
-
-                // UNGATED, unlike the line above. That `(1f - useful)` gate makes
-                // effort free whenever the fighter is moving fast, which is the
-                // mechanism that produced the saturated motors: drive hard and the
-                // torque bill disappears. This term always applies, so full-power
-                // flailing costs something even mid-charge.
-                AddReward(-effort * _pEffort);
             }
 
             _lastTorsoY = torsoY;

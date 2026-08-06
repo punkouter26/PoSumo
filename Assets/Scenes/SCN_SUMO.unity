@@ -4640,11 +4640,11 @@ MonoBehaviour:
   arenaCenterX: 0
   arenaGroundY: 0
   extendedObservations: 0
+  contactObservations: 0
+  staminaObservation: 0
   decisionPeriod: 5
   inferenceOnly: 0
-  recoverShoveChance: 0.7
   inferenceModel: {fileID: 5022602860645237092, guid: 8f76568562941a345ae69c088f1518bf, type: 3}
-  walkModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
   behaviorName: Standard
@@ -4699,7 +4699,7 @@ MonoBehaviour:
   torqueScale: 2
   headSprite: {fileID: 0}
   headDiameter: 0.5
-  enableJiggle: 1
+  castShadows: 0
   Torso: {fileID: 0}
   Chest: {fileID: 0}
   HeadRenderer: {fileID: 0}
@@ -6490,7 +6490,7 @@ Transform:
   m_GameObject: {fileID: 599105868}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 4.4, z: 0}
+  m_LocalPosition: {x: 0, y: 1.2, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -6550,7 +6550,7 @@ SpriteRenderer:
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 2
-  m_Size: {x: 34, y: 12}
+  m_Size: {x: 34, y: 20}
   m_AdaptiveModeThreshold: 0.5
   m_SpriteTileMode: 0
   m_WasSpriteAssigned: 1
@@ -15558,11 +15558,11 @@ MonoBehaviour:
   arenaCenterX: 0
   arenaGroundY: 0
   extendedObservations: 0
+  contactObservations: 0
+  staminaObservation: 0
   decisionPeriod: 5
   inferenceOnly: 0
-  recoverShoveChance: 0.7
   inferenceModel: {fileID: 5022602860645237092, guid: 239f499b7abb2934f8d71d52682b5f23, type: 3}
-  walkModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
   behaviorName: Matt
@@ -15617,7 +15617,7 @@ MonoBehaviour:
   torqueScale: 1
   headSprite: {fileID: -7686771571381700282, guid: 95006877e9fe8ff44b732eaf725260ae, type: 3}
   headDiameter: 0.5
-  enableJiggle: 1
+  castShadows: 0
   Torso: {fileID: 0}
   Chest: {fileID: 0}
   HeadRenderer: {fileID: 0}

@@ -18,16 +18,16 @@ MonoBehaviour:
   horizontalMargin: 0.8
   smoothing: 4
   wideOrtho: 14
-  ringHalfWidth: 4
+  ringHalfWidth: 3.5
   neutralGapHalf: 2.5
   surfaceFriction: 0.55
-  tawaraBandWidth: 0.7
+  tawaraBandWidth: 1.2
   tawaraFriction: 0.18
   enableWalkIn: 1
   walkInHalfWidth: 8
   walkInStartGapHalf: 3
   walkInTouchGap: 0.05
-  walkInTimeout: 12
+  walkInTimeout: 7
   pointsToWin: 3
   tournamentPointsToWin: 2
   roundTimeoutSeconds: 20
@@ -36,7 +36,7 @@ MonoBehaviour:
   downGraceSeconds: 0.2
   downOutSeconds: 3
   knockdownLoses: 0
-  knockoutsToLoseMatch: 3
+  knockoutsToLoseMatch: 2
   knockoutAnnounceSeconds: 2.2
   enablePresentation: 1
   enableAudio: 1

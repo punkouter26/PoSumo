@@ -1,0 +1,140 @@
+# Matt UNIFIED v03 — COLD re-establishment of the v02 recipe. 2026-08-02.
+#
+# NOT a new tuning. Byte-identical hyperparameters to MattUnified02.yaml; the only
+# reason this file exists is the run-id.
+#
+# WHY: Training/results/ is gitignored and absent from a fresh clone, so the
+# matt_unified02 trunk that backs the shipped Assets/Agents/Matt_v01/Matt.onnx no
+# longer exists on disk. There is no checkpoint.pt to --resume or
+# --initialize-from, and ML-Agents cannot warm-start from a deployed .onnx. Any
+# run here is therefore COLD, from scratch, against a shipped brain with a
+# multi-million-step trunk behind it.
+#
+# WHY NOT run-id matt_unified02: DeployBrain.DeployMatt() is pinned to exactly
+# that run-id. Recreating results/matt_unified02/ would arm
+# *PoSumo -> Deploy Matt Brain* to overwrite the shipped Matt.onnx with whatever
+# this run happened to reach. The separate id makes that impossible by accident.
+#
+# DO NOT DEPLOY THIS unless it is measured to BEAT the shipped brain — judge it on
+# the SHAPE of the self-play ELO curve, not on mean reward (see CLAUDE.md: the two
+# have moved in opposite directions here before). A short cold run will lose.
+#
+# ── original v02 header follows ───────────────────────────────────────────────
+# Matt UNIFIED v02 — one policy for both walking and fighting.
+#
+# ── WHY 02 EXISTS: matt_unified01's walk lane never trained ───────────────────
+# All six walk agents were built facing AWAY from their target (facingSign -1
+# with the target 5 m to the right). Walk progress is measured in the
+# facing-local frame, so each walker read its start line as 5 m PAST the finish,
+# banked the hardcoded +3 graduation on its first decision, ended the episode and
+# respawned — forever. 2306 episodes in 6916 academy steps, StepCount never left
+# 0, and not one step of walking was ever learned.
+#
+# It is not enough to fix the scene and --resume, because walk and fight share
+# ONE network. For 2.5M steps the shared trunk and value head were fed thousands
+# of free +3s per minute, so the critic is calibrated to a reward that no longer
+# exists and the policy was never pushed to stand — measured at 2.5M, both
+# fighters thrashed on the mat at avgUpright 0.41 with ZERO contact across 20 s.
+# Hence a cold 02 rather than a resume of 01. 01 is parked in Training/trunks/.
+#
+# The tell on TensorBoard, for next time: mean reward pinned just under the
+# graduation bonus with near-zero variance (Matt sat at 2.999 +/- 0.015). That is
+# one terminal firing every episode, not a policy converging.
+#
+# COLD START, and it has to be. The observation vector gained a task flag
+# (44 -> 45 slots) when the walk and fight brains were merged, so no checkpoint
+# from before that change can be warm-started: the first layer shape no longer
+# matches. Every prior run for this fighter is dead weight here.
+#
+# The scene now holds BOTH populations under this one behavior name:
+#   - 4 sumo agents on two self-play arenas (the existing setup)
+#   - 6 walk agents on a lane 60 m below, mode=Walk, no opponent
+#
+# Walk agents are over-provisioned 6-vs-4 on purpose. Self-play periodically
+# freezes one team as the ghost and DISCARDS its experience; walk agents sit on
+# a team like everyone else, so an even split would quietly halve the walk
+# sample rate. The extra bodies buy that back.
+#
+# The policy tells the tasks apart from observation slot 42: 1 in a real bout,
+# 0 when the four opponent slots carry a virtual walk target instead.
+#
+# Judge on self-play ELO as always — mean reward mixes two reward functions here
+# and is not comparable with any earlier run.
+
+
+
+#
+# ── RESTARTED 2026-07-28: the leg and arm bent the wrong way ──────────────────
+# The three asymmetric joints (hip, knee, elbow) had inverted ranges for the
+# whole life of the project. HingeJoint2D.jointAngle here is the NEGATIVE of the
+# child segment's geometric rotation (measured ratio -1.00 on every joint), so
+# ranges written as if they were geometric produced a bird leg: the knee swung
+# the shin FORWARD, the elbow swung the forearm BACKWARD, and the hip had 120
+# degrees of extension against only 30 of flexion. The fighter could not crouch
+# and drive off a loaded leg at all. Corrected to hip (-120..30), knee (0..150),
+# elbow (-150..0) and re-verified in SCN_WALKVIEW with a parent-local probe.
+#
+# learning_rate raised 1.5e-4 -> 3.0e-4 for this restart ONLY. A corrective pass
+# normally nudges a policy whose motor mapping still holds; here the sign of what
+# every leg and arm action DOES has flipped, so the warm-started priors are
+# actively wrong and need fresh-run adaptation speed to be overwritten.
+behaviors:
+  Matt:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 3.0e-4
+      beta: 5.0e-3
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:      # MUST match matt_sumo06 exactly (initialize-from)
+      normalize: true
+      hidden_units: 512
+      num_layers: 3
+      vis_encode_type: simple
+    reward_signals:
+      extrinsic:
+        gamma: 0.997
+        strength: 1.0
+    keep_checkpoints: 5
+    checkpoint_interval: 250000
+    max_steps: 15000000
+    time_horizon: 1000
+    summary_freq: 30000
+    threaded: true
+    self_play:
+      window: 25
+      play_against_latest_model_ratio: 0.25
+      save_steps: 50000
+      swap_steps: 50000
+      team_change: 250000
+
+# Ring-width curriculum. Systems_SumoMatchManager randomises platform half-width
+# per round between startHalfRange (now 1.7 .. 5.5, widened from 1.7 .. 2.75 so it
+# spans the new game ring). platform_difficulty drives how far toward the narrow
+# end it may go, so ramping it teaches edge distance across SCALES instead of
+# letting the policy memorise one mat width.
+environment_parameters:
+  platform_difficulty:
+    curriculum:
+      - name: wide
+        completion_criteria:
+          measure: progress
+          behavior: Matt
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.3
+        value: 0.0
+      - name: mixed
+        completion_criteria:
+          measure: progress
+          behavior: Matt
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.6
+        value: 0.5
+      - name: full
+        value: 1.0

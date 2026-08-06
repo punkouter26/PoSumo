@@ -123,12 +123,15 @@ each live in *Editor menu tools* and *Training workflow* below.
 
 | Goal | How |
 |---|---|
-| Play the game | Open `SCN_TOURNAMENT` and enter Play mode (it loads `SCN_SUMO` per bout) |
+| Play the game | **Always** open `SCN_TOURNAMENT` and enter Play mode from there (it loads `SCN_SUMO` per bout) |
 | Compile / import after editing `.cs` outside the editor | MCP `assets-refresh` (ForceUpdate) |
 | Behavioural test | Play mode in `SCN_SUMO`, then `MatchTestHarness.Run(n)` via MCP `script-execute` → `HARNESS RESULT:` |
 | Ship an Android build | *PoSumo → Build Android APK* / *Build Android AAB (Play release)* |
 | Build a training env | *PoSumo → Build \<Name\> Training Env* → `Builds/<Name>Env/<Name>Env.exe` |
-| Train | `Training\venv\Scripts\mlagents-learn.exe` (+ TensorBoard, always) |
+| Train | `Training\Start-Training.ps1` (wraps `mlagents-learn.exe` + TensorBoard + `--base-port`) |
+| Stop training / kill orphans | `Training\Stop-Training.ps1` (`-Prune` also clears event-less runs) |
+| Watch a live env | `curl http://127.0.0.1:8787/metrics` — see *Telemetry* |
+| Drive the Editor from a shell | `python Tools/unity.py <ping\|scene\|play\|stop\|errors\|shot\|exec\|raw>` |
 | Ship a brain | *PoSumo → Deploy \<Name\> Brain* |
 
 There is no lint step and no unit-test suite; the hooks in `.claude/hooks/` are the
@@ -144,6 +147,22 @@ via `facingSign` (one policy works both directions because all observations are
 multiplied into a facing-local frame). Intra-biped collisions are disabled pairwise
 (limbs pass through their own body by design). `massScale` / `widthScale` /
 `torqueScale` come from the character asset, so physique is data, not code.
+
+**The drawn edge is the colliding edge, everywhere, and that rule was tightened
+2026-08-02.** Limbs are ellipse sprites over unit `CapsuleCollider2D`s (the same shape
+under the part's non-uniform scale); trunk and feet are exact rectangles over
+`BoxCollider2D`s. Two things had been drawing somewhere their physics was not:
+- the **head art** was aspect-fitted to 0.39 m on HEIGHT against a 0.5 m `headDiameter`
+  hitbox, so every head was hit through a ring of empty space (and a wide photo — Nick's
+  is 1.33:1 — overflowed it the other way). It now fits `headDiameter` on the sprite's
+  LONGEST side, and the plain fallback circle went 0.312 → `headDiameter` too. Art only:
+  the collider is untouched, because changing it would invalidate all four brains and
+  `Training/results/` holds no checkpoint to warm-start a correction from.
+- **`Systems_SoftBodyJiggle` is off.** It slid the torso Art child up to
+  `0.055 * widthScale * sqrt(massScale)` m off its own rigidbody. `enableJiggle` was a
+  public serialized field, so 42 stale `enableJiggle: 1` values across five scenes ignored
+  any code default — it is now `private const bool ENABLE_JIGGLE = false`, which makes
+  those serialized values inert (same trick as `Systems_TournamentBracket.ARENA_SCENE`).
 
 Physical fidelity, so nobody has to re-derive it: gravity is Earth's −9.81 (project
 setting *and* re-asserted at runtime), and the baseline body is **69.6 kg** —
@@ -183,6 +202,32 @@ per 90°, plus 10% per 400°/s of damping, applied every physics step in
 `Agent_BipedBody.FixedUpdate`. `HingeJoint2D` has no spring (that is 3D-only), hence the
 explicit torque. Bodies also damp at 0.25 linear / 0.8 angular, up from 0.05.
 
+**Muscle torque now FATIGUES (2026-08-05), and this invalidated all four brains.**
+Each joint carries a 0..1 fatigue state integrated at 50 Hz in `IntegrateFatigue` — the
+two-state reduction of Xia's three-compartment muscle model — and `ApplyMotor` multiplies
+the joint's torque budget by `1 - 0.35 * fatigue`. Constants: `FATIGUE_RATE` 0.06/s,
+`RECOVERY_RATE` 0.10/s, `FATIGUE_DEPTH` 0.35. A fighter that holds maximum effort through a
+whole 20 s round arrives at the bell ~0.70 fatigued and ~25% weaker; a fully spent joint
+still delivers 65%.
+
+Three things about it are load-bearing:
+- **Load is read from `joint.GetMotorTorque(dt)`, not from the action vector.** Bracing
+  against a shove is a near-zero action holding a near-maximum torque, and any measure
+  taken from the actions would score the most expensive thing in sumo as resting.
+  Isometric work is most of what a bout is.
+- **It stacks with the Hill force-velocity term on purpose.** Hill is how weak you are
+  right now because of how fast you are moving; fatigue is how weak you are because of
+  what you have already spent. Eccentric bracing keeps its 1.5× gain and still pays the
+  fatigue tax, so a braced fighter can be worn down — which is how a real bout is won.
+- **`ResetPose` clears it, and clears it BEFORE `RestoreMotors`** (which now scales the
+  torque it writes back). Carrying fatigue across an episode boundary would make an
+  episode's difficulty depend on how hard the *previous* one was fought — a hidden
+  non-stationary term the agent cannot observe at t=0.
+
+`Stamina` (1 fresh → 0 spent, averaged over the 13 **powered** joints; the 2 unpowered toe
+hinges are excluded or it would peg near 2/15 forever) is what the telemetry endpoint and
+the optional observation read.
+
 The head is still not a separate body — a compound collider on Chest with its 6 kg folded
 into Chest's 13, so there is **no neck joint** and the head cannot bob or whip. Adding one
 means giving it its own rigidbody and an *unpowered* hinge: a driven neck would be a 14th
@@ -201,6 +246,17 @@ output layer.
   `Agent_CharacterDefinition.extendedObservations`) still says 44 — **the constant in
   `Agent_Biped` is the truth**. Obs count and decision period MUST match what the assigned
   `.onnx` was trained with, or inference is silently garbage.
+- Two **opt-in** observation blocks lengthen the vector further and are OFF for every
+  shipped brain, because switching either on is only legal together with a retrain:
+  `contactObservations` (+4: per-foot contact and load) and `staminaObservation`
+  (+1: whole-body stamina, added 2026-08-05). Append order is fixed at
+  base → contact → stamina → extended; that order **is** the input layer's layout and
+  must never change again once a brain has trained on it.
+- **Turn `staminaObservation` on for the next run.** Fatigue applies to the body whether
+  or not it is observed, so leaving it off means the policy is fighting a body that is
+  silently getting weaker with no way to perceive it — it cannot learn to pace itself or
+  to time a push against a tiring opponent. The corrective run the fatigue model already
+  requires is the free moment to add it.
 - Two `Mode`s: `Walk` (falling ends the episode) and `Sumo` (refereed externally;
   shaping only, ±1 comes from the referee). A third, `Recover` (get up, then walk),
   was **deleted 2026-08-02** along with `recoverShoveChance` and the `shove_chance`
@@ -232,6 +288,28 @@ to add these mid-project. Episode **terminals** stay hardcoded (walk: fall −1,
 +3) so different characters' runs stay comparable on one reward scale. `Systems_MatchRoster`
 (`[DefaultExecutionOrder(-500)]`, must run before the agents' `Awake`) assigns the two
 characters for a scene, or defers to `Tournament_State` when a bracket is active.
+
+### Reward providers (`Assets/Scripts/Reward/`)
+Shaping was extracted out of `Agent_Biped.OnActionReceived` on 2026-08-05 into
+`Reward_SumoObjective` and `Reward_WalkObjective` — plain C# classes that hold the
+per-character coefficients, are handed the body and a `Reward_Context`, and **return a
+float**. They have no reference to the `Agent`, so a provider is structurally incapable of
+calling `AddReward`, `SetReward` or `EndEpisode`. The arithmetic is unchanged; term order
+was preserved deliberately, because these are small floats accumulated at 50 Hz.
+
+- **Terminals stayed in `Agent_Biped`** and are not going to move. `SetReward(-1)` on a
+  fall *discards* that step's shaping outright, so the order of the terminal checks
+  against the `Evaluate` call above them is load-bearing.
+- **`Reward_StepCadence` is shared by both schools**, owned by the agent, not duplicated
+  into each provider. `BeginWalkIn` switches a fighter between Walk and Sumo mid-round; two
+  independent alternation histories would pay a fighter twice for one step across that
+  switch.
+- **`Reward_Context` is a `readonly struct` passed by `in`.** One per agent per physics
+  step: as a class, 10 bipeds at 50 Hz would be 500 heap allocations a second in the
+  hottest path in the project.
+- `_pendingImpact` is cleared by the agent **only in the Sumo branch**, exactly as before —
+  a walk-in that brushes the other fighter banks that momentum for the first sumo step
+  after `EndWalkIn`.
 
 ### Two referees, deliberately kept in sync
 - `Systems_SumoMatchManager` — **training** referee. Loss = a foot below `footOffMatY`
@@ -283,6 +361,20 @@ and the semifinal's left entrant), so `_winnerSlots` holds one entry **per chip*
 match, and `Refresh()` reads each chip's match from its `userData`. Keying that list by
 match index silently orphans the duplicate chips and they never repaint.
 
+Bracket layout (reworked 2026-08-02): chips are **elastic** (`flexGrow 1` / `flexBasis 0`,
+`SLOT_SIZE` 150 as a floor that never binds) so a row divides whatever width it is given,
+each round's rows sit in a `Systems_UiKit.Surface` card under a centred header, and the
+roster palette is a 2-up grid of 50%-wide cells. Three measured traps, all of which cost a
+build here:
+- **the usable content column is ~578pt, not the ~696 a 720pt reference panel implies.**
+  Size against a live capture, not against the reference; a fixed chip width of 190
+  immediately pushed the winner chip off its card.
+- **`flexBasis` applies to the MAIN axis.** A chip built for a row and dropped into a
+  default (column) cell collapsed to zero HEIGHT and the whole palette vanished with no
+  error. Palette cells are `Systems_UiKit.Row()`s for that reason.
+- **the gutter goes on the cell, not the chip.** A margin on two 50% chips totals >100%
+  and wraps them one per line.
+
 ### The look: one shader, and switches that must move together
 `Assets/Resources/Shaders/PoSumo_BodyLit.shader` is the **only authored shader in the
 project** — everything else is a runtime `new Material` on a stock URP sprite shader, and
@@ -290,11 +382,32 @@ there are no `.mat` assets and no Shader Graph files at all. It is a 3-pass copy
 `Sprite-Lit-Default` (all three passes must declare an IDENTICAL `UnityPerMaterial` CBUFFER
 or the SRP Batcher silently drops it) plus four terms: rim, subsurface wrap, sweat and clay.
 
-Three switches in two files gate that look and are only correct **together**:
+**`Systems_ArenaLighting.LightingEffects` is `false` (2026-08-02) and is the master
+switch for all of it.** With it off the rig builds exactly **one** `Light2D.LightType.Global`
+at `flatGlobalIntensity` (1.5) and nothing else: no key, no rims, no volumetrics, no
+shadows, no post-processing volume, no cylinder normal map, and the BodyLit rim/wrap/sweat
+terms zeroed. `Systems_SumoArena` also hides its painted-on `Spotlight` cones and
+`LanternHalo` glows, and `Systems_ArenaAtmosphere.showShafts` is off.
+
+Two things about that switch are load-bearing:
+
+- **The materials stay LIT.** Handing everything a `Sprites/Default` unlit material was
+  tried first and is the trap: it renders, but at 1.0× where the old rig delivered ~1.7×
+  across the middle of the mat, and the arena art is authored dark on that assumption. A
+  live capture showed the dohyo, crowd and backdrop collapse into an unreadable brown void.
+  A Global light has no position and no falloff, so it shades nothing — it is an exposure,
+  not an effect, and it is the only thing between a lit sprite and solid black.
+- **`GameTuning.enableLighting` must stay ON** and is deliberately NOT ANDed with the
+  switch. It decides whether there is a rig; `LightingEffects` decides what the rig builds.
+  Turn the first off and the scene goes black.
+
+The two shadow switches below still gate the (still-disabled) cast shadows, and
+`FlatBodyShading` still applies when `LightingEffects` is back on:
 
 | Switch | File | Meaning |
 |---|---|---|
-| `FlatBodyShading` | `Systems_ArenaLighting` | `true` zeroes rim/wrap/sweat and skips the normal map — flat tinted primitives |
+| `LightingEffects` | `Systems_ArenaLighting` | **master.** `false` = one flat global light, nothing else |
+| `FlatBodyShading` | `Systems_ArenaLighting` | `true` zeroes rim/wrap/sweat and skips the normal map — flat tinted primitives. Implied while `LightingEffects` is off |
 | `keyCastsShadows` | `Systems_ArenaLighting` | the key light is the only shadow caster; the rims and global are explicitly cleared because `Light2D.m_ShadowsEnabled` defaults TRUE for code-created lights |
 | `castShadows` | `Agent_BipedBody` | adds the `ShadowCaster2D`s |
 
@@ -398,7 +511,7 @@ a tick on one asset rather than an edit in three scenes.
 | `Systems_MatchAudio` / `Systems_FighterVoice` / `Systems_VoiceGains` | impact + crowd + ceremony audio; per-fighter spoken lines (silent when a fighter has no clips) |
 | `Systems_MusicDirector` | adaptive layered score |
 | `Systems_ArenaLighting` / `Systems_ArenaAtmosphere` | 2D light rig + post volume; backdrop parallax, haze, crowd sway, light shafts |
-| `Systems_BodySurface` | writes `_Sweat` and `_Dirt` into one fighter's `PoSumo/BodyLit` material — sheen from exertion, clay from arena contact. Rides `enableLighting`; disables itself when `FlatBodyShading` is on |
+| `Systems_BodySurface` | writes `_Sweat` and `_Dirt` into one fighter's `PoSumo/BodyLit` material — sheen from exertion, clay from arena contact. Rides `enableLighting`; disables itself unless `Systems_ArenaLighting.BodyShadingActive`, so it is **currently inert** |
 | `Systems_ImpactFx` / `Systems_DustPuff` / `Systems_SoftBodyJiggle` / `Systems_BlobShadow` | hit bursts, dust, flesh wobble, contact shadows |
 | `Systems_BodyDamage` / `Systems_RingBlood` | bruise decals, **limb loss and decapitation**, the bloody head KO, and blood left on the mat. **Owns the `Knockout` static event the referee's 3-KO rule reads**, so it is the one "presentation" system with a rules consequence |
 | `Systems_FaceMood` | expression driven by dominance |
@@ -406,12 +519,42 @@ a tick on one asset rather than an edit in three scenes.
 
 **Fighters can be dismembered and decapitated, and this is not cosmetic.** Measured play
 produces `[DAMAGE] Damage_Nick lost LegNear at 20.0 damage — bleeding from stump 'Pelvis'`
-and `Damage_Matt DECAPITATED at 2.8 damage`. A fighter that loses a leg cannot satisfy the
+and `Damage_Matt DECAPITATED at 2.8 damage`.
+
+The two gates are deliberately far apart and were pushed further apart on 2026-08-02:
+`detachAtRedMultiple` 8 → **16** (a limb needs 40 summed damage, ~10× the original 1.6)
+while `headDetachAtRedMultiple` stays **0.8** (a gate of 2.0). Losing an arm or a leg is
+now rare; decapitation stays the common showpiece finish. Both wounds of a break bleed —
+stump and severed end, neck stump and the head's cut face — through `OpenBleed`, and the
+jets carry a `severJetSpeed` / `decapJetSpeed` multiplier into
+`Systems_DustPuff.BloodSpray` that raises droplet speed and narrows the cone, so a cut end
+throws an arc rather than dribbling on itself. The blood particle budget (2600) is sized
+against `decapPeakDroplets` at two wounds at once — raise that and the pour silently
+starves rather than erroring. A fighter that loses a leg cannot satisfy the
 get-up condition again, so it is `downOutSeconds` — not the ring-out — that actually ends
 that round. That is the interaction to keep in mind when tuning either: shorten
 `downOutSeconds` and dismembered fighters are retired faster; disable it and they lie
 there until the clock expires, which is the exact stall the rule was added to kill.
 The training referee has no equivalent, so no brain has ever trained against it.
+
+### Telemetry (`Systems_Telemetry`)
+Spawns itself via `[RuntimeInitializeOnLoadMethod]` in **Editor and development builds
+only** — a shipped Android build gets no listening socket. It publishes the same numbers
+twice: as JSON on `http://127.0.0.1:<port>/metrics`, and into ML-Agents' `StatsRecorder`
+so per-fighter stamina lands on TensorBoard beside reward and ELO. TensorBoard answers
+"how did this run go"; the HTTP endpoint answers "what is this env doing right now",
+which is the question you actually have when a headless run has gone quiet.
+
+- **Raw `TcpListener`, not `HttpListener`.** HttpListener needs a `netsh http add urlacl`
+  reservation to bind as a non-admin user on Windows; a telemetry endpoint that throws
+  access-denied on a fresh machine is worse than none.
+- **Port walks upward from 8787** (12 attempts) so each of the 4-8 concurrent training
+  envs gets its own. The bound port is logged as `TELEMETRY RESULT:`.
+- **The socket thread never touches a Unity API.** The main thread rebuilds the JSON on a
+  2 Hz timer into a reused `StringBuilder` and swaps it under a lock; the socket thread
+  only reads that string. A background `FindObjectsByType` would be an immediate crash.
+- `OnDestroy` calls `Stop()` **before** joining the thread — `AcceptTcpClient` is
+  otherwise parked forever and holds the port past teardown.
 
 ### Career stats persist across sessions
 `Systems_CareerStats` is static like `Systems_TournamentState` — but where the bracket
@@ -426,10 +569,56 @@ serialize a `Dictionary`.
 This Elo is the *game's* ladder and has nothing to do with the self-play ELO in
 TensorBoard; do not compare the two numbers.
 
+### The banzuke (`Systems_CareerLadder` + `Systems_CareerScreen`)
+`Systems_CareerLadder` maps a career record onto a 10-rung sumo rank — JONOKUCHI
+up to YOKOZUNA. Pure logic over `Systems_CareerStats.Record`: no state, nothing
+serialized, nothing to reset. The record is the truth and a rank is a view of it.
+
+**The thresholds are tuned for a ZERO-SUM pool and that is the thing to know before
+touching them.** Elo here is closed — four fighters, every match moves points from
+loser to winner, so the pool mean is pinned at 1000 forever. There is no absolute
+scale, only distance from 1000. A dominant fighter realistically reaches ~+160 at
+K = 24, which is where YOKOZUNA sits; the bands fan out from 1000, not from zero.
+Widen them and the top ranks become unreachable, narrow them and everyone is a
+Yokozuna. A fresh fighter at 1000 is MAKUSHITA, rung 3 of 10 — room to fall three
+and climb six. Measured: against equal opposition a fighter promotes at matches
+1, 4, 7, 11, 17 and 26, so the climb decelerates but never stalls.
+
+- **The top two rungs are gated on TITLES as well as rating** (OZEKI 1, YOKOZUNA 2).
+  Without that the bracket would be a way to farm Elo and nothing more; winning a
+  tournament is the only route to Ozeki, as in the sport. `IndexFor` walks the
+  rungs DOWNWARD so a title gate cannot strand a fighter — 1200 with no titles is
+  SEKIWAKE, not stopped at the first rung it fails.
+- **`UNRANKED` is −1, not rung 0**, for a fighter with no decided match — their Elo
+  is the 1000 default, which would otherwise plant them mid-ladder having done
+  nothing. Both the promotion and demotion branches in `Systems_CareerRecorder`
+  guard against it, or every fighter's first win would announce a "promotion" that
+  is really an arrival.
+- `Systems_CareerRecorder` samples each fighter's rank INDEX before writing and
+  again after `RecordTitle` — after, because the final of a bracket is exactly when
+  a title gate can be cleared. It samples the index and not the `Record`, because
+  `Systems_CareerStats.Get` hands back the live object out of its list and a
+  "before" reference would be mutated by the write and compare equal to itself.
+  The result is held in a consume-once static (cleared on `SubsystemRegistration`,
+  like every static here) so the bracket announces it exactly once on return.
+
+`Systems_CareerScreen` is a full-screen overlay **inside the bracket's UIDocument**,
+not a second one — see `Assets/UI Toolkit/README.md`. It replaced a collapsed
+four-column table that used to be built inline in the bracket's scroll column;
+there is now one career UI, not two.
+
 ### Scenes
 Build settings are exactly two scenes: `SCN_TOURNAMENT` (index 0) and `SCN_SUMO`. The game
 therefore always boots into the bracket, which loads `SCN_SUMO` for every bout and gets the
-winner back via `Systems_TournamentReporter`. `SCN_SUMO_ICE` and `SCN_SUMO_STICKY` were
+winner back via `Systems_TournamentReporter`.
+
+**Always start a play session from `SCN_TOURNAMENT`** — never from `SCN_SUMO`, a
+`SCN_TRAIN_*` scene, or whatever the Editor was last left on (frequently `SCN_SUMO`).
+Entering Play mode inside `SCN_SUMO` runs a standalone exhibition: no bracket, no
+`Systems_TournamentState`, no `Systems_TournamentReporter` spawned and no title awarded, so
+nothing bracket-, career- or banzuke-shaped can be observed or tested from there. The
+arena scene is deliberately usable standalone, which is exactly why the wrong entry point
+looks like it works. `SCN_SUMO_ICE` and `SCN_SUMO_STICKY` were
 deleted (2026-07-28) and the bracket no longer rotates arenas — `Systems_TournamentBracket`
 holds a `const string ARENA_SCENE = "SCN_SUMO"` rather than a serialized array, precisely so
 SCN_TOURNAMENT's stale serialized copy of the old three-scene list cannot resurrect them.
@@ -500,7 +689,8 @@ After any change to the walk lane, assert every walker spawns at `xLocal < -0.3`
 - Scene hierarchy rule: every environment root has exactly 7 groups
   (Agents/Obstacles/Goals/SpawnPoints/Cameras/UI/Systems).
 - Naming schema, enforced across the whole tree: script prefixes are exactly
-  `Agent_`, `Sensor_`, `Systems_` (three folders under `Assets/Scripts/`, no others);
+  `Agent_`, `Sensor_`, `Reward_`, `Systems_` (four folders under `Assets/Scripts/`,
+  no others — `Reward/` was added 2026-08-05, and this line said three until then);
   scenes `SCN_*` with training scenes as `SCN_TRAIN_<NAME>`; env builds as
   `Builds/<Name>Env/` matching their scene; configs as `<Name><Phase><NN>.yaml` paired
   1:1 with run-id `<name>_<phase><nn>`; agent assets in `Assets/Agents/<Name>_v<NN>/`
@@ -514,7 +704,26 @@ After any change to the walk lane, assert every walker spawns at `xLocal < -0.3`
 
 ## Training workflow
 
-Always run TensorBoard alongside training (user rule):
+> **All four shipped brains are stale as of 2026-08-05** and need a corrective pass. The
+> fatigue model changed the dynamics they were fitted against. The recovery is the cheap
+> one described below — rebuild each env, warm-start from the shipped checkpoint, run
+> 1-3M steps at a reduced learning rate — but note that `Training/results/` is gitignored
+> and absent from a fresh clone, so there may be no checkpoint to warm-start from and the
+> pass becomes a cold retrain. Turn on `staminaObservation` in the same run.
+
+`Training\Start-Training.ps1` is the wrapper: it starts TensorBoard *before* the trainer,
+always passes an explicit `--base-port`, bounds `--num-envs` to 4-8 and warns if that
+leaves under 4 cores for the trainer's torch threads, and records the session (run id,
+PIDs, ports) to the gitignored `Training/.session.json`.
+
+`Training\Stop-Training.ps1` tears one down in the order that actually works: trainer
+first (killing env workers first accomplishes nothing — it respawns them), then orphaned
+players matched by path under `Builds/`, then TensorBoard, then optionally `-Prune` to
+delete event-less run directories. It closes the trainer's window rather than killing it
+and waits 60 s, because the final-checkpoint write on a large trunk is not instant and
+killing through it truncates the `.pt`.
+
+Doing it by hand instead — TensorBoard must be running alongside training (user rule):
 ```powershell
 Training\venv\Scripts\python.exe -m tensorboard.main --logdir Training/results --port 6006 --reload_interval 15
 ```
@@ -528,8 +737,21 @@ Typical loop for a new or updated fighter:
 3. Train:
 ```powershell
 Training\venv\Scripts\mlagents-learn.exe Training/configs/<cfg>.yaml --run-id=<id> `
-  --results-dir=Training/results --env=Builds/<Env>/<Env>.exe --num-envs=3 --no-graphics
+  --results-dir=Training/results --env=Builds/<Env>/<Env>.exe --num-envs=6 --no-graphics `
+  --base-port=5005
 ```
+`--num-envs` is a **CPU budget, and it is not free to change**: each env is a headless
+player process, so keep it to 4-8 on this 12-core box and leave cores for the trainer's
+torch threads and TensorBoard. It is also not a pure throughput dial — ML-Agents' own docs
+are explicit that changing `--num-envs` with every hyperparameter held fixed still changes
+the resulting model, because it changes how experience is batched. The shipped four brains
+were trained at **3**; a later run at 6 is a different run, not a faster one, so record the
+value in the config header alongside the hyperparameters.
+
+**Always pass an explicit `--base-port`.** The trainer takes `--num-envs` consecutive ports
+starting there, so two concurrent runs on the default 5005 collide on the worker sockets and
+the second one hangs waiting for a handshake that the first already answered. Space
+concurrent runs by at least `--num-envs` (5005, 5015, 5025 …).
 4. Deploy the ONNX (`PoSumo/Deploy <Name> Brain`, or `DeployBrain.DeployLatestCheckpoint(...)`
    to try a brain from a still-running run — the trainer only writes the unnumbered
    `<Behavior>.onnx` on shutdown).
@@ -562,9 +784,10 @@ cosmetic: the surviving checkpoints outrank the new run's numerically for a long
 `Deploy`/`DeployWalk` are safe because they read the top-level `<Behavior>.onnx`, which a run
 rewrites only when it finishes.
 
-To stop training: kill `mlagents-learn.exe` itself. Killing only the env worker EXEs does
-nothing — the trainer auto-respawns them. On any disconnect the trainer saves a final
-checkpoint before exiting.
+To stop training: run `Training\Stop-Training.ps1`, or kill `mlagents-learn.exe` itself.
+Killing only the env worker EXEs does nothing — the trainer auto-respawns them. On any
+disconnect the trainer saves a final checkpoint before exiting, so close it rather than
+hard-killing it and give the write time to land.
 
 Deployed models are always **overwritten in place** at `Assets/Agents/<Name>_v01/<Name>.onnx`
 so the `.meta` GUID (and every reference to it) survives; `DeployBrain` does this and also
@@ -640,6 +863,58 @@ Judge a character by the harness tally, not by one eyeballed round. The build/de
 print a `BUILD RESULT:` / `AAB BUILD RESULT:` / `DEPLOY RESULT:` line — that is how their
 outcome is read back. There is no test suite: `MatchTestHarness` and the Game-view
 screenshot flow below are the verification tools this project has.
+
+## Unity Editor automation — `Tools/unity.py` FIRST
+
+**`Tools/unity.py` is the route that works headlessly, and it should be the first
+thing tried.** Standard library only, no venv, no login:
+
+```
+python Tools/unity.py ping                      # is the Editor reachable
+python Tools/unity.py scene SCN_TOURNAMENT      # load a scene
+python Tools/unity.py play | stop | pause
+python Tools/unity.py errors [--warnings]       # read the console
+python Tools/unity.py shot Temp/x.png           # Game view PNG, UI Toolkit included
+python Tools/unity.py exec 'return UnityEngine.Application.unityVersion;'
+python Tools/unity.py raw manage_scene '{"action":"get_hierarchy"}'
+python Tools/unity.py tools                     # the 35 available tools
+```
+
+It speaks the **CoplayDev `com.coplaydev.unity-mcp` `StdioBridgeHost`** protocol on
+`127.0.0.1:6401` directly — a plain TCP socket that is already running whenever the
+Editor is. An earlier version of this file said that package was "installed but not
+connected"; it is the most reliable automation surface in the project.
+
+Why not the other two, both measured on 2026-08-05:
+- **`ai-game-developer` (`.mcp.json`) is a REMOTE relay** at
+  `https://ai-game.dev/mcp/p/fc108679`, not localhost, and needs an OAuth flow that
+  no headless or non-interactive session can complete. This file used to call it
+  "no login" — that is wrong.
+- **Besty UnitySkills (8090) is easy to lose.** Closing the Editor while a process
+  it spawned is still alive — VS Code, as the external script editor — leaks the
+  listening socket to that child, which keeps it open. The socket then shows as
+  LISTENING under a **dead pid**, the next Editor silently fails to bind, and the
+  port answers TCP but never HTTP. Freeing it means killing the inheriting process.
+
+Wire protocol, in case the helper ever needs rewriting (it is in no documentation —
+this was read out of `StdioBridgeHost.cs`): connect, read a **raw, unframed**
+handshake line `WELCOME UNITY-MCP 1 FRAMING=1\n` up to the newline *and no further*
+or you eat the head of the first frame; thereafter every message is an **8-byte
+big-endian length** followed by a UTF-8 JSON `{"type": "<tool>", "params": {...}}`.
+Tool names are auto-derived from `[McpForUnityTool]` attributes in snake_case.
+
+Two traps the helper already handles, both of which cost a wrong conclusion here:
+- **`execute_code` requires `action: "execute"`.** Omitting it fails with a bare
+  `'action' parameter is required.` that does not name the offending tool.
+- **`shot` must let animations settle.** `ScreenCapture.CaptureScreenshot` is
+  asynchronous (end of frame) *and* capturing in the same frame a panel starts its
+  140 ms `FadeIn` photographs it at opacity ~0 — which reads as a rendering bug
+  rather than a timing one. `--settle` and the size-stability wait exist for that.
+  It is `CaptureScreenshot` and not a Camera+RenderTexture render because every
+  screen here is UI Toolkit in a screen-overlay panel, which a camera render does
+  not see at all.
+
+`manage_editor` has no `get_state`; read editor state with `exec` instead.
 
 ## Unity Editor automation (MCP)
 

@@ -45,6 +45,8 @@ namespace PoSumo
         public int decisionPeriod = 3;
         [Tooltip("Adds 4 observations: per-foot ground contact and the share of body weight carried through each foot.\n\nOFF for every shipped brain, and it must stay off until that fighter is retrained — it changes the observation vector length, so an existing .onnx would be fed a vector its input layer cannot accept.\n\nWorth turning on for the NEXT training run: without it the policy cannot tell a planted foot from one in the air, or feel how hard it is loading the mat, which is the single most important thing a wrestler senses.")]
         public bool contactObservations = false;
+        [Tooltip("Adds 1 observation: whole-body stamina, 1 = fresh down to 0 = fully fatigued.\n\nOFF for every shipped brain for the same reason contactObservations is — it lengthens the observation vector, so an existing .onnx cannot be fed it.\n\nTurn it on for the NEXT run, together with the corrective pass the fatigue model requires anyway. Joint torque now decays with accumulated work whether or not this is on; leaving it off means the policy is fighting a body that is silently getting weaker with no way to perceive it, so it cannot learn to pace itself or to time a push against a tiring opponent.")]
+        public bool staminaObservation = false;
         [Tooltip("Trained model for inference playback.")]
         public Unity.InferenceEngine.ModelAsset inferenceModel;
 
