@@ -231,6 +231,7 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 91b65372f7078aa4b8bb28a92751993f, type: 2}
   - {fileID: 11400000, guid: 14211cdaf9881594c90184adc2678b1f, type: 2}
   - {fileID: 11400000, guid: 385d01880fa1e394d9a85ae625be52ac, type: 2}
+  - {fileID: 11400000, guid: 5a4e318e0afb1e44bb0357f0600b2460, type: 2}
   _panelSettings: {fileID: 11400000, guid: 5f29889ae85d92343b4edf70b0058e9d, type: 2}
   _tuning: {fileID: 11400000, guid: b40c783b035d5814a918a508fb517706, type: 2}
   _autoPlay: 1

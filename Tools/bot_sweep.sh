@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# BOT tuning sweep, v2.
+# BOT tuning sweep, v3.
 #
 # v1 was not trustworthy and its own output said so:
 #   * the match ENDS after first-to-3 and then sits frozen on the rematch screen,
@@ -17,11 +17,39 @@ U="python Tools/unity.py"
 API="http://127.0.0.1:8090/skill"
 REPEATS=3
 
+playing () {
+  timeout 25 curl -s -m 20 -X POST "$API/editor_get_state" -H "Content-Type: application/json" -d '{}' 2>/dev/null \
+    | grep -oE '"isPlaying":[a-z]+' | cut -d: -f2
+}
+
+# True once a fighter's Rigidbody2D is actually simulating. This is the check the
+# previous version lacked, and its absence invalidated 11 of 12 trials: it slept a
+# fixed 5 s after pressing play and then measured whatever was there, which — if
+# the restart had not taken, or the round was still in its countdown freeze — was a
+# motionless body scoring zero. isPlaying is NOT sufficient: the referee freezes
+# the fighters with simulated=false between rounds while play mode is perfectly
+# live, so the only trustworthy signal is the body itself moving.
+wait_live () {
+  local tries=${1:-25}
+  for _ in $(seq 1 "$tries"); do
+    case "$(sample)" in
+      *FRZ*|*none*|"") : ;;
+      *) return 0 ;;
+    esac
+  done
+  return 1
+}
+
 restart_play () {
-  timeout 40 curl -s -m 35 -X POST "$API/editor_stop" -H "Content-Type: application/json" -d '{}' >/dev/null 2>&1
-  sleep 2
+  # editor_stop errors when not playing; that is fine and must not abort the run.
+  if [ "$(playing)" = "true" ]; then
+    timeout 40 curl -s -m 35 -X POST "$API/editor_stop" -H "Content-Type: application/json" -d '{}' >/dev/null 2>&1
+    for _ in $(seq 1 15); do [ "$(playing)" = "false" ] && break; done
+  fi
   timeout 40 curl -s -m 35 -X POST "$API/editor_play" -H "Content-Type: application/json" -d '{}' >/dev/null 2>&1
-  sleep 5
+  for _ in $(seq 1 20); do [ "$(playing)" = "true" ] && break; done
+  # and finally wait for physics on the bodies, not just for play mode
+  wait_live 30
 }
 
 set_params () {
@@ -75,34 +103,49 @@ trial () { # -> "upright gain"
   if [ -n "$FIRST" ] && [ -n "$LAST" ]; then
     G=$(python -c "print(round(abs($FIRST)-abs($LAST),2))" 2>/dev/null || echo 0)
   else G=0; fi
-  echo "$UP $G $LIVE"
+  # A trial that never saw a live frame measured NOTHING. Reporting it as 0
+  # silently averages a dead instrument in with real data, which is exactly how
+  # both earlier versions produced a confident ranking out of noise. Mark it
+  # invalid so the caller drops it and says so.
+  if [ "$LIVE" -lt 4 ]; then echo "INVALID 0 $LIVE"; else echo "$UP $G $LIVE"; fi
 }
 
 echo "config | meanUpright meanGainM meanScore  (n=$REPEATS, live-sample counts in brackets)"
 BEST=-99999; BESTCFG=""
 while read -r KP KD KV SPLIT GAIN KNEE; do
   [ -z "$KP" ] && continue
-  SUMU=0; SUMG=0; LIVES=""
+  SUMU=0; SUMG=0; LIVES=""; VALID=0; DEAD=0
   for r in $(seq 1 $REPEATS); do
     restart_play
     set_params "$KP" "$KD" "$KV" "$SPLIT" "$GAIN" "$KNEE"
     read -r U G L <<EOF2
 $(trial)
 EOF2
+    if [ "$U" = "INVALID" ]; then
+      DEAD=$((DEAD+1)); LIVES="${LIVES}x "
+      continue
+    fi
+    VALID=$((VALID+1))
     SUMU=$(python -c "print($SUMU + $U)")
     SUMG=$(python -c "print(round($SUMG + $G,2))")
     LIVES="$LIVES$L "
   done
-  MU=$(python -c "print(round($SUMU/$REPEATS,2))")
-  MG=$(python -c "print(round($SUMG/$REPEATS,2))")
+  if [ "$VALID" -eq 0 ]; then
+    echo "$KP $KD $KV $SPLIT $GAIN $KNEE | NO VALID TRIALS ($DEAD dead) - NOT RANKED"
+    continue
+  fi
+  MU=$(python -c "print(round($SUMU/$VALID,2))")
+  MG=$(python -c "print(round($SUMG/$VALID,2))")
   SC=$(python -c "print(round($MU*10 + $MG*5,1))")
-  echo "$KP $KD $KV $SPLIT $GAIN $KNEE | $MU $MG $SC  [$LIVES]"
+  echo "$KP $KD $KV $SPLIT $GAIN $KNEE | $MU $MG $SC  n=$VALID dead=$DEAD [$LIVES]"
   B=$(python -c "print(1 if $SC>$BEST else 0)")
   [ "$B" = "1" ] && { BEST=$SC; BESTCFG="$KP $KD $KV $SPLIT $GAIN $KNEE"; }
 done <<'CFG'
 22 4 26 20 2.5 7
+22 4 26 20 2.5 7
 14 3 26 20 2.5 7
 34 6 26 20 2.5 7
-22 4 26 20 2.5 16
+22 4 40 20 2.5 7
+22 4 26 26 2.5 7
 CFG
 echo "=== BEST: $BESTCFG score=$BEST ==="
