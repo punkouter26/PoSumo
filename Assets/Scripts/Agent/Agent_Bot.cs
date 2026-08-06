@@ -147,6 +147,32 @@ namespace PoSumo
         /// once the gait itself is stable.
         private const float STANCE_ANKLE_PUSH_DEG = 0f;
 
+        // ── Trunk balance ────────────────────────────────────────────────────
+        //
+        // The missing half of SIMBICON. The paper holds the trunk upright with a
+        // virtual torque and lets the stance hip take the reaction; a constant
+        // stance angle cannot regulate trunk pitch at all, so the body pitches over
+        // however good the swing-leg feedback is. That was measured: with the swing
+        // feedback working and the stance leg finally extending, both fighters still
+        // collapsed in about a second.
+        //
+        // Lean is read as dot(chest.up, facingForward), which needs no probe: it is
+        // 0 upright and positive when the chest has pitched toward the opponent.
+        //
+        // The spine correction sign IS measured (gravity off, agent disabled, drive
+        // joints 6/7/8 to +1, read the chest through pelvis.InverseTransformPoint):
+        //     spine action +1 -> chestLocalX_facing = +0.81, i.e. chest FORWARD.
+        // So countering a forward pitch means a NEGATIVE spine target.
+        //
+        // Note the same probe returned a world-space pitch of 148 deg, which is the
+        // counter-rotation artefact CLAUDE.md warns about — with gravity off the
+        // whole body rotates to conserve angular momentum. The parent-local read is
+        // the trustworthy one, and is why the probe is written that way.
+        private const float TRUNK_SPINE_KP = 46f;   // degrees of spine per unit lean
+        private const float TRUNK_SPINE_KD = 5.5f;  // per rad/s of chest rotation
+        private const float TRUNK_HIP_KP = 38f;     // degrees of extra stance extension per unit lean
+        private const float SPINE_LIMIT_DEG = 18f;  // of the 20 the joint allows
+
         // Postures, in degrees, in the jointAngle convention documented above.
         private const float CROUCH_KNEE_DEG = 55f;   // bent: low centre of mass
         private const float CROUCH_HIP_DEG = -35f;   // negative = flexed = thigh forward
@@ -270,16 +296,26 @@ namespace PoSumo
             Track(body, actions, swingKneeJoint, swingKnee);
             Track(body, actions, swingAnkleJoint, 0f);
 
-            Track(body, actions, stanceHipJoint, STANCE_HIP_DEG);
+            // Trunk balance. `lean` is 0 upright, positive pitched toward the
+            // opponent; `leanRate` damps it so the correction does not oscillate.
+            float lean = TrunkLean(body);
+            float leanRate = body.Chest != null ? body.Chest.angularVelocity * Mathf.Deg2Rad * body.facingSign : 0f;
+
+            // Falling forward => extend the stance hip harder, which drives the
+            // pelvis forward and puts the support back underneath the mass.
+            Track(body, actions, stanceHipJoint, STANCE_HIP_DEG + TRUNK_HIP_KP * lean);
             Track(body, actions, stanceKneeJoint, STANCE_KNEE_DEG);
             Track(body, actions, stanceAnkleJoint, STANCE_ANKLE_PUSH_DEG * forward);
 
-            // Torso held UPRIGHT while walking rather than leaned. Leaning is for
-            // the shove; leaning into a step just moves the centre of mass past the
-            // support foot, which is the thing the feedback above is fighting.
-            Track(body, actions, SPINE_1, 0f);
-            Track(body, actions, SPINE_2, 0f);
-            Track(body, actions, SPINE_3, 0f);
+            // Spine rights the chest. NEGATIVE opposes a forward pitch, because the
+            // probe showed positive spine angle carries the chest forward. Split
+            // across the three joints since each only has 20 deg to give.
+            float spine = Mathf.Clamp(
+                -(TRUNK_SPINE_KP * lean + TRUNK_SPINE_KD * leanRate) / 3f,
+                -SPINE_LIMIT_DEG, SPINE_LIMIT_DEG);
+            Track(body, actions, SPINE_1, spine);
+            Track(body, actions, SPINE_2, spine);
+            Track(body, actions, SPINE_3, spine);
 
             // Arms low and slightly forward — the sumo approach, and it keeps them
             // out of the legs.
@@ -287,6 +323,21 @@ namespace PoSumo
             Track(body, actions, SHOULDER_FAR, ARM_REACH_DEG * 0.35f * forward * ARM_SIGN);
             Track(body, actions, ELBOW_NEAR, ELBOW_BENT_DEG);
             Track(body, actions, ELBOW_FAR, ELBOW_BENT_DEG);
+        }
+
+        /// Trunk pitch: 0 upright, positive when the chest has pitched toward the
+        /// opponent, negative when it has fallen back. Deliberately a dot product
+        /// against the facing-forward axis rather than a SignedAngle — it needs no
+        /// measured sign convention, has no wraparound at +/-180, and saturates
+        /// gracefully instead of flipping when the fighter goes past horizontal.
+        private static float TrunkLean(Agent_BipedBody body)
+        {
+            if (body.Chest == null)
+            {
+                return 0f;
+            }
+            Vector2 facingForward = new Vector2(body.facingSign, 0f);
+            return Vector2.Dot(body.Chest.transform.up, facingForward);
         }
 
         /// Mass-weighted centre of mass and its velocity over every surviving part.
