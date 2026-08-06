@@ -47,6 +47,11 @@
 Thumbs.db
 .DS_Store
 
+# Python bytecode. Tools/unity.py is run directly, so its cache was getting
+# committed as a binary blob on every edit.
+__pycache__/
+*.pyc
+
 # Android build intermediates
 /.utmp/
 

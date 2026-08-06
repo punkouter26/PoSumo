@@ -53,8 +53,8 @@ re-run training locally to recreate that directory.
 | Package | com.unity.ml-agents | **4.0.0** (release_23) | LOCAL `file:` package with patches — never re-fetch |
 | Package | com.unity.ai.inference | 2.6.1 | auto-dependency of ML-Agents (`Unity.InferenceEngine.ModelAsset`). Was 2.2.1 |
 | Package | URP | 17.5.0 | project template |
-| MCP | unity-mcp-cli (npm) | 0.86.0 | |
-| MCP | com.ivanmurzak.unity.mcp | 0.86.3 | + gamedev-mcp-server 9.2.0 |
+| MCP | unity-mcp-cli (npm) | **0.87.0** | keep in step with the Unity package below |
+| MCP | com.ivanmurzak.unity.mcp | **0.87.0** | + gamedev-mcp-server 9.2.0. Upgrading it reverts the plugin `.meta` platform flags — re-run *PoSumo → Fix Plugin Platforms* |
 | MCP | com.coplaydev.unity-mcp | 10.1.0 | |
 | MCP | com.besty.unity-skills | 2.2.1 | HTTP server port 8090 |
 | Python | Python | **3.10.11** | hard range: >=3.10.1, <=3.10.12 |
@@ -880,10 +880,22 @@ python Tools/unity.py raw manage_scene '{"action":"get_hierarchy"}'
 python Tools/unity.py tools                     # the 35 available tools
 ```
 
-It speaks the **CoplayDev `com.coplaydev.unity-mcp` `StdioBridgeHost`** protocol on
-`127.0.0.1:6401` directly — a plain TCP socket that is already running whenever the
-Editor is. An earlier version of this file said that package was "installed but not
-connected"; it is the most reliable automation surface in the project.
+It speaks the **CoplayDev `com.coplaydev.unity-mcp` `StdioBridgeHost`** protocol
+directly — a plain TCP socket that is already running whenever the Editor is. An
+earlier version of this file said that package was "installed but not connected";
+it is the most reliable automation surface in the project.
+
+**The bridge port is not fixed, and this file said 6401 until 2026-08-06.** The host
+picks a free port at startup, so it moves on every Editor restart and on any domain
+reload that restarts it — an MCP package upgrade moved it to **6400** while the old
+6401 listener was *still bound by the same Unity process*. That stale listener
+accepts the TCP connect and then sends nothing, so every call hung for its full
+300 s timeout rather than failing: **connect succeeds, handshake never arrives** is
+the signature. `Tools/unity.py` now discovers the port by probing 6400-6410 for the
+handshake itself (an open socket is exactly what the stale listener fakes), and
+`POSUMO_UNITY_PORT` forces one — but is still probed, so a stale forced port errors
+in ~1.5 s instead of hanging. Read the real port out of the Editor log line
+`StdioBridgeHost started on port`.
 
 Why not the other two, both measured on 2026-08-05:
 - **`ai-game-developer` (`.mcp.json`) is a REMOTE relay** at

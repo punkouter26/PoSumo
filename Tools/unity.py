@@ -20,11 +20,23 @@ the port.
 
 This talks to a third thing that is already running and needs neither: the
 CoplayDev `com.coplaydev.unity-mcp` package's `StdioBridgeHost`, a plain TCP socket
-on 127.0.0.1:6401. Standard library only — any Python 3 will do, the training venv
+on 127.0.0.1. Standard library only — any Python 3 will do, the training venv
 is not required.
 
+THE PORT IS NOT FIXED — DO NOT HARDCODE IT. The bridge picks a free port at
+startup, so it moves whenever the Editor restarts or a domain reload restarts the
+host. On 2026-08-06 an MCP package upgrade reloaded the domain and the bridge came
+back on 6400 while this file still assumed 6401; every call hung for the full
+timeout instead of failing, because the OLD listener was still bound by the same
+Unity process and answered the TCP connect — it just never sent the handshake.
+That is the signature to recognise: connect succeeds, handshake times out.
+
+So the port is DISCOVERED, by probing for the handshake rather than for an open
+socket (an open socket is exactly what the stale listener fakes). `POSUMO_UNITY_PORT`
+still forces one explicitly and skips the scan.
+
 PROTOCOL (read out of StdioBridgeHost.cs, not documented anywhere):
-  1. connect TCP to 6401
+  1. connect TCP to the bridge port
   2. the server sends a RAW, UNFRAMED handshake line: "WELCOME UNITY-MCP 1 FRAMING=1\n"
      — it is not length-prefixed, so it must be read up to the newline and no
      further, or you swallow the head of the first real frame
@@ -45,7 +57,16 @@ import sys
 import time
 
 HOST = os.environ.get("POSUMO_UNITY_HOST", "127.0.0.1")
-PORT = int(os.environ.get("POSUMO_UNITY_PORT", "6401"))
+
+# An explicit port skips discovery entirely; otherwise these are probed in order.
+# The bridge has been seen on both 6400 and 6401; the spread covers several Editors.
+_PORT_ENV = os.environ.get("POSUMO_UNITY_PORT")
+PORT_SCAN = range(6400, 6411)
+_HANDSHAKE = b"WELCOME"
+
+# Left None even when _PORT_ENV is set: seeding it here would satisfy the cache in
+# resolve_port() and skip the probe that catches a stale forced port.
+_resolved_port = None
 
 # Confirmed on MCP-FOR-UNITY server 10.1.0.
 TOOLS = [
@@ -77,19 +98,64 @@ def _read_exact(sock, count):
     return buf
 
 
+def _speaks_bridge(port, timeout=1.5):
+    """True only if `port` actually sends the handshake.
+
+    Deliberately not a "can I connect" test: a stale listener left over from a
+    previous StdioBridgeHost accepts the connection and then says nothing, which is
+    indistinguishable from a live bridge until you wait for the greeting.
+    """
+    try:
+        with socket.create_connection((HOST, port), timeout=timeout) as sock:
+            sock.settimeout(timeout)
+            return sock.recv(len(_HANDSHAKE)) == _HANDSHAKE
+    except OSError:
+        return False
+
+
+def resolve_port(force=False):
+    """Return the live bridge port, probing the scan range once and caching it."""
+    global _resolved_port
+    if _resolved_port is not None and not force:
+        return _resolved_port
+    if _PORT_ENV:
+        # Still probe a forced port. Skipping the check is how you get a 300 s hang
+        # against a stale listener instead of an error naming the problem.
+        port = int(_PORT_ENV)
+        if not _speaks_bridge(port):
+            raise BridgeError(
+                f"POSUMO_UNITY_PORT={port} does not speak the bridge protocol.\n"
+                "  - it accepted the connection but sent no handshake => stale listener\n"
+                "  - unset POSUMO_UNITY_PORT to auto-discover the live port instead"
+            )
+        _resolved_port = port
+        return port
+    for port in PORT_SCAN:
+        if _speaks_bridge(port):
+            _resolved_port = port
+            return port
+    raise BridgeError(
+        f"no Unity bridge answered on {HOST}:{PORT_SCAN.start}-{PORT_SCAN.stop - 1}.\n"
+        "  - is the Editor running?\n"
+        "  - the bridge is started by com.coplaydev.unity-mcp; check the Editor\n"
+        "    log for 'StdioBridgeHost started on port' to see which port it chose\n"
+        "  - a port that accepts the connection but never sends the handshake is a\n"
+        "    STALE listener from a previous bridge, not a live one; it is skipped\n"
+        "  - set POSUMO_UNITY_PORT to force a specific port"
+    )
+
+
 def call(command_type, params=None, timeout=300.0):
     """Send one command and return the decoded response dict."""
     payload = json.dumps({"type": command_type, "params": params or {}})
+    port = resolve_port()
     try:
-        conn = socket.create_connection((HOST, PORT), timeout=timeout)
+        conn = socket.create_connection((HOST, port), timeout=timeout)
     except OSError as exc:
         raise BridgeError(
-            f"cannot reach the Unity bridge at {HOST}:{PORT} ({exc}).\n"
-            "  - is the Editor running?\n"
-            "  - the bridge is started by com.coplaydev.unity-mcp; check the Editor\n"
-            "    log for 'StdioBridgeHost started on port'\n"
-            "  - a bridge left listening under a DEAD editor pid means a child\n"
-            "    process inherited the socket; the new Editor never bound it"
+            f"cannot reach the Unity bridge at {HOST}:{port} ({exc}). It answered a\n"
+            "probe moments ago, so the Editor most likely just started a domain\n"
+            "reload — retry, or check the Editor log for the new port."
         ) from exc
 
     with conn as sock:
@@ -135,7 +201,7 @@ def report(label, resp, limit=4000):
 def cmd_ping(_):
     resp = call("read_console", {"action": "get", "types": ["error"], "count": 1})
     ok, _payload = _unwrap(resp)
-    print(f"bridge {HOST}:{PORT} -> {'reachable' if ok else 'ERROR'}")
+    print(f"bridge {HOST}:{resolve_port()} -> {'reachable' if ok else 'ERROR'}")
     return 0 if ok else 1
 
 
@@ -233,7 +299,8 @@ def cmd_tools(_args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Control the Unity Editor over the CoplayDev bridge (port 6401).")
+        description="Control the Unity Editor over the CoplayDev bridge "
+                    "(port auto-discovered; override with POSUMO_UNITY_PORT).")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("ping", help="check the bridge is reachable").set_defaults(fn=cmd_ping)
