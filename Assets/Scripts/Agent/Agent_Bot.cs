@@ -92,10 +92,38 @@ namespace PoSumo
         private const float LUNGE_RANGE = 0.75f;    // inside this, commit to the shove
         private const float EDGE_ALARM = 0.85f;     // this close to our own edge, dig in
 
-        // Gait: a phase oscillator, not a planner. Good enough to close distance.
-        private const float STEP_HZ = 1.15f;
-        private const float STEP_SWING_DEG = 26f;
-        private const float STEP_LIFT_DEG = 38f;
+        // ── Gait: SIMBICON, not a phase oscillator ───────────────────────────
+        //
+        // The first version of this drove the legs from a blind sine wave. It could
+        // not work and did not: an open-loop gait has no way to notice it is
+        // falling, so any disturbance integrates and the fighter goes down at the
+        // tachiai every single time (measured: a full match, 3-0, both bodies flat,
+        // every round decided by downOutSeconds).
+        //
+        // SIMBICON (Yin, Loken & van de Panne 2007) fixes exactly that with one
+        // term. The swing hip is not driven to a fixed angle but to
+        //
+        //     theta = theta0 + CD * d + CV * v
+        //
+        // where d is the horizontal distance from the centre of mass to the stance
+        // foot and v is the centre-of-mass velocity, both in the facing-local
+        // frame. Falling forward raises d and v, which swings the free leg further
+        // forward, which plants the next foot ahead of the fall and catches it.
+        // That feedback is the whole difference between a walker and a faller, and
+        // it is why a hand-written 2D biped is tractable at all.
+        //
+        // Gains are in degrees per metre and degrees per metre/second because the
+        // joint targets below are in degrees, unlike the paper's radians.
+        private const float SWING_DURATION = 0.30f;
+        private const float CD_DEG_PER_M = 115f;
+        private const float CV_DEG_PER_MPS = 42f;
+        private const float SWING_HIP_BASE_DEG = -32f;  // negative = flexed = thigh forward
+        private const float SWING_KNEE_DEG = 68f;       // lift the foot clear of the mat
+        private const float STANCE_KNEE_DEG = 16f;      // near-extension carries the weight
+        private const float STANCE_HIP_DEG = -6f;
+        private const float SWING_HIP_MIN_DEG = -95f;   // stay inside the hip's -120..30
+        private const float SWING_HIP_MAX_DEG = 18f;
+        private const float STANCE_ANKLE_PUSH_DEG = -10f;
 
         // Postures, in degrees, in the jointAngle convention documented above.
         private const float CROUCH_KNEE_DEG = 55f;   // bent: low centre of mass
@@ -109,6 +137,11 @@ namespace PoSumo
         private const float ANKLE_BRACE_DEG = 14f;
 
         private float _lungeUntil;
+
+        // Gait state. Per-agent, because Agent_Biped owns one Agent_Bot each.
+        private bool _swingLegIsNear = true;
+        private float _swingTimer;
+        private float _lastTime;
 
         /// Writes 13 continuous actions. Never touches rewards or episode state —
         /// it has no reference to the Agent, which is deliberate and mirrors the
@@ -163,34 +196,106 @@ namespace PoSumo
             }
         }
 
-        /// Closing distance. Alternating legs off a phase oscillator, torso held
-        /// slightly forward so the walk carries momentum into the tachiai.
+        /// Closing distance, SIMBICON-style: one leg swings on a timer while the
+        /// other carries the weight, and the swing target is corrected every
+        /// decision by how far the body has already fallen.
         private void Advance(Agent_BipedBody body, ActionSegment<float> actions, float forward, float time)
         {
-            float phase = time * STEP_HZ * Mathf.PI * 2f;
-            float swing = Mathf.Sin(phase) * STEP_SWING_DEG * forward;
-            float lift = Mathf.Max(0f, Mathf.Sin(phase)) * STEP_LIFT_DEG;
-            float liftOther = Mathf.Max(0f, -Mathf.Sin(phase)) * STEP_LIFT_DEG;
+            // Advance the swing timer on wall-clock delta rather than a fixed step:
+            // Heuristic runs once per DecisionRequester period (3 physics steps for
+            // every shipped fighter), so assuming a step here would run the gait at
+            // a third of its intended cadence.
+            float dt = _lastTime > 0f ? Mathf.Clamp(time - _lastTime, 0f, 0.2f) : 0f;
+            _lastTime = time;
+            _swingTimer += dt;
 
-            // Hip flexion is NEGATIVE, so a forward swing subtracts.
-            Track(body, actions, HIP_NEAR, -swing + CROUCH_HIP_DEG * 0.5f);
-            Track(body, actions, HIP_FAR, swing + CROUCH_HIP_DEG * 0.5f);
-            Track(body, actions, KNEE_NEAR, lift + 10f);
-            Track(body, actions, KNEE_FAR, liftOther + 10f);
-            Track(body, actions, ANKLE_NEAR, 0f);
-            Track(body, actions, ANKLE_FAR, 0f);
+            bool nearIsSwing = _swingLegIsNear;
+            bool swingFootDown = nearIsSwing ? body.FootDownNear : body.FootDownFar;
 
-            float lean = LEAN_DEG * 0.45f * forward * LEAN_SIGN;
-            Track(body, actions, SPINE_1, lean);
-            Track(body, actions, SPINE_2, lean);
-            Track(body, actions, SPINE_3, lean);
+            // Swap legs when the swing foot lands, or when the timer expires and it
+            // has not — the timeout is what stops a leg hanging forever when the
+            // foot never makes contact (over an edge, or mid-fall).
+            if ((_swingTimer > SWING_DURATION * 0.55f && swingFootDown) || _swingTimer > SWING_DURATION)
+            {
+                _swingLegIsNear = !_swingLegIsNear;
+                _swingTimer = 0f;
+                nearIsSwing = _swingLegIsNear;
+            }
 
-            // Arms carried low and slightly forward — the sumo approach, and it
-            // keeps them out of the way of the legs.
+            Rigidbody2D stanceFoot = nearIsSwing ? body.FootFar : body.FootNear;
+            Vector2 com = CentreOfMass(body, out Vector2 comVelocity);
+
+            // THE feedback term. Both are facing-local, so "forward" is +.
+            float d = stanceFoot != null ? (com.x - stanceFoot.position.x) * body.facingSign : 0f;
+            float v = comVelocity.x * body.facingSign;
+            float swingHip = Mathf.Clamp(
+                SWING_HIP_BASE_DEG - (CD_DEG_PER_M * d + CV_DEG_PER_MPS * v) * forward,
+                SWING_HIP_MIN_DEG, SWING_HIP_MAX_DEG);
+
+            int swingHipJoint = nearIsSwing ? HIP_NEAR : HIP_FAR;
+            int swingKneeJoint = nearIsSwing ? KNEE_NEAR : KNEE_FAR;
+            int swingAnkleJoint = nearIsSwing ? ANKLE_NEAR : ANKLE_FAR;
+            int stanceHipJoint = nearIsSwing ? HIP_FAR : HIP_NEAR;
+            int stanceKneeJoint = nearIsSwing ? KNEE_FAR : KNEE_NEAR;
+            int stanceAnkleJoint = nearIsSwing ? ANKLE_FAR : ANKLE_NEAR;
+
+            // The swing knee flexes to clear the mat, then extends through the back
+            // half of the swing so the foot lands on a straightening leg.
+            float swingProgress = Mathf.Clamp01(_swingTimer / SWING_DURATION);
+            float swingKnee = Mathf.Lerp(SWING_KNEE_DEG, 20f, swingProgress);
+
+            Track(body, actions, swingHipJoint, swingHip);
+            Track(body, actions, swingKneeJoint, swingKnee);
+            Track(body, actions, swingAnkleJoint, 0f);
+
+            Track(body, actions, stanceHipJoint, STANCE_HIP_DEG);
+            Track(body, actions, stanceKneeJoint, STANCE_KNEE_DEG);
+            Track(body, actions, stanceAnkleJoint, STANCE_ANKLE_PUSH_DEG * forward);
+
+            // Torso held UPRIGHT while walking rather than leaned. Leaning is for
+            // the shove; leaning into a step just moves the centre of mass past the
+            // support foot, which is the thing the feedback above is fighting.
+            Track(body, actions, SPINE_1, 0f);
+            Track(body, actions, SPINE_2, 0f);
+            Track(body, actions, SPINE_3, 0f);
+
+            // Arms low and slightly forward — the sumo approach, and it keeps them
+            // out of the legs.
             Track(body, actions, SHOULDER_NEAR, ARM_REACH_DEG * 0.35f * forward * ARM_SIGN);
             Track(body, actions, SHOULDER_FAR, ARM_REACH_DEG * 0.35f * forward * ARM_SIGN);
             Track(body, actions, ELBOW_NEAR, ELBOW_BENT_DEG);
             Track(body, actions, ELBOW_FAR, ELBOW_BENT_DEG);
+        }
+
+        /// Mass-weighted centre of mass and its velocity over every surviving part.
+        /// Walks `Parts` rather than using the pelvis as a proxy, because the pelvis
+        /// is only 12% of the body and a fighter can be mid-fall with the pelvis
+        /// still over its feet. Skips nulls: limbs detach in this game.
+        private static Vector2 CentreOfMass(Agent_BipedBody body, out Vector2 velocity)
+        {
+            Vector2 weighted = Vector2.zero;
+            Vector2 weightedVelocity = Vector2.zero;
+            float total = 0f;
+            Rigidbody2D[] parts = body.Parts;
+            for (int partIndex = 0; partIndex < parts.Length; partIndex++)
+            {
+                Rigidbody2D part = parts[partIndex];
+                if (part == null)
+                {
+                    continue;
+                }
+                float mass = part.mass;
+                weighted += part.position * mass;
+                weightedVelocity += part.linearVelocity * mass;
+                total += mass;
+            }
+            if (total <= 0f)
+            {
+                velocity = Vector2.zero;
+                return body.Torso != null ? body.Torso.position : Vector2.zero;
+            }
+            velocity = weightedVelocity / total;
+            return weighted / total;
         }
 
         /// In contact. Crouch to get under the opponent, then extend the legs to
