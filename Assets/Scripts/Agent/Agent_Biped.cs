@@ -418,6 +418,25 @@ namespace PoSumo
             _lastTorsoY = torsoY;
         }
 
+        /// The BOT gets a solid blue head so it is obvious which fighter is not a
+        /// trained policy.
+        ///
+        /// Done in Start, not Awake: Agent_BipedBody builds the ragdoll — head
+        /// renderer included — in its own Awake, and nothing orders the two Awakes
+        /// against each other, so painting the head in Awake would work or not
+        /// depending on component order. By Start the body is always built.
+        private void Start()
+        {
+            if (useBot && _b != null)
+            {
+                _b.ApplyBotHead(BOT_HEAD_COLOR);
+            }
+        }
+
+        /// Deliberately a strong, flat blue: it has to read against the dark arena
+        /// and against the four fighters' skin-toned face photos.
+        private static readonly Color BOT_HEAD_COLOR = new Color(0.16f, 0.45f, 1f);
+
         public override void Heuristic(in ActionBuffers actionsOut)
         {
             var a = actionsOut.ContinuousActions;
