@@ -96,7 +96,7 @@ namespace PoSumo
         /// stand. Stepping while already toppling is how the previous version threw
         /// itself down: the swing leg leaves the ground exactly when the body can
         /// least afford to lose half its support.
-        private const float STAND_UPRIGHT_THRESHOLD = 0.86f;
+        private const float STAND_UPRIGHT_THRESHOLD = 2f;
 
         // Ranges in metres along the mat.
         private const float ENGAGE_RANGE = 1.30f;   // inside this, stop walking and drive
@@ -211,6 +211,10 @@ namespace PoSumo
         /// ankle drives the fall it is meant to arrest, and there is no way to tell
         /// that apart from "gains too high" while both are in play at once.
         private const float ANKLE_SHARE = 0f;
+
+        /// How far the feet are split fore/aft when standing. Widens the support
+        /// polygon the centre of mass has to stay inside.
+        private const float STANCE_SPLIT_DEG = 20f;
 
         // Postures, in degrees, in the jointAngle convention documented above.
         private const float CROUCH_KNEE_DEG = 55f;   // bent: low centre of mass
@@ -396,8 +400,14 @@ namespace PoSumo
             // Hips extend against a forward lean, pushing the pelvis back under the
             // chest; knees stay softly bent so the legs can absorb rather than
             // transmit, which is also the sumo stance.
-            Track(body, actions, HIP_NEAR, STAND_HIP_DEG + correction);
-            Track(body, actions, HIP_FAR, STAND_HIP_DEG + correction);
+            // STAGGERED, not feet-together. In the sagittal plane a biped with both
+            // feet in the same place has a support base of one foot length, ~0.27 m,
+            // and the centre of mass only has to cross that to be unrecoverable.
+            // Splitting the legs — one forward, one back — roughly doubles it, and
+            // it is the sumo stance for exactly this reason. Hip flexion is negative
+            // (measured), so the forward leg subtracts and the trailing leg adds.
+            Track(body, actions, HIP_NEAR, STAND_HIP_DEG - STANCE_SPLIT_DEG + correction);
+            Track(body, actions, HIP_FAR, STAND_HIP_DEG + STANCE_SPLIT_DEG + correction);
             Track(body, actions, KNEE_NEAR, STAND_KNEE_DEG);
             Track(body, actions, KNEE_FAR, STAND_KNEE_DEG);
             Track(body, actions, ANKLE_NEAR, Mathf.Clamp(correction * ANKLE_SHARE, -30f, 30f));

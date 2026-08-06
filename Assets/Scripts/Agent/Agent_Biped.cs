@@ -132,6 +132,16 @@ namespace PoSumo
                 useBot |= character.useBot;
             }
 
+            // The BOT decides EVERY physics step. decisionPeriod 3 is a constraint on
+            // the trained brains — it is what their .onnx was trained at and must not
+            // change — but a scripted controller has no such obligation, and 16.7 Hz
+            // is coarse for a balance loop holding a 69.6 kg ragdoll upright. This
+            // triples the control rate for the BOT alone and touches no policy.
+            if (useBot)
+            {
+                decisionPeriod = 1;
+            }
+
             // Both are configured unconditionally, including when `character` is
             // null: Configure no-ops on null and leaves the provider on the
             // pre-per-character constants, which is what an unassigned fighter has
