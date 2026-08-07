@@ -33,6 +33,9 @@
 
 # Python training environment (rebuild from Training/ml-agents source; see CLAUDE.md pins)
 /Training/venv/
+# Tooling venv for Tools/play_publish.py. Reproducible from
+# Tools/requirements-publish.txt, so it is disposable like every other venv here.
+/Tools/publish-venv/
 
 # Training run outputs (checkpoints/TensorBoard; deployed models live in Assets/Agents/)
 /Training/results/
