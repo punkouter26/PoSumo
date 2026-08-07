@@ -177,6 +177,28 @@ namespace PoSumo
             _modal.style.paddingRight = Systems_UiKit.SPACE_5;
             _modal.style.paddingBottom = Systems_UiKit.SPACE_5;
             modalSafe.Add(_modal);
+
+            // ...but bottom-anchored measured as ON TOP OF the Dock, because the
+            // modal layer fills the whole panel while the Dock only owns the last
+            // band of it. The match-end result card sat at y 1791-1970 against a
+            // Dock of 1832-1994: 138 of the Dock's 162pt hidden, i.e. the live
+            // DOMINANCE strip and the round line were 85% covered at exactly the
+            // moment a player looks at them to see how the match was won.
+            //
+            // Padding the modal layer by the Dock's height moves the rest position
+            // up to the Dock's top edge, which keeps every reason for bottom
+            // anchoring above (off the fighters, near the thumb) and costs nothing.
+            //
+            // Driven off the Dock's own GeometryChangedEvent rather than a constant:
+            // the Dock is `maxHeight: 28%` of a panel that scales on WIDTH, so its
+            // height is a different number on every aspect ratio, and this is the
+            // only value that is right on all of them. It fires again whenever the
+            // Dock's contents change size, so the modals follow it.
+            Dock.RegisterCallback<GeometryChangedEvent>(_ =>
+            {
+                float dockHeight = Dock.resolvedStyle.height;
+                _modal.style.paddingBottom = Systems_UiKit.SPACE_5 + dockHeight;
+            });
         }
 
         /// Pause on the left, scorebug in the middle.
