@@ -98,7 +98,40 @@ namespace PoSumo
         /// stand. Stepping while already toppling is how the previous version threw
         /// itself down: the swing leg leaves the ground exactly when the body can
         /// least afford to lose half its support.
-        private const float STAND_UPRIGHT_THRESHOLD = 2f;
+        ///
+        /// **Any value above 1 DISABLES THE GAIT ENTIRELY, and 2 is deliberate.**
+        /// `upright` is `Mathf.Clamp01(Dot(Chest.up, up))` and so cannot exceed 1,
+        /// which makes `upright < 2f` unconditionally true: `Decide` always takes
+        /// the `Stand` branch and returns, leaving `Advance`, `Drive`, the SIMBICON
+        /// gait, the lunge timer and the cornered-drive logic below as unreachable
+        /// code. That reads exactly like a bug and was investigated as one on
+        /// 2026-08-07 — it is not. Enabling the gait measurably makes the BOT
+        /// worse, so the value stays.
+        ///
+        /// Measured that day in SCN_BOT, refereeing disabled so the window was one
+        /// continuous round rather than one bounded by round end, sampling the
+        /// longest unbroken stretch with `!IsDown && upright > 0.5`:
+        ///
+        ///     gait off (2.0)   1.35 - 4.16 s     <- best
+        ///     0.95             0.45 s
+        ///     0.85             0.43 - 0.89 s
+        ///     0.70             0.89 s
+        ///     0.60             0.89 s
+        ///
+        /// With the gait live the BOT walks itself over in under a second: `dx`
+        /// went from ~0.1 m of drift to +/-1.7 m of travel, and it spent that
+        /// travel falling. The comment above is the reason — a swing leg lifts half
+        /// the support away — and the gait has never been tuned against the current
+        /// body. Fixing it is a control-engineering job, not a threshold.
+        ///
+        /// The ceiling either way is ~4 s, short of a 5 s target, and the stand
+        /// loop itself diverges: run-to-run spread at fixed gains was 1.35-4.16 s,
+        /// so ANY single measurement here is noise. Take repeats. `StandKd` 4 -> 10
+        /// looked like a fix at 4.05 s and did not replicate (1.78, 1.81).
+        ///
+        /// NOT const, for the same reason as `Gain` — it is the first thing to
+        /// sweep, by reflection, when someone next attacks this.
+        internal static float StandUprightThreshold = 2f;
 
         // Ranges in metres along the mat.
         private const float ENGAGE_RANGE = 1.30f;   // inside this, stop walking and drive
@@ -382,7 +415,7 @@ namespace PoSumo
             // Balance before locomotion. Both feet stay planted until the trunk is
             // actually upright — a swing leg lifts half the support away, which is
             // the last thing a toppling body needs.
-            if (upright < STAND_UPRIGHT_THRESHOLD)
+            if (upright < StandUprightThreshold)
             {
                 Stand(body, actions, offCentre);
                 return;
