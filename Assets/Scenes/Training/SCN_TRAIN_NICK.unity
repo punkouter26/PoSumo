@@ -162,9 +162,11 @@ MonoBehaviour:
   arenaCenterX: 0
   arenaGroundY: 0
   extendedObservations: 1
+  contactObservations: 0
+  staminaObservation: 0
   decisionPeriod: 3
   inferenceOnly: 0
-  recoverShoveChance: 0.7
+  useBot: 0
   inferenceModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
@@ -220,7 +222,7 @@ MonoBehaviour:
   torqueScale: 1
   headSprite: {fileID: 0}
   headDiameter: 0.5
-  enableJiggle: 1
+  castShadows: 0
   Torso: {fileID: 0}
   Chest: {fileID: 0}
   HeadRenderer: {fileID: 0}
@@ -385,9 +387,11 @@ MonoBehaviour:
   arenaCenterX: 32.5
   arenaGroundY: -60
   extendedObservations: 1
+  contactObservations: 0
+  staminaObservation: 0
   decisionPeriod: 3
   inferenceOnly: 0
-  recoverShoveChance: 0.7
+  useBot: 0
   inferenceModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
@@ -443,7 +447,7 @@ MonoBehaviour:
   torqueScale: 1
   headSprite: {fileID: 0}
   headDiameter: 0.5
-  enableJiggle: 1
+  castShadows: 0
   Torso: {fileID: 0}
   Chest: {fileID: 0}
   HeadRenderer: {fileID: 0}
@@ -544,9 +548,11 @@ MonoBehaviour:
   arenaCenterX: -11.5
   arenaGroundY: -60
   extendedObservations: 1
+  contactObservations: 0
+  staminaObservation: 0
   decisionPeriod: 3
   inferenceOnly: 0
-  recoverShoveChance: 0.7
+  useBot: 0
   inferenceModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
@@ -602,7 +608,7 @@ MonoBehaviour:
   torqueScale: 1
   headSprite: {fileID: 0}
   headDiameter: 0.5
-  enableJiggle: 1
+  castShadows: 0
   Torso: {fileID: 0}
   Chest: {fileID: 0}
   HeadRenderer: {fileID: 0}
@@ -699,9 +705,11 @@ MonoBehaviour:
   arenaCenterX: 0
   arenaGroundY: 0
   extendedObservations: 1
+  contactObservations: 0
+  staminaObservation: 0
   decisionPeriod: 3
   inferenceOnly: 0
-  recoverShoveChance: 0.7
+  useBot: 0
   inferenceModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
@@ -757,7 +765,7 @@ MonoBehaviour:
   torqueScale: 1
   headSprite: {fileID: 0}
   headDiameter: 0.5
-  enableJiggle: 1
+  castShadows: 0
   Torso: {fileID: 0}
   Chest: {fileID: 0}
   HeadRenderer: {fileID: 0}
@@ -812,13 +820,13 @@ MonoBehaviour:
   wrestlerA: {fileID: 687244891}
   wrestlerB: {fileID: 1476417986}
   arena: {fileID: 186417205}
-  ringHalfWidth: 4
+  ringHalfWidth: 3.5
   roundTimeoutSeconds: 20
   knockdownLoses: 0
   fallY: -0.2
   footOffMatY: -0.06
   randomizeRounds: 1
-  startHalfRange: {x: 1.7, y: 4}
+  startHalfRange: {x: 1.7, y: 3.5}
   frictionRange: {x: 0.5, y: 1.1}
   spawnGapHalf: 2.5
   shoveImpulse: 0
@@ -881,9 +889,11 @@ MonoBehaviour:
   arenaCenterX: 21.5
   arenaGroundY: -60
   extendedObservations: 1
+  contactObservations: 0
+  staminaObservation: 0
   decisionPeriod: 3
   inferenceOnly: 0
-  recoverShoveChance: 0.7
+  useBot: 0
   inferenceModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
@@ -939,7 +949,7 @@ MonoBehaviour:
   torqueScale: 1
   headSprite: {fileID: 0}
   headDiameter: 0.5
-  enableJiggle: 1
+  castShadows: 0
   Torso: {fileID: 0}
   Chest: {fileID: 0}
   HeadRenderer: {fileID: 0}
@@ -1046,9 +1056,11 @@ MonoBehaviour:
   arenaCenterX: -22.5
   arenaGroundY: -60
   extendedObservations: 1
+  contactObservations: 0
+  staminaObservation: 0
   decisionPeriod: 3
   inferenceOnly: 0
-  recoverShoveChance: 0.7
+  useBot: 0
   inferenceModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
@@ -1104,7 +1116,7 @@ MonoBehaviour:
   torqueScale: 1
   headSprite: {fileID: 0}
   headDiameter: 0.5
-  enableJiggle: 1
+  castShadows: 0
   Torso: {fileID: 0}
   Chest: {fileID: 0}
   HeadRenderer: {fileID: 0}
@@ -1285,9 +1297,11 @@ MonoBehaviour:
   arenaCenterX: 0
   arenaGroundY: 0
   extendedObservations: 1
+  contactObservations: 0
+  staminaObservation: 0
   decisionPeriod: 3
   inferenceOnly: 0
-  recoverShoveChance: 0.7
+  useBot: 0
   inferenceModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
@@ -1343,7 +1357,7 @@ MonoBehaviour:
   torqueScale: 1
   headSprite: {fileID: 0}
   headDiameter: 0.5
-  enableJiggle: 1
+  castShadows: 0
   Torso: {fileID: 0}
   Chest: {fileID: 0}
   HeadRenderer: {fileID: 0}
@@ -1409,9 +1423,11 @@ MonoBehaviour:
   arenaCenterX: 10.5
   arenaGroundY: -60
   extendedObservations: 1
+  contactObservations: 0
+  staminaObservation: 0
   decisionPeriod: 3
   inferenceOnly: 0
-  recoverShoveChance: 0.7
+  useBot: 0
   inferenceModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
@@ -1467,7 +1483,7 @@ MonoBehaviour:
   torqueScale: 1
   headSprite: {fileID: 0}
   headDiameter: 0.5
-  enableJiggle: 1
+  castShadows: 0
   Torso: {fileID: 0}
   Chest: {fileID: 0}
   HeadRenderer: {fileID: 0}
@@ -1533,9 +1549,11 @@ MonoBehaviour:
   arenaCenterX: -0.5
   arenaGroundY: -60
   extendedObservations: 1
+  contactObservations: 0
+  staminaObservation: 0
   decisionPeriod: 3
   inferenceOnly: 0
-  recoverShoveChance: 0.7
+  useBot: 0
   inferenceModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
@@ -1591,7 +1609,7 @@ MonoBehaviour:
   torqueScale: 1
   headSprite: {fileID: 0}
   headDiameter: 0.5
-  enableJiggle: 1
+  castShadows: 0
   Torso: {fileID: 0}
   Chest: {fileID: 0}
   HeadRenderer: {fileID: 0}
@@ -1684,7 +1702,7 @@ MonoBehaviour:
   torqueScale: 1
   headSprite: {fileID: 0}
   headDiameter: 0.5
-  enableJiggle: 1
+  castShadows: 0
   Torso: {fileID: 0}
   Chest: {fileID: 0}
   HeadRenderer: {fileID: 0}
@@ -1716,9 +1734,11 @@ MonoBehaviour:
   arenaCenterX: 0
   arenaGroundY: 0
   extendedObservations: 1
+  contactObservations: 0
+  staminaObservation: 0
   decisionPeriod: 3
   inferenceOnly: 0
-  recoverShoveChance: 0.7
+  useBot: 0
   inferenceModel: {fileID: 0}
   NonFootGroundContacts: 0
   actionsEnabled: 1
@@ -1770,13 +1790,13 @@ MonoBehaviour:
   wrestlerA: {fileID: 1646994351}
   wrestlerB: {fileID: 4392839}
   arena: {fileID: 1356077660}
-  ringHalfWidth: 4
+  ringHalfWidth: 3.5
   roundTimeoutSeconds: 20
   knockdownLoses: 0
   fallY: -0.2
   footOffMatY: -0.06
   randomizeRounds: 1
-  startHalfRange: {x: 1.7, y: 4}
+  startHalfRange: {x: 1.7, y: 3.5}
   frictionRange: {x: 0.5, y: 1.1}
   spawnGapHalf: 2.5
   shoveImpulse: 0

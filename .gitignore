@@ -90,3 +90,4 @@ __pycache__/
 # builds. Regenerated, never authored; do not track it.
 /Assets/packages-merged-link/
 /Assets/packages-merged-link.meta
+Training/*.log

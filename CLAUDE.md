@@ -28,19 +28,27 @@ defaults were never updated** and still read 5.5 / `startHalfRange (1.7, 5.5)` /
 `spawnGapHalf 1.2`; the four training scenes serialize 4 / `(1.7, 4)` / 2.5.
 Grep the `.unity` files, not the `.cs`, to learn what an env actually trains against.
 
-> **⚠ That warning is currently LIVE and unresolved (found 2026-08-07).** `GameTuning.asset`
-> holds `ringHalfWidth: 3.5`, so the shipped game's mat is **7 m** across. All four training
-> scenes still serialize **4**, an **8 m** mat. Every deployed brain therefore learned a
-> ring-out boundary **0.5 m further out than the one it fights on** — it believes it has
-> half a metre of mat that does not exist, on both sides. Nothing errors; the arena simply
-> ends sooner than the policy expects.
+> **That warning fired for real on 2026-08-07, and the fix is the template for next time.**
+> `GameTuning.asset` held `ringHalfWidth: 3.5` (a **7 m** mat) while all four training
+> scenes serialized **4** (an **8 m** mat). Every brain up to and including the
+> `*_fatigue01` runs therefore learned a ring-out boundary **0.5 m further out than the one
+> it fights on** — it believed it had half a metre of mat that does not exist, on both
+> sides. Nothing errored; the arena simply ended sooner than the policy expected.
 >
-> This must be reconciled BEFORE the corrective retrain below, or the run bakes the
-> mismatch in for another generation. **Which value wins is a design decision, not a
-> cleanup** — 4.0 is what the physics argument above was derived for, while 3.5 is what
-> players actually experience and is presumably a later, undocumented tightening aimed at
-> the ring-out rate. Measured play at 3.5 still produced only 29% ring-outs against 57%
-> `downOutSeconds`, so the tightening has not yet bought what it was likely meant to buy.
+> Resolved by moving TRAINING to the shipped value: the two `Systems_SumoMatchManager`
+> referees in each of the four `SCN_TRAIN_*` scenes are now `ringHalfWidth: 3.5` with
+> `startHalfRange (1.7, 3.5)`, and the envs were rebuilt. The game is the ground truth;
+> a brain should be fitted to the arena players actually see.
+>
+> **`Agent_Biped` carries its OWN `ringHalfWidth` too** (it feeds the two edge-distance
+> observations), and the training scenes still serialize `4` on the sumo agents. That is
+> inert — both referees overwrite it at runtime (`Systems_SumoMatchManager` ~L67,
+> `Systems_GameMatchManager` ~L354) — but it is exactly the kind of stale serialized value
+> this file warns about, so do not "fix" it and do not trust it when grepping.
+>
+> The `*Ring01.yaml` configs adapt each trunk to the corrected arena, warm-starting from
+> `<name>_fatigue01` at a reduced learning rate. Note this does NOT by itself fix the
+> ring-out rate: measured play at 3.5 gave 29% ring-outs against 57% `downOutSeconds`.
 
 There are four **trained** fighters — **Matt**, **Standard**, **Nick**, **Kim** — each
 with an `.onnx`, a `*_Character.asset` and a `MANIFEST.md`. `Assets/Agents/ROSTER.md` is

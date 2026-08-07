@@ -33,6 +33,7 @@ MonoBehaviour:
   contactObservations: 0
   staminaObservation: 0
   inferenceModel: {fileID: 5022602860645237092, guid: d40789c9a1a3bdc4891f8fa0702ded5e, type: 3}
+  useBot: 0
   uprightReward: 0.0004
   closingReward: 0.0019999999
   lungeBonus: 0.0023999999

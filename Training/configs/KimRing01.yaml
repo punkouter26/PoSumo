@@ -1,0 +1,94 @@
+# Kim RING-ADAPTATION 01 — generated 2026-08-07.
+#
+# WHY THIS RUN EXISTS: the training scenes serialized ringHalfWidth 4 (an 8 m
+# mat) while the shipped game runs 3.5 (7 m) from GameTuning.asset. Every brain
+# up to and including kim_fatigue01 therefore learned a ring-out boundary
+# half a metre further out than the one it actually fights on — it believed it
+# had mat that does not exist, on both sides. The four SCN_TRAIN_* scenes were
+# set to 3.5 on 2026-08-07 and the envs rebuilt; this run adapts the trunk to
+# the corrected arena.
+#
+# Warm-starts from kim_fatigue01 (~8.4-9.2M steps, already fatigue-correct
+# and already deployed). --initialize-from resolves BY BEHAVIOR NAME and
+# network_settings must match the trunk exactly, so the 512x3 trunk below is
+# copied unchanged from KimFatigue01.yaml — do not touch it.
+#
+# Derived mechanically from KimFatigue01.yaml. Changes:
+#   learning_rate 0.0003 -> 0.0001   nudge an existing policy, do not restart
+#                                    its search on a 9M-step trunk.
+#   max_steps 15000000 -> 2000000    this is an adaptation, not a retrain.
+#
+# staminaObservation is STILL OFF, and deliberately so: turning it on takes the
+# vector 45 -> 46, which invalidates this warm start AND the drop-in
+# compatibility with the shipped .onnx. It is the right thing to do in a run
+# that starts cold, not in one that starts from a trunk.
+#
+# Launch (envs were rebuilt 2026-08-07 and are Development builds, so telemetry
+# answers on 127.0.0.1:8787+):
+#   Training\venv\Scripts\mlagents-learn.exe Training/configs/KimRing01.yaml `
+#     --run-id=kim_ring01 --results-dir=Training/results `
+#     --initialize-from=kim_fatigue01 `
+#     --env=Builds/KimEnv/KimEnv.exe --num-envs=3 --no-graphics --base-port=5035
+#
+# --num-envs=3 matches what the four shipped brains were trained at. It is NOT a
+# free throughput dial: it changes how experience is batched, so a run at 6 is a
+# different run, not a faster one.
+#
+# DO NOT DEPLOY without measuring against the currently shipped brain. Judge on
+# the SHAPE of the self-play ELO curve, not mean reward — the two have moved in
+# opposite directions in this project before.
+
+behaviors:
+  Kim:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 0.0001
+      beta: 0.005
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:
+      normalize: true
+      hidden_units: 512
+      num_layers: 3
+      vis_encode_type: simple
+    reward_signals:
+      extrinsic:
+        gamma: 0.997
+        strength: 1.0
+    keep_checkpoints: 12
+    checkpoint_interval: 50000
+    max_steps: 2000000
+    time_horizon: 1000
+    summary_freq: 30000
+    threaded: true
+    self_play:
+      window: 25
+      play_against_latest_model_ratio: 0.25
+      save_steps: 50000
+      swap_steps: 50000
+      team_change: 250000
+environment_parameters:
+  platform_difficulty:
+    curriculum:
+    - name: wide
+      completion_criteria:
+        measure: progress
+        behavior: Kim
+        signal_smoothing: true
+        min_lesson_length: 100
+        threshold: 0.3
+      value: 0.0
+    - name: mixed
+      completion_criteria:
+        measure: progress
+        behavior: Kim
+        signal_smoothing: true
+        min_lesson_length: 100
+        threshold: 0.6
+      value: 0.5
+    - name: full
+      value: 1.0
