@@ -292,6 +292,8 @@ namespace PoSumo
         private VisualElement _pauseCard, _resultCard;
         private VisualElement _scoreBug;   // hidden while the result card is up
         private Button _rematchButton;     // hidden for a bracket bout — see MarkBracketBout
+        private Button _continueButton;    // the bracket counterpart of REMATCH
+        private Button _muteButton;
         private bool _paused;
         private bool _bracketBout;
         // Announce reveals still in flight, so a rematch can drop them — see
@@ -853,6 +855,10 @@ namespace PoSumo
             BuildCallouts();
             BuildResultCard();
             BuildPauseUi();
+            // AudioListener.volume is runtime state that resets to 1 on every Play
+            // session and scene load, so the stored preference has to be re-applied
+            // here rather than only when the button is pressed.
+            ApplyMutePreference();
         }
 
         /// The top bar: pause on the left, the scorebug and round clock in the
@@ -932,6 +938,25 @@ namespace PoSumo
             _banner.style.unityTextAlign = TextAnchor.MiddleCenter;
             _banner.style.textShadow = Systems_UiKit.Outline;
             _banner.style.whiteSpace = WhiteSpace.Normal;
+            // A BACKING PLATE, not just the outline above.
+            //
+            // The banner is gold and it lands wherever the camera happens to be
+            // pointing. Measured 2026-08-07: "TIME — STANDARD DECISION" resolved
+            // directly over the dohyo's front face, which is a broad tan wooden
+            // band — gold on tan, where the outline alone is far too thin to
+            // separate them and the line is close to unreadable at a glance. It is
+            // the one piece of text in the match the player MUST catch, because it
+            // is the only statement of why the round ended.
+            //
+            // A translucent plate fixes it against every background rather than
+            // just that one: the clay, the dark backdrop, and a fighter's body all
+            // pass behind this label at some point in a bout.
+            _banner.style.backgroundColor = new Color(0f, 0f, 0f, 0.62f);
+            _banner.style.paddingLeft = Systems_UiKit.SPACE_3;
+            _banner.style.paddingRight = Systems_UiKit.SPACE_3;
+            _banner.style.paddingTop = Systems_UiKit.SPACE_2;
+            _banner.style.paddingBottom = Systems_UiKit.SPACE_2;
+            _banner.Round(Systems_UiKit.RADIUS_MD);
             _banner.NoPick();
             _hud.AddCentre(_banner);
 
@@ -974,6 +999,25 @@ namespace PoSumo
             _rematchButton.style.marginTop = Systems_UiKit.SPACE_5;
             _resultCard.Add(_rematchButton);
 
+            // The bracket counterpart of REMATCH. Without it a bracket bout's
+            // result card carried NO control at all: REMATCH is hidden for a
+            // bracket bout (rematching one would desync the draw), and the return
+            // to the bracket is on a timer inside Systems_TournamentReporter. So
+            // the player was shown a score and left waiting an unexplained few
+            // seconds with nothing to press and nothing saying what happens next.
+            //
+            // Safe to load immediately: the reporter calls ReportWinner BEFORE it
+            // schedules its delayed return, so by the time this card is on screen
+            // the result is already recorded and the delay is presentation only.
+            // LoadScene destroys the reporter, which cancels its pending Invoke,
+            // so this cannot double-load.
+            //
+            // NOT QuitToBracket — that stops the tournament outright, which is
+            // right for abandoning a bout and wrong for finishing one.
+            _continueButton = Systems_UiKit.PrimaryButton("CONTINUE", ContinueToBracket);
+            _continueButton.style.marginTop = Systems_UiKit.SPACE_5;
+            _resultCard.Add(_continueButton);
+
             _hud.AddModal(_resultCard);
         }
 
@@ -994,9 +1038,39 @@ namespace PoSumo
             resume.style.marginTop = Systems_UiKit.SPACE_5;
             _pauseCard.Add(resume);
 
+            // The only settings surface the game has. Pause is the right home for
+            // it: it is the one screen reachable from inside a match, and sound is
+            // the one setting a player actually needs mid-bout.
+            _muteButton = Systems_UiKit.GhostButton("", ToggleMute);
+            _muteButton.style.marginTop = Systems_UiKit.SPACE_3;
+            _pauseCard.Add(_muteButton);
+            RefreshMuteButton();
+
+            // Nothing in the game ever explained how a round is won. The three
+            // ways out are not guessable from watching — especially the 3-second
+            // down-out, which ends most rounds and looks like the game giving up.
+            Label rules = Systems_UiKit.Text(
+                "PUSH YOUR OPPONENT OUT OF THE RING, PUT THEM DOWN FOR "
+                + $"{Mathf.RoundToInt(downOutSeconds)}s, OR LEAD ON POSITION WHEN THE CLOCK ENDS."
+                // `pointsToWin` already carries the right value for this bout:
+                // Start copies tournamentPointsToWin over it for a bracket match
+                // and pointsToWin for an exhibition, so there is nothing to pick
+                // between here.
+                + $"  FIRST TO {pointsToWin} ROUNDS WINS.",
+                Systems_UiKit.FONT_MICRO, Systems_UiKit.TextLow);
+            rules.style.whiteSpace = WhiteSpace.Normal;
+            rules.style.unityTextAlign = TextAnchor.MiddleCenter;
+            rules.style.marginTop = Systems_UiKit.SPACE_4;
+            rules.NoPick();
+
             Button quit = Systems_UiKit.GhostButton("QUIT MATCH", QuitToBracket);
             quit.style.marginTop = Systems_UiKit.SPACE_3;
             _pauseCard.Add(quit);
+
+            // Added AFTER the buttons deliberately. Sitting between SOUND and QUIT
+            // it split the action group in half, so the card read as two unrelated
+            // pairs of controls rather than a stack of actions with a footnote.
+            _pauseCard.Add(rules);
 
             _hud.AddModal(_pauseCard);
         }
@@ -1010,6 +1084,53 @@ namespace PoSumo
             // ends on a realtime timer that keeps running while paused, so the saved
             // value would be stale.
             Time.timeScale = _paused ? 0f : 1f;
+        }
+
+        /// Global mute, persisted across scenes and sessions.
+        ///
+        /// `AudioListener.volume` rather than `Systems_MatchAudio.masterVolume`:
+        /// the audio companion is spawned fresh per match, so a value set on it
+        /// would be forgotten on the next scene load, and it does not cover the
+        /// music director or the fighter voices anyway. The listener is global and
+        /// catches all three.
+        private const string MUTE_KEY = "posumo.muted";
+
+        private static bool Muted
+        {
+            get => PlayerPrefs.GetInt(MUTE_KEY, 0) == 1;
+            set
+            {
+                PlayerPrefs.SetInt(MUTE_KEY, value ? 1 : 0);
+                PlayerPrefs.Save();
+                AudioListener.volume = value ? 0f : 1f;
+            }
+        }
+
+        /// Applied on every match start, not just when the button is pressed —
+        /// `AudioListener.volume` is runtime state that a fresh Play session
+        /// resets to 1, so a muted player would hear sound again on next launch.
+        private static void ApplyMutePreference() => AudioListener.volume = Muted ? 0f : 1f;
+
+        private void ToggleMute()
+        {
+            Muted = !Muted;
+            RefreshMuteButton();
+        }
+
+        private void RefreshMuteButton()
+        {
+            if (_muteButton != null)
+            {
+                _muteButton.text = Muted ? "SOUND: OFF" : "SOUND: ON";
+            }
+        }
+
+        /// Skip the reporter's presentation delay and go back to the draw now.
+        /// The winner is already recorded by this point — see the CONTINUE button.
+        private void ContinueToBracket()
+        {
+            Time.timeScale = 1f;
+            UnityEngine.SceneManagement.SceneManager.LoadScene("SCN_TOURNAMENT");
         }
 
         private void QuitToBracket()
@@ -1724,6 +1845,12 @@ namespace PoSumo
             if (_rematchButton != null)
             {
                 _rematchButton.style.display = _bracketBout ? DisplayStyle.None : DisplayStyle.Flex;
+            }
+            // Exactly one of the two is ever on screen: REMATCH for an exhibition,
+            // CONTINUE for a bracket bout.
+            if (_continueButton != null)
+            {
+                _continueButton.style.display = _bracketBout ? DisplayStyle.Flex : DisplayStyle.None;
             }
             _hud.ShowModal(_resultCard);
         }

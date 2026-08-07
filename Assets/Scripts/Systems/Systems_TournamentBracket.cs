@@ -110,6 +110,8 @@ namespace PoSumo
         private Button _actionButton;
         private Button _resetButton;
         private VisualElement _paletteRow;
+        private VisualElement _standings;
+        private Button _autoButton;
         private Label _hint;
 
         // Drag bookkeeping. _dragSeedIndex is -1 when dragging from the roster
@@ -310,6 +312,17 @@ namespace PoSumo
             _resetButton.style.marginTop = Systems_UiKit.SPACE_2;
             footer.Add(_resetButton);
 
+            // Manual play has always existed — `_autoPlay` is a serialized field
+            // and the action button already reads "PLAY MATCH" when it is off —
+            // but there was no way to reach it without the Inspector. So a player
+            // who pressed START was committed to watching all seven bouts run
+            // themselves with no pause, no skip and no way back except QUIT MATCH
+            // from inside a bout. Shown only while a bracket is running, because
+            // that is the only time the distinction means anything.
+            _autoButton = Systems_UiKit.GhostButton("", ToggleAuto);
+            _autoButton.style.marginTop = Systems_UiKit.SPACE_2;
+            footer.Add(_autoButton);
+
             screen.Add(footer);
 
             // Floating ghost that follows the pointer during a drag.
@@ -355,7 +368,144 @@ namespace PoSumo
             _careerButton.style.marginTop = Systems_UiKit.SPACE_2;
             _content.Add(_careerButton);
 
+            _standings = new VisualElement();
+            _standings.style.marginTop = Systems_UiKit.SPACE_2;
+            _content.Add(_standings);
+
             RefreshCareerButton();
+            RefreshStandings();
+        }
+
+        /// Top of the banzuke, in the slack between the bracket and the footer.
+        ///
+        /// That slack is deliberate — the spacer below exists so the bracket sits
+        /// under the title and the controls stay pinned to the bottom edge, and an
+        /// earlier layout that put content BELOW the spacer left it stranded under
+        /// ~600 px of backdrop. So this goes ABOVE the spacer, directly under the
+        /// career row, and simply gives the empty third of the screen something
+        /// worth reading rather than trying to remove it.
+        ///
+        /// Three rungs only. The point is "who is on top and am I climbing", not a
+        /// table — `Systems_CareerScreen` already owns the full record, and the
+        /// column here is ~578pt wide, which is not enough for a fourth field.
+        private void RefreshStandings()
+        {
+            if (_standings == null)
+            {
+                return;
+            }
+            _standings.Clear();
+
+            System.Collections.Generic.List<Systems_CareerStats.Record> ranked =
+                Systems_CareerStats.Ranked();
+            if (ranked == null || ranked.Count == 0)
+            {
+                return;
+            }
+
+            Label heading = Systems_UiKit.Caption("BANZUKE", Systems_UiKit.FONT_MICRO,
+                                                  Systems_UiKit.TextLow, true);
+            heading.style.unityTextAlign = TextAnchor.MiddleCenter;
+            heading.style.marginBottom = Systems_UiKit.SPACE_1;
+            heading.NoPick();
+            _standings.Add(heading);
+
+            // Carded like every round group above it. Left bare, the rows ran
+            // edge-to-edge against the panel while the bracket beside them sat
+            // inset in surfaces, which read as unfinished rather than as a
+            // different kind of content.
+            VisualElement card = Systems_UiKit.Card(Systems_UiKit.Surface, Systems_UiKit.RADIUS_SM);
+            card.style.paddingTop = Systems_UiKit.SPACE_1;
+            card.style.paddingBottom = Systems_UiKit.SPACE_1;
+            card.NoPick();
+            _standings.Add(card);
+
+            int shown = Mathf.Min(3, ranked.Count);
+            for (int index = 0; index < shown; index++)
+            {
+                Systems_CareerStats.Record record = ranked[index];
+                VisualElement row = Systems_UiKit.Row();
+                row.style.paddingLeft = Systems_UiKit.SPACE_2;
+                row.style.paddingRight = Systems_UiKit.SPACE_2;
+                row.style.paddingTop = 3;
+                row.style.paddingBottom = 3;
+                row.NoPick();
+
+                Label rank = Systems_UiKit.Text(Systems_CareerLadder.NameFor(record),
+                                                Systems_UiKit.FONT_MICRO,
+                                                Systems_UiKit.TextLow);
+                rank.style.width = Length.Percent(46f);
+                rank.NoPick();
+
+                Label who = Systems_UiKit.Text(record.fighter.ToUpperInvariant(),
+                                               Systems_UiKit.FONT_MICRO,
+                                               ColorFor(record.fighter), true);
+                who.style.flexGrow = 1;
+                who.NoPick();
+
+                Label elo = Systems_UiKit.Text(Mathf.RoundToInt(record.elo).ToString(),
+                                               Systems_UiKit.FONT_MICRO,
+                                               Systems_UiKit.TextMid);
+                elo.style.unityTextAlign = TextAnchor.MiddleRight;
+                elo.NoPick();
+
+                row.Add(rank);
+                row.Add(who);
+                row.Add(elo);
+                card.Add(row);
+            }
+
+            // The only place the rules are stated anywhere in the game. A player
+            // watching a bout has no way to work out that lying down for three
+            // seconds forfeits the round — it looks like the game giving up — and
+            // that rule ends the majority of rounds.
+            Label rules = Systems_UiKit.Text(
+                "WIN A ROUND BY PUSHING YOUR OPPONENT OUT, PUTTING THEM DOWN, "
+                + "OR LEADING ON POSITION AT THE BELL.",
+                Systems_UiKit.FONT_MICRO, Systems_UiKit.TextLow);
+            rules.style.whiteSpace = WhiteSpace.Normal;
+            rules.style.unityTextAlign = TextAnchor.MiddleCenter;
+            rules.style.marginTop = Systems_UiKit.SPACE_3;
+            rules.style.paddingLeft = Systems_UiKit.SPACE_3;
+            rules.style.paddingRight = Systems_UiKit.SPACE_3;
+            rules.NoPick();
+            _standings.Add(rules);
+        }
+
+        /// Distinct fighters actually available to seed the draw.
+        private int DistinctFighters()
+        {
+            if (_roster == null)
+            {
+                return 0;
+            }
+            int count = 0;
+            for (int index = 0; index < _roster.Length; index++)
+            {
+                if (_roster[index] != null)
+                {
+                    count++;
+                }
+            }
+            return count;
+        }
+
+        /// Roster colour for a behaviour name, so the standings match the chips.
+        /// Falls back to mid grey for a fighter no longer on the roster — records
+        /// are keyed by behaviour name and outlive an asset being removed.
+        private Color ColorFor(string behaviorName)
+        {
+            if (_roster != null)
+            {
+                for (int index = 0; index < _roster.Length; index++)
+                {
+                    if (_roster[index] != null && _roster[index].behaviorName == behaviorName)
+                    {
+                        return _roster[index].teamColor;
+                    }
+                }
+            }
+            return Systems_UiKit.TextMid;
         }
 
         /// Label carries the match count and the current Yokozuna — the two facts
@@ -432,6 +582,7 @@ namespace PoSumo
                 // The bracket's 164pt floor is for a row of three; two-up cells are
                 // already wider than that, and leaving it on would fight the cell.
                 chip.style.minWidth = 0;
+                chip.Add(DragGrip());
                 Agent_CharacterDefinition captured = character;
                 chip.RegisterCallback<PointerDownEvent>(evt => BeginDrag(evt, -1, captured));
 
@@ -599,13 +750,79 @@ namespace PoSumo
             // the longest name on the roster clipped. The chip gained its emphasis
             // in HEIGHT instead, which costs nothing horizontally.
             Label name = Systems_UiKit.Text(
-                character != null ? character.behaviorName.ToUpperInvariant() : "—",
+                ChipName(character),
                 Systems_UiKit.FONT_SMALL,
                 character != null ? character.teamColor : Systems_UiKit.TextLow,
                 true);
             name.style.marginLeft = Systems_UiKit.SPACE_1;
             chip.Add(name);
             return chip;
+        }
+
+        /// Three stacked bars at the right edge of a palette chip: the universal
+        /// "this can be dragged" affordance.
+        ///
+        /// Without it the ONLY cue that the roster is interactive was the hint
+        /// line above it, which is one small grey sentence on a screen where
+        /// nothing else moves. On a touch screen there is no hover to discover it
+        /// with, so a player who did not read the line had no way to learn the
+        /// draw is editable at all.
+        ///
+        /// DRAWN, not a glyph. A hamburger character would be the obvious way to
+        /// do this and is the wrong one here: the project ships no font asset, so
+        /// anything outside the default UI font's coverage renders as a box. Three
+        /// VisualElements cannot fail that way.
+        ///
+        /// Non-pickable, or it would swallow the PointerDownEvent that starts the
+        /// very drag it is advertising.
+        private static VisualElement DragGrip()
+        {
+            VisualElement grip = Systems_UiKit.Column();
+            grip.style.width = 14;
+            grip.style.flexShrink = 0;
+            // Auto, so the grip is pushed to the CHIP'S RIGHT EDGE rather than
+            // sitting against the end of the name. The name has no flexGrow, so
+            // without this the grip would float mid-chip and read as punctuation.
+            grip.style.marginLeft = StyleKeyword.Auto;
+            grip.style.marginRight = Systems_UiKit.SPACE_1;
+            grip.style.justifyContent = Justify.Center;
+            grip.NoPick();
+
+            for (int bar = 0; bar < 3; bar++)
+            {
+                var line = new VisualElement();
+                line.style.height = 2;
+                line.style.marginTop = bar == 0 ? 0 : 3;
+                line.style.backgroundColor = Systems_UiKit.TextLow;
+                line.NoPick();
+                grip.Add(line);
+            }
+            return grip;
+        }
+
+        /// Chip label, with a brainless entrant marked as such.
+        ///
+        /// A character with no `inferenceModel` has no policy: it collapses as a
+        /// ragdoll, loses on `downOutSeconds`, and since 2026-08-07 its bouts are
+        /// unrated. `Bot_v01` is exactly this, deliberately. Presenting it in the
+        /// palette and the draw with the same treatment as a trained fighter told
+        /// the player it was a peer, and it is not — a measured bracket had it
+        /// WINNING a quarterfinal, which reads as a broken fighter rather than an
+        /// intentional dummy.
+        ///
+        /// The separator is the interpunct already used elsewhere on this screen
+        /// ("CAREER · BANZUKE"), and the suffix is plain ASCII on purpose: this
+        /// project ships no font asset, so an unsupported glyph draws as a box.
+        /// "BOT" is short enough that the suffix fits the width "STANDARD" needs;
+        /// the chip clips rather than spills if a longer brainless name is added.
+        private static string ChipName(Agent_CharacterDefinition character)
+        {
+            if (character == null)
+            {
+                return "—";
+            }
+            string label = character.behaviorName.ToUpperInvariant();
+            return character.inferenceModel == null ? label + "  ·  DUMMY" : label;
         }
 
         /// The floating drag ghost. Absolutely positioned, so it is outside the
@@ -731,6 +948,17 @@ namespace PoSumo
             // than only at build time.
             RefreshCareerButton();
             RefreshRankNews();
+            RefreshStandings();
+
+            // Only meaningful mid-bracket: before START there is nothing to step
+            // through, and once a champion is crowned nothing is left to play.
+            bool running = Systems_TournamentState.Active && !Systems_TournamentState.IsComplete;
+            if (_autoButton != null)
+            {
+                _autoButton.style.display = running ? DisplayStyle.Flex : DisplayStyle.None;
+                _autoButton.text = _autoPlay ? "AUTO-PLAY: ON  ·  TAP TO STEP MANUALLY"
+                                             : "AUTO-PLAY: OFF  ·  TAP TO RESUME";
+            }
 
             if (Systems_TournamentState.IsComplete)
             {
@@ -759,8 +987,13 @@ namespace PoSumo
             // tournamentPointsToWin on GameTuning.asset — which is exactly what
             // the project's tuning convention tells you to do — left this screen
             // stating a rule the game no longer followed.
-            _statusLabel.text = $"{Systems_TournamentState.SEED_COUNT} entrants · single elimination"
-                                + BestOfClause();
+            // SLOTS, not entrants. SEED_COUNT is 8 but the roster is 5, so three
+            // fighters are drawn TWICE and can meet themselves — and a mirror bout
+            // scores for nobody (`Systems_CareerRecorder` logs a warning saying so).
+            // Calling eight slots "8 entrants" told the player there were eight
+            // distinct fighters and made the repeats look like a seeding bug.
+            _statusLabel.text = $"{Systems_TournamentState.SEED_COUNT} slots · {DistinctFighters()} fighters"
+                                + " · single elimination" + BestOfClause();
             _actionButton.text = "START TOURNAMENT";
         }
 
@@ -777,7 +1010,7 @@ namespace PoSumo
             icon.style.backgroundImage = character != null && character.headSprite != null
                 ? new StyleBackground(character.headSprite)
                 : new StyleBackground();
-            name.text = character != null ? character.behaviorName.ToUpperInvariant() : "—";
+            name.text = ChipName(character);
             name.style.color = character != null ? character.teamColor : Systems_UiKit.TextLow;
         }
 
@@ -838,6 +1071,16 @@ namespace PoSumo
                 return string.Empty;
             }
             return $" · best of {_tuning.tournamentPointsToWin * 2 - 1} per match";
+        }
+
+        /// Flip between watching the bracket play itself and stepping it by hand.
+        /// Resets the between-match timer so turning AUTO back on does not fire a
+        /// match instantly with whatever the timer had already accumulated.
+        private void ToggleAuto()
+        {
+            _autoPlay = !_autoPlay;
+            _autoTimer = 0f;
+            Refresh();
         }
 
         private void OnReset()
