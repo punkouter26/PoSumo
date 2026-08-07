@@ -115,7 +115,7 @@ namespace PoSumo
             _running = true;
             _serverThread = new Thread(Serve) { IsBackground = true, Name = "PoSumoTelemetry" };
             _serverThread.Start();
-            Debug.Log($"TELEMETRY RESULT: listening on http://127.0.0.1:{_boundPort}/metrics");
+            Systems_Log.Info($"TELEMETRY RESULT: listening on http://127.0.0.1:{_boundPort}/metrics");
         }
 
         private void Update()

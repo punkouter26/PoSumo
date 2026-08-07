@@ -594,7 +594,7 @@ namespace PoSumo
         /// at FIGHT!, just triggered by contact instead of a countdown.
         private void EngageFromWalkIn()
         {
-            Debug.Log($"WALK-IN RESULT: contact after {(walkInTimeout - _walkInLeft):F2}s — fight brains engaged");
+            Systems_Log.Info($"WALK-IN RESULT: contact after {(walkInTimeout - _walkInLeft):F2}s — fight brains engaged");
             EndWalkInPhase();      // both bodies back on their fight brain
             ContractMat();
             if (_camFollow != null) _camFollow.ClearShots();
@@ -1429,7 +1429,7 @@ namespace PoSumo
             // from the middle. The rule above was always right; the sentence was
             // not, and six of ten lines in a played tournament looked like a
             // game-breaking inversion that did not exist.
-            Debug.Log($"[MATCH] timeout decision #{TimeoutDecisions}: " +
+            Systems_Log.Info($"[MATCH] timeout decision #{TimeoutDecisions}: " +
                       $"{(aWins ? nameA : nameB)} held the centre at " +
                       $"{(aWins ? distanceA : distanceB):F2}m vs " +
                       $"{(aWins ? distanceB : distanceA):F2}m");
@@ -1486,7 +1486,7 @@ namespace PoSumo
             float centre = transform.position.x;
             string winnerName = roundWinner == wrestlerA ? nameA
                               : roundWinner == wrestlerB ? nameB : "—";
-            Debug.Log($"[ROUND] {_roundsLogged} {outcome} winner={winnerName} " +
+            Systems_Log.Info($"[ROUND] {_roundsLogged} {outcome} winner={winnerName} " +
                       $"t={_elapsed:F1}s score={_scoreA}-{_scoreB} " +
                       $"aX={wrestlerA.TorsoX - centre:F2} bX={wrestlerB.TorsoX - centre:F2} " +
                       $"ko={_koA}-{_koB}");
@@ -1540,7 +1540,7 @@ namespace PoSumo
                 // single match is far too small a sample to say anything about
                 // whether ring-outs happen, and the bracket builds a fresh manager
                 // per bout so only a static tally can span them.
-                Debug.Log("[MATCH] " + OutcomeSummary());
+                Systems_Log.Info("[MATCH] " + OutcomeSummary());
                 _hud.HideCentre(_banner);
                 _resultTitle.text = $"{WrapName(aWon ? nameA : nameB, aWon ? colorA : colorB)} WINS";
                 _resultScore.text = $"{Mathf.Max(_scoreA, _scoreB)} — {Mathf.Min(_scoreA, _scoreB)}";
@@ -1611,7 +1611,7 @@ namespace PoSumo
             // Grace would score the round twice.
             if (_hud == null || _phase != Phase.Fighting) return;
 
-            Debug.Log($"[MATCH] gib on {(loser == wrestlerA ? nameA : nameB)} — round over");
+            Systems_Log.Info($"[MATCH] gib on {(loser == wrestlerA ? nameA : nameB)} — round over");
             EndRound(loser == wrestlerA ? wrestlerB : wrestlerA, RoundOutcome.Gibbed,
                      null, "TORN APART");
         }
@@ -1629,7 +1629,7 @@ namespace PoSumo
             else if (victim == _bodyB) { loser = wrestlerB; suffered = ++_koB; }
             else return;
 
-            Debug.Log($"[MATCH] knockout {suffered}/{knockoutsToLoseMatch} on " +
+            Systems_Log.Info($"[MATCH] knockout {suffered}/{knockoutsToLoseMatch} on " +
                       $"{(loser == wrestlerA ? nameA : nameB)}");
             if (suffered < knockoutsToLoseMatch) return;
 

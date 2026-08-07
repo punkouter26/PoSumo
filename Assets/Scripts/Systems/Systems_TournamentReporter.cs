@@ -58,7 +58,7 @@ namespace PoSumo
             // and every line was off by one.
             int decidedMatch = Systems_TournamentState.CurrentMatch;
             Systems_TournamentState.ReportWinner(character);
-            Debug.Log($"[TOURNAMENT] match {decidedMatch} winner: " +
+            Systems_Log.Info($"[TOURNAMENT] match {decidedMatch} winner: " +
                       $"{(character != null ? character.behaviorName : "unknown")}");
 
             // The result card is itself delayed — while the loser flops on a

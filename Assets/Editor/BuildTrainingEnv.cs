@@ -63,7 +63,19 @@ namespace PoSumo.EditorTools
                 // Server module is not installed. mlagents-learn runs these
                 // with --no-graphics, which is what makes them headless.
                 subtarget = (int)StandaloneBuildSubtarget.Player,
-                options = BuildOptions.None,
+                // Development, NOT None. `Systems_Telemetry.Spawn` bails unless
+                // `Debug.isDebugBuild || Application.isEditor`, so under
+                // BuildOptions.None the endpoint never started in a training env —
+                // which is the ONLY place it is useful. Its port walk from 8787
+                // exists specifically so 4-8 concurrent envs each get a socket, and
+                // that code could never once have run. `Systems_Log.Info` is gated
+                // on DEVELOPMENT_BUILD for the same reason: a headless env should
+                // still be able to say what it is doing.
+                //
+                // The cost is a slightly larger player and the profiler being
+                // available. Neither matters for a process that mlagents-learn runs
+                // with --no-graphics and throws away.
+                options = BuildOptions.Development,
             };
 
             BuildReport report = BuildPipeline.BuildPlayer(options);

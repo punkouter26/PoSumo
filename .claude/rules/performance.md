@@ -210,5 +210,17 @@ This applies to ALL optimization assets the agent can't create: sprite atlases, 
 
 ## Debug
 
-- No `Debug.Log` in production — use `[Conditional("UNITY_EDITOR")]` wrapper
-- Strip debug code with scripting defines, not runtime checks
+- No raw `Debug.Log` in runtime code. Call **`Systems_Log.Info`**
+  (`Assets/Scripts/Systems/Systems_Log.cs`), which carries
+  `[Conditional("UNITY_EDITOR")]` + `[Conditional("DEVELOPMENT_BUILD")]`.
+- **Route through a method; do not wrap the call in `if`.** Every one of this project's
+  log lines is an interpolated string. An `if` guard still builds the string and throws it
+  away, while `[Conditional]` strips the whole call site — arguments included — so the
+  interpolation never reaches a release player at all.
+- `Debug.LogWarning` and `Debug.LogError` are called **directly and are never stripped** —
+  a fault still has to be visible in a shipped build.
+- These lines are load-bearing, not leftovers: `MatchTestHarness` and the verification
+  flow in `CLAUDE.md` read `[MATCH]` / `[ROUND]` / `HARNESS RESULT:` back out of the
+  console. Delete one and you break a test tool.
+- `Assets/Editor/` is exempt — it never ships, so `Debug.Log` there is fine.
+- Strip debug code with scripting defines, not runtime checks.

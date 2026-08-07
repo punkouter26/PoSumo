@@ -650,7 +650,7 @@ namespace PoSumo
 
             if (DetachRegion(region, worldPoint))
             {
-                Debug.Log($"[DAMAGE] {name} lost {region} at {_regionDamage[(int)region]:F1} damage");
+                Systems_Log.Info($"[DAMAGE] {name} lost {region} at {_regionDamage[(int)region]:F1} damage");
             }
         }
 
@@ -749,7 +749,7 @@ namespace PoSumo
             DecapitateHead(point);
 
             GibCount++;
-            Debug.Log($"[DAMAGE] {name} GIBBED — {limbs} limbs + {joints} further joints + head, " +
+            Systems_Log.Info($"[DAMAGE] {name} GIBBED — {limbs} limbs + {joints} further joints + head, " +
                       $"in one blow at {point}");
             Gibbed?.Invoke(body, point);
         }
@@ -801,7 +801,7 @@ namespace PoSumo
 
             Dismembered?.Invoke(body, Region.Head, neck);
             DecapitationCount++;
-            Debug.Log($"[DAMAGE] {name} DECAPITATED at {_regionDamage[(int)Region.Head]:F1} damage — neck at {neck}");
+            Systems_Log.Info($"[DAMAGE] {name} DECAPITATED at {_regionDamage[(int)Region.Head]:F1} damage — neck at {neck}");
         }
 
         /// Decapitations this session, across every match.

@@ -186,7 +186,7 @@ each live in *Editor menu tools* and *Training workflow* below.
 | Build a training env | *PoSumo → Build \<Name\> Training Env* → `Builds/<Name>Env/<Name>Env.exe` |
 | Train | `Training\Start-Training.ps1` (wraps `mlagents-learn.exe` + TensorBoard + `--base-port`) |
 | Stop training / kill orphans | `Training\Stop-Training.ps1` (`-Prune` also clears event-less runs) |
-| Watch a live env | `curl http://127.0.0.1:8787/metrics` — see *Telemetry* |
+| Watch a live env | `curl http://127.0.0.1:8787/metrics` — see *Telemetry*; needs an env built after 2026-08-07 |
 | Drive the Editor from a shell | `python Tools/unity.py <ping\|scene\|play\|stop\|errors\|shot\|exec\|raw>` |
 | Ship a brain | *PoSumo → Deploy \<Name\> Brain* |
 | Unit test | `python Tools/unity.py raw run_tests '{"mode":"EditMode","assemblyNames":["PoSumo.Tests.EditMode"]}'` then poll `get_test_job` |
@@ -411,8 +411,9 @@ policies then never learn that a stray foot over the edge is fatal.
 deliberate — they are spectacle layered on the sumo rules, not sumo rules:
 `downOutSeconds` (3 s lying down forfeits the round — `IsDown` can latch permanently once
 a leg is under the body, and measured play had half of every round be two motionless
-ragdolls waiting out the clock), `knockoutsToLoseMatch` (3 head KOs lose the match
-outright, via `Systems_BodyDamage.Knockout`), and the low-friction `tawara` band at the
+ragdolls waiting out the clock), `knockoutsToLoseMatch` (head KOs lose the match
+outright, via `Systems_BodyDamage.Knockout` — **2** in `GameTuning.asset`, which is what
+runs; this line said 3, which is only the code fallback), and the low-friction `tawara` band at the
 rim (`tawaraBandWidth` / `tawaraFriction`) that turns "almost out" into "out".
 `Systems_SumoMatchManager` has no equivalent of any of them.
 
@@ -622,6 +623,15 @@ twice: as JSON on `http://127.0.0.1:<port>/metrics`, and into ML-Agents' `StatsR
 so per-fighter stamina lands on TensorBoard beside reward and ELO. TensorBoard answers
 "how did this run go"; the HTTP endpoint answers "what is this env doing right now",
 which is the question you actually have when a headless run has gone quiet.
+
+**It only started working in a training env on 2026-08-07.** `Spawn` bails unless
+`Debug.isDebugBuild || Application.isEditor`, and `BuildTrainingEnv` built with
+`BuildOptions.None` — so every env player was a non-development build and the endpoint
+never opened there. The port walk below, whose entire reason for existing is 4-8
+concurrent envs, had therefore never once run. `BuildTrainingEnv` now passes
+`BuildOptions.Development`. **Envs built before that date must be rebuilt**, or the
+`curl` in *Commands at a glance* connects to nothing. This is the failure shape to expect
+from that gate generally: no error, no log line, just a port that refuses the connection.
 
 - **Raw `TcpListener`, not `HttpListener`.** HttpListener needs a `netsh http add urlacl`
   reservation to bind as a non-admin user on Windows; a telemetry endpoint that throws
@@ -899,7 +909,7 @@ else goes elsewhere —
 
 | Tool | Purpose |
 |---|---|
-| `BuildTrainingEnv` | Headless Win64 player containing one training scene (`--env` target). One menu entry per surviving training scene |
+| `BuildTrainingEnv` | Headless Win64 player containing one training scene (`--env` target). One menu entry per surviving training scene. Builds **`BuildOptions.Development`** — required for telemetry and `Systems_Log`, see *Telemetry* |
 | `BuildAndroid` | *Build Android APK* → `Builds/Android/PoSumo.apk` from the enabled build-settings scenes |
 | `BuildAndroidAAB` | *Build Android AAB (Play release)* → `Builds/Android/PoSumo.aab`, signed. Logs `AAB BUILD RESULT:` |
 | `DeployBrain` | Copy a run's ONNX → agent folder + wire the character asset. One entry per fighter, each pinned to the run that currently backs its shipped brain |
