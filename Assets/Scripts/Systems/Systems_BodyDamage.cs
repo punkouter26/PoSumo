@@ -76,10 +76,10 @@ namespace PoSumo
         [Tooltip("Master switch for the gib. Independent of allowDetach on purpose: the gib is a rare showpiece, and turning ordinary dismemberment off to calm a bout down should not also remove it.")]
         public bool allowGib = true;
         [Tooltip("Impact speed at or above which a hit is eligible to gib. ABOVE koSpeed (7.5), so only the class of blow that could already knock a head out can take every limb off.\n\nThis is an eligibility gate, not the rate — gibChance below is what makes it rare. Two dials rather than one because a pure speed threshold cannot hold a fixed rate: the force distribution moves whenever a brain is retrained or a physique changes, so a bar tuned to fire on 1% of hits today fires on some other fraction tomorrow. Measure with GibCount, not by reasoning about this number.")]
-        public float gibSpeed = 3f;   // TEMP DEMO — revert to 11f
+        public float gibSpeed = 11f;
         [Tooltip("Probability that a hit at or above gibSpeed takes all four limbs off. 0.01 = the requested ~1%.\n\nNote this is 1% of QUALIFYING hits, not 1% of all contacts — hits over gibSpeed are already rare, so the observed rate per round is far below 1%. If it never fires, lower gibSpeed before raising this: a higher chance on a bar nothing reaches is still zero.")]
         [Range(0f, 1f)]
-        public float gibChance = 1f;   // TEMP DEMO — revert to 0.01f
+        public float gibChance = 0.01f;
 
         [Header("Dismemberment bleeding")]
         [Tooltip("Droplets in the opening spray from EACH end of the break — the stump left on the body and the cut end of the severed limb. 24 -> 70: the two opposed jets are the whole point of the moment and read as one puff at the old count.")]

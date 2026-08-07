@@ -111,6 +111,13 @@ namespace PoSumo
         private int _scoreA, _scoreB;
         private int _koA, _koB;                 // head knockouts SUFFERED, this match
         private float _elapsed, _phaseLeft, _downA, _downB;
+        // Set by OnGibbed, cleared at every round reset alongside _downA/_downB.
+        // Needed because a gib and the ring-out check RACE: the gib takes the body
+        // apart inside a collision callback, and the loose parts are off the mat by
+        // the time this component's FixedUpdate evaluates OutOfRing. Whichever runs
+        // first would otherwise decide the round, and a gib was being scored
+        // "DOUBLE OUT — DRAW" instead of a win for the fighter still standing.
+        private bool _gibbedA, _gibbedB;
         private int _lastShownSeconds = -1;
         private float _countdownLeft;
         private int _lastCountdownDigit = -1;
@@ -596,6 +603,7 @@ namespace PoSumo
             _phase = Phase.Fighting;
             _elapsed = 0f;
             _downA = _downB = 0f;
+            _gibbedA = _gibbedB = false;
             _countdownLeft = 0f;   // contact IS the start; no freeze, no reposition
             BeginSimulation();
             FlashFight();
@@ -1165,6 +1173,7 @@ namespace PoSumo
                         wrestlerB.EndEpisode();
                         HoldUpright();
                         _downA = _downB = 0f;
+                        _gibbedA = _gibbedB = false;
                         _hud.HideCentre(_banner);
                         _phase = Phase.Grace;
                         _phaseLeft = graceSeconds;
@@ -1187,6 +1196,7 @@ namespace PoSumo
                         _phase = Phase.Fighting;
                         _elapsed = 0f;
                         _downA = _downB = 0f;
+                        _gibbedA = _gibbedB = false;
                         StartCountdown();
                         RoundStarted?.Invoke();
                     }
@@ -1254,6 +1264,7 @@ namespace PoSumo
                         _phase = Phase.Fighting;
                         _elapsed = 0f;
                         _downA = _downB = 0f;
+                        _gibbedA = _gibbedB = false;
                         StartCountdown();
                         RoundStarted?.Invoke();
                     }
@@ -1305,6 +1316,19 @@ namespace PoSumo
 
             bool aOut = aOffMat || (knockdownLoses && _downA >= downGraceSeconds) || aDownOut;
             bool bOut = bOffMat || (knockdownLoses && _downB >= downGraceSeconds) || bDownOut;
+
+            // A GIB OUTRANKS EVERY OTHER LOSING CONDITION, and is checked before
+            // them. A fighter taken apart has parts scattered across and off the
+            // mat, so OutOfRing reports it out — and if a flying part gibs the
+            // opponent too, BOTH read as out and the round was being called a draw.
+            // Exactly one fighter gibbed is not a draw: the one still in one piece
+            // won it. Both gibbed genuinely is, and falls through below.
+            if (_gibbedA != _gibbedB)
+            {
+                EndRound(_gibbedA ? wrestlerB : wrestlerA, RoundOutcome.Gibbed,
+                         null, "TORN APART");
+                return;
+            }
 
             if (aOut && bOut)
             {
@@ -1569,15 +1593,23 @@ namespace PoSumo
         /// is ever turned off.
         private void OnGibbed(Agent_BipedBody victim, Vector3 point)
         {
-            if (victim == null || !gibLosesRound) return;
-            // Only Fighting can be ended. The blow that gibs often lands in the same
-            // physics step as a ring-out, and a second EndRound during RoundEnded or
-            // Grace would score the round twice.
-            if (_hud == null || _phase != Phase.Fighting) return;
+            if (victim == null) return;
 
             Agent_Biped loser = victim == _bodyA ? wrestlerA
                               : victim == _bodyB ? wrestlerB : null;
             if (loser == null) return;
+
+            // Recorded FIRST and unconditionally, before any early return. This flag
+            // is what lets the FixedUpdate evaluation resolve the race described on
+            // _gibbedA — if this callback loses it, the evaluation still knows a gib
+            // happened and awards the round correctly instead of calling a draw.
+            if (loser == wrestlerA) _gibbedA = true; else _gibbedB = true;
+
+            if (!gibLosesRound) return;
+            // Only Fighting can be ended. The blow that gibs often lands in the same
+            // physics step as a ring-out, and a second EndRound during RoundEnded or
+            // Grace would score the round twice.
+            if (_hud == null || _phase != Phase.Fighting) return;
 
             Debug.Log($"[MATCH] gib on {(loser == wrestlerA ? nameA : nameB)} — round over");
             EndRound(loser == wrestlerA ? wrestlerB : wrestlerA, RoundOutcome.Gibbed,
@@ -1766,6 +1798,7 @@ namespace PoSumo
             wrestlerB.EndEpisode();
             HoldUpright();
             _downA = _downB = 0f;
+            _gibbedA = _gibbedB = false;
             _phase = Phase.Grace;
             _phaseLeft = graceSeconds;
         }
