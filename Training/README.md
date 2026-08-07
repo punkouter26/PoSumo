@@ -47,6 +47,62 @@ All four reached the configured `max_steps: 15000000`. Final ELO: Standard 5941,
 Matt 4832, Kim 4776, Nick 4581 — but see the Nick note below before comparing his
 number with the other three.
 
+### The fatigue-corrective pass (`*_fatigue01`, resumed 2026-08-06)
+
+| Config | Run | Warm-started from | Steps |
+|---|---|---|---|
+| `MattFatigue01.yaml` | `matt_fatigue01` | `matt_unified03` | 600k → in progress |
+| `StandardFatigue01.yaml` | `standard_fatigue01` | `standard_unified01` | 800k → in progress |
+| `NickFatigue01.yaml` | `nick_fatigue01` | `nick_unified01` | 900k, paused |
+| `KimFatigue01.yaml` | `kim_fatigue01` | `kim_unified01` | 900k, paused |
+
+Muscle fatigue (2026-08-05) changed the dynamics all four shipped brains were fitted
+against. The first attempt at this pass was time-boxed to ~30 minutes and reached only
+600-800k steps, which is why `checkpoint_interval` is 50000 in these configs — the
+numbered checkpoints are the only artifact that survives a hard kill. It was resumed
+2026-08-06 for a longer run.
+
+**Two at a time, not four.** All four concurrently at `--num-envs 2` is 4 trainers plus
+8 headless players, which took this 16 GB box to **0.7 GB free** — swapping, which
+destabilises every run at once. Two runs leaves ~5 GB headroom at the same per-run
+throughput (~750 steps/s each). CPU pegged at 100% is fine and expected; free memory is
+the number to watch.
+
+**Their ELO CANNOT be compared with the numbers above, and this is the trap to avoid
+when deciding whether to deploy.** A new run-id starts self-play ELO at the 1200
+default, so `matt_fatigue01` passing 1470 says nothing about how it stands against the
+4832 `matt_unified02` finished on — those are different ladders that happen to share a
+unit. Judge these on the SHAPE of their own curve (monotonic = healthy, a slide =
+regression, flat = keeping pace with a pool that is also learning), and decide
+deployment by an actual head-to-head: deploy to a scratch character or run
+`MatchTestHarness.Run(n)` against the shipped brain. Nothing about the raw number
+licenses overwriting a `.onnx`.
+
+**The acceptance criterion, measured from the shipped brains on 2026-08-06** across two
+complete played brackets (31 rounds):
+
+| Outcome | Shipped brains |
+|---|---|
+| RingOut (won by pushing the opponent off) | 5 / 31 = **16%** |
+| DownOut (opponent simply fell over and timed out) | 26 / 31 = **84%** |
+
+That is the number a corrective run has to move. Sumo is decided by pushing someone out;
+a brain that wins 84% of its rounds because the *other* fighter fell down is not playing
+the game, and it is the most legible symptom of the stale-dynamics problem this pass
+exists to fix. Re-measure the same way — play `SCN_TOURNAMENT` and read the
+`[MATCH] ROUND OUTCOMES:` lines — rather than inventing a new metric, or the comparison
+is worthless.
+
+Reverting is `git checkout -- Assets/Agents/`: all four shipped `.onnx` are tracked, so
+`DeployBrain` overwriting them in place is undoable. Verify that BEFORE deploying, not
+after — `Training/results/` is gitignored and is not the safety net.
+
+**Killing a trainer does not kill its workers.** Stopping `mlagents-learn.exe` left
+`python.exe` worker subprocesses alive that respawned their env players twice, with new
+PIDs each time, silently competing for the CPU of the runs still training. Kill the
+worker tree (match on `--run-id` / env name in the command line) or use
+`Stop-Training.ps1`, which exists for exactly this.
+
 ### Nick was interrupted at 3.75M and resumed (2026-07-30)
 
 `nick_unified01` died at step 3,749,814 on 2026-07-29 11:06 with no final
