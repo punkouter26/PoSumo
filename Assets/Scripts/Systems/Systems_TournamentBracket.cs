@@ -188,6 +188,32 @@ namespace PoSumo
             scroll.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
             screen.Add(scroll);
 
+            // BUILD STAMP, top-left of the boot screen.
+            //
+            // The game ships to a phone by sideload, and two installs an hour apart
+            // are indistinguishable once the APK is on the device — there is no
+            // build number anywhere on screen, and `adb shell dumpsys package` is
+            // not available to whoever is holding the phone. `Application.version`
+            // IS `PlayerSettings.bundleVersion`, so this is the shipped number
+            // rather than a constant that can drift away from it.
+            //
+            // On `screen`, NOT `_root` and NOT `_content`:
+            //  - `_content` is inside the ScrollView, so the stamp would scroll off.
+            //  - `_root` is deliberately un-inset (see above), so on a notched device
+            //    a top-left absolute child lands UNDER the cutout.
+            //  - `screen` carries the safe-area inset, and absolute offsets resolve
+            //    against the parent's PADDING box, so 0,0 here is exactly the first
+            //    safe pixel.
+            // Added after the ScrollView so it draws over the content, and NoPick so
+            // it cannot eat a pointer-down meant for the fighter palette behind it.
+            Label version = Systems_UiKit.Text("v" + Application.version,
+                                               Systems_UiKit.FONT_MICRO,
+                                               Systems_UiKit.TextLow);
+            version.style.position = Position.Absolute;
+            version.style.left = Systems_UiKit.SPACE_2;
+            version.style.top = Systems_UiKit.SPACE_2;
+            screen.Add(version.NoPick());
+
             _content = scroll.contentContainer;
             // Fill the viewport when the bracket is shorter than the screen, so
             // the spacer added below can push the action buttons down to the

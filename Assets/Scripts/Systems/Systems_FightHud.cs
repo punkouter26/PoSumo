@@ -259,7 +259,6 @@ namespace PoSumo
             _detailCard.Pad(Systems_UiKit.SPACE_4, Systems_UiKit.SPACE_3);
             _detailCard.style.width = Length.Percent(92);
             _detailCard.style.maxWidth = 520;
-            _detailCard.style.marginTop = Systems_UiKit.SPACE_4;
             _detailCard.style.display = DisplayStyle.None;
 
             BuildHeader();
@@ -281,10 +280,38 @@ namespace PoSumo
             _detailCard.Add(Systems_UiKit.Divider());
             _push = MirrorBarRow("PUSH IN CONTACT");
 
-            // This one sits over the middle of the arena rather than at the screen
-            // edge, so its labels must not hit-test either.
+            // This one sits over the arena rather than at the screen edge, so its
+            // labels must not hit-test either.
             _detailCard.NoPickTree();
-            _hud.Stage.Add(_detailCard);
+
+            // PINNED TO THE BOTTOM OF THE STAGE BAND, not centred in it.
+            //
+            // In flow the card inherited Stage's `justifyContent: Center` and landed
+            // squarely over the dohyo, hiding the two fighters at the exact moment
+            // the player wants to see how the round ended. The stage band's lower
+            // portion is empty backdrop at gameplay framing, so the card costs
+            // nothing there.
+            //
+            // An ABSOLUTE holder, not `marginTop: auto` on the card. An auto margin
+            // absorbs the band's free space and would drag `_centre` — the countdown
+            // and the "X SCORES!" banner — up to the top of the stage with it, and
+            // those are the two things that genuinely belong centred over the arena.
+            // Taking the card out of flow leaves them exactly where they were.
+            //
+            // The holder is what carries `alignItems: Center`: an absolutely
+            // positioned element does not inherit the parent's centring, so the card
+            // alone would have pinned to the left edge. Bottom offset (not 0) keeps
+            // it clear of the Dock's live DOMINANCE strip directly below — absolute
+            // offsets resolve against the parent's PADDING box, and Stage has no
+            // padding, so `bottom: 0` is precisely the Dock's top edge.
+            var holder = new VisualElement().NoPick();
+            holder.style.position = Position.Absolute;
+            holder.style.left = 0;
+            holder.style.right = 0;
+            holder.style.bottom = Systems_UiKit.SPACE_3;
+            holder.style.alignItems = Align.Center;
+            holder.Add(_detailCard);
+            _hud.Stage.Add(holder);
         }
 
         private void BuildHeader()
