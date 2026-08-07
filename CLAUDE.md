@@ -189,9 +189,31 @@ each live in *Editor menu tools* and *Training workflow* below.
 | Watch a live env | `curl http://127.0.0.1:8787/metrics` — see *Telemetry* |
 | Drive the Editor from a shell | `python Tools/unity.py <ping\|scene\|play\|stop\|errors\|shot\|exec\|raw>` |
 | Ship a brain | *PoSumo → Deploy \<Name\> Brain* |
+| Unit test | `python Tools/unity.py raw run_tests '{"mode":"EditMode","assemblyNames":["PoSumo.Tests.EditMode"]}'` then poll `get_test_job` |
 
-There is no lint step and no unit-test suite; the hooks in `.claude/hooks/` are the
-static checks, and they run on edit rather than on demand.
+There is no lint step; the hooks in `.claude/hooks/` are the static checks, and they run
+on edit rather than on demand.
+
+There **is** a small EditMode unit suite (`Assets/Tests/EditMode`, 23 tests, added
+2026-08-07) — but read what it covers before assuming a green run means anything. It
+tests `Systems_CareerLadder` and `Reward_Context.San`, which are the only pure functions
+in the project: no MonoBehaviour, no physics, no disk. Everything this game is actually
+about — the ragdoll, the referees, the brains — is behavioural and is still verified by
+`MatchTestHarness.Run(n)` and the screenshot flow. Do not report a passing unit run as
+evidence that a body, reward or scene change works.
+
+**Pass `assemblyNames`, not `testFilter`.** The bridge's `run_tests` silently ignores an
+unrecognised filter key and runs everything, which here means the ~200 tests that ship
+inside `com.besty.unity-skills` as well. One of those
+(`PerceptionSkillsTests.SceneSummarize_CountsObjectsCorrectly`) fails against this
+project's scenes and is not ours to fix — an unfiltered run therefore always reports a
+failure.
+
+Two things the suite must never do, both of which would be silently destructive:
+`Systems_CareerStats` writes `career.json` in `Application.persistentDataPath` on every
+mutation, so a test that calls `Get`/`RecordMatch`/`ResetAll` would wipe the player's real
+career; and the `.asmdef` is Editor-only with `defineConstraints: ["UNITY_INCLUDE_TESTS"]`
+so none of it can reach an Android build.
 
 ## Architecture
 
@@ -923,8 +945,9 @@ entry, so retire a build by deleting the folder rather than keeping it around.
 
 Judge a character by the harness tally, not by one eyeballed round. The build/deploy tools
 print a `BUILD RESULT:` / `AAB BUILD RESULT:` / `DEPLOY RESULT:` line — that is how their
-outcome is read back. There is no test suite: `MatchTestHarness` and the Game-view
-screenshot flow below are the verification tools this project has.
+outcome is read back. `MatchTestHarness` and the Game-view screenshot flow below are the
+verification tools for anything behavioural; the EditMode suite in `Assets/Tests/EditMode`
+covers only the two pure-logic corners described under *Commands at a glance*.
 
 ## Unity Editor automation — `Tools/unity.py` FIRST
 

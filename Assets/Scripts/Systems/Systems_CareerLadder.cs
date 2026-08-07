@@ -116,6 +116,17 @@ namespace PoSumo
             }
 
             int index = IndexFor(record);
+            if (index == UNRANKED)
+            {
+                // An unranked fighter has no CURRENT rung to measure from, and the
+                // rung above them is RUNGS[0], whose floor is negative infinity.
+                // Deriving a span from that gave -inf - -inf = NaN, which flowed
+                // straight into `Systems_CareerScreen`'s bar as a NaN percent width.
+                // Nothing is being progressed toward yet: entering the banzuke takes
+                // a decided match, not rating.
+                requirement = "WIN A MATCH TO ENTER THE BANZUKE";
+                return 0f;
+            }
             if (index >= RUNGS.Length - 1)
             {
                 return 1f;
@@ -133,8 +144,9 @@ namespace PoSumo
             // Measured from the CURRENT rung's floor, not from zero. The bottom
             // rung's floor is negative infinity, so it needs a real span to divide
             // by or the fraction is NaN — one band's width below the next floor is
-            // the honest equivalent.
-            float floor = index == UNRANKED ? next.EloFloor - 100f : RUNGS[index].EloFloor;
+            // the honest equivalent. (`index` is a real rung by here; the UNRANKED
+            // case returned above.)
+            float floor = RUNGS[index].EloFloor;
             if (float.IsNegativeInfinity(floor))
             {
                 floor = next.EloFloor - 100f;

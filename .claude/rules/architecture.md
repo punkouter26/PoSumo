@@ -23,14 +23,18 @@ Assets/Scripts/
 Exactly four folders, four prefixes. The prefix and the folder must agree. Adding a fifth
 family means adding a folder and updating `CLAUDE.md`'s Conventions section.
 
-Two assembly definitions, and that is the whole graph:
+Three assembly definitions, and that is the whole graph:
 
 | Assembly | Contains |
 |---|---|
 | `PoSumo.Runtime` | `Assets/Scripts/` — everything shipped |
-| `PoSumo.Editor` | `Assets/Editor/` — menu tools, builders, the test harness |
+| `PoSumo.Editor` | `Assets/Editor/` — menu tools, builders, the match harness |
+| `PoSumo.Tests.EditMode` | `Assets/Tests/EditMode/` — the pure-logic unit suite |
 
-Editor code may reference runtime code. Never the reverse. Runtime code that needs a
+Editor code may reference runtime code. Never the reverse. The test assembly references
+runtime only, is `includePlatforms: ["Editor"]` and carries
+`defineConstraints: ["UNITY_INCLUDE_TESTS"]`, so it cannot reach a player build. Nothing
+references it. Runtime code that needs a
 `UnityEditor` type must guard it with `#if UNITY_EDITOR` — a PreToolUse hook
 (`guard-editor-runtime.sh`) blocks the unguarded case.
 
@@ -192,11 +196,23 @@ the presentation spawning would be a welcome refactor; growing the file further 
 
 ## Verification
 
-There is no unit-test suite and no lint step. The verification tools are:
+There is no lint step. The verification tools are:
 
 - `MatchTestHarness.Run(n)` in Play mode → a `HARNESS RESULT:` win/loss tally,
 - the Game-view screenshot flow (`python Tools/unity.py shot ...`),
-- `Tools/unity.py errors` / `console-get-logs` for the console.
+- `Tools/unity.py errors` / `console-get-logs` for the console,
+- the EditMode unit suite in `Assets/Tests/EditMode` — run it with
+  `run_tests` + `assemblyNames: ["PoSumo.Tests.EditMode"]`, never `testFilter`, which the
+  bridge ignores while running every test in the project including a third-party one that
+  always fails here.
 
-Report a behavioural change as a harness tally, not as an impression. Judge a training run
-on ELO, not mean reward.
+**The unit suite deliberately covers almost nothing.** Only `Systems_CareerLadder` and
+`Reward_Context.San` are testable without a scene, a physics step or the disk; everything
+this project is about is behavioural. A green unit run is not evidence that a body,
+reward, scene or brain change works — report those as a harness tally, not as an
+impression. Judge a training run on ELO, not mean reward.
+
+When adding a test, keep it off the disk: `Systems_CareerStats` saves `career.json` to
+`Application.persistentDataPath` on every mutation, so exercising `Get`, `RecordMatch`,
+`RecordRound`, `RecordTitle` or `ResetAll` destroys the player's real career. Construct a
+`Systems_CareerStats.Record` directly instead.
