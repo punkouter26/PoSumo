@@ -28,10 +28,19 @@ defaults were never updated** and still read 5.5 / `startHalfRange (1.7, 5.5)` /
 `spawnGapHalf 1.2`; the four training scenes serialize the correct 4 / `(1.7, 4)` / 2.5.
 Grep the `.unity` files, not the `.cs`, to learn what an env actually trains against.
 
-The roster is exactly four trained fighters — **Matt**, **Standard**, **Nick**,
-**Kim** — each with an `.onnx`, a `*_Character.asset` and a `MANIFEST.md`. The
-8-slot bracket seeds each of them twice. `Assets/Agents/ROSTER.md` is the roster
-overview; there is no code mirror of it.
+There are four **trained** fighters — **Matt**, **Standard**, **Nick**, **Kim** — each
+with an `.onnx`, a `*_Character.asset` and a `MANIFEST.md`. `Assets/Agents/ROSTER.md` is
+the roster overview; there is no code mirror of it.
+
+**A fifth entry, `Bot_v01`, is in the roster ON PURPOSE and is NOT a defect — do not
+"fix" it by deleting it or dropping it from the seeding** (confirmed 2026-08-07). It holds
+only `Bot_Character.asset` with `inferenceModel: {fileID: 0}`: no brain, no `.onnx`, no
+manifest. It therefore logs
+`Systems_MatchRoster: character 'Bot' has no inferenceModel` at Error level on every match
+it appears in, and collapses as a ragdoll when it fights. That is known and accepted.
+
+Consequence: the 8-slot bracket no longer seeds four fighters twice each. With five
+entries it draws Standard ×2, Matt ×2, Nick ×2, Kim ×1, Bot ×1.
 
 `ROSTER.md` and the four per-fighter `MANIFEST.md` files were rewritten on 2026-08-02 and
 now describe 45 obs, one unified brain each, and the `*_unifiedNN` runs that actually back

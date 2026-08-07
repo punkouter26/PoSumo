@@ -418,7 +418,20 @@ namespace PoSumo
             // A budget that is too small does not error, it silently drops emits and
             // the showpiece finish reads as a dribble, so this is sized for the
             // worst case rather than the common one.
-            ParticleSystem system = CreateSystem("Blood", 5200, 7);
+            // 5200 -> 12000 for the GIB, which is a far worse worst case than the
+            // neck geyser this was originally sized against. One gib takes the whole
+            // body apart in a single frame:
+            //   - 4 root breaks x 2 cut ends  = 8 sustained bleeders
+            //   - decapitation                = 2 more (neck stump + cut face)
+            //   - 11 further joints           = one-off bursts, ~36 droplets each
+            // So the opening frame throws ~880 (roots) + ~280 (head) + ~400 (joints)
+            // at once, and 10 wounds then pump bleedDroplets 16 every 70 ms
+            // (~2,290/s, ~2,060 alive at a 0.5-1.3 s lifetime) for bleedSeconds.
+            //
+            // The failure mode is silent — over budget the system drops emits rather
+            // than erroring — so the single most dramatic moment in the game would
+            // read as the weakest. Sized for the gib, not the common case.
+            ParticleSystem system = CreateSystem("Blood", 12000, 7);
             ParticleSystem.MainModule main = system.main;
             main.startLifetime = new ParticleSystem.MinMaxCurve(0.5f, 1.3f);
             main.startSize = new ParticleSystem.MinMaxCurve(0.02f, 0.055f);

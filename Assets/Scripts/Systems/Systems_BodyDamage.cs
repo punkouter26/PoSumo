@@ -72,6 +72,15 @@ namespace PoSumo
         [Tooltip("Master switch for dismemberment. Turning this off leaves the mannequin colouring intact, which is the safe fallback if detachment ever proves too swingy.")]
         public bool allowDetach = true;
 
+        [Header("Gib (all four limbs at once)")]
+        [Tooltip("Master switch for the gib. Independent of allowDetach on purpose: the gib is a rare showpiece, and turning ordinary dismemberment off to calm a bout down should not also remove it.")]
+        public bool allowGib = true;
+        [Tooltip("Impact speed at or above which a hit is eligible to gib. ABOVE koSpeed (7.5), so only the class of blow that could already knock a head out can take every limb off.\n\nThis is an eligibility gate, not the rate — gibChance below is what makes it rare. Two dials rather than one because a pure speed threshold cannot hold a fixed rate: the force distribution moves whenever a brain is retrained or a physique changes, so a bar tuned to fire on 1% of hits today fires on some other fraction tomorrow. Measure with GibCount, not by reasoning about this number.")]
+        public float gibSpeed = 3f;   // TEMP DEMO — revert to 11f
+        [Tooltip("Probability that a hit at or above gibSpeed takes all four limbs off. 0.01 = the requested ~1%.\n\nNote this is 1% of QUALIFYING hits, not 1% of all contacts — hits over gibSpeed are already rare, so the observed rate per round is far below 1%. If it never fires, lower gibSpeed before raising this: a higher chance on a bar nothing reaches is still zero.")]
+        [Range(0f, 1f)]
+        public float gibChance = 1f;   // TEMP DEMO — revert to 0.01f
+
         [Header("Dismemberment bleeding")]
         [Tooltip("Droplets in the opening spray from EACH end of the break — the stump left on the body and the cut end of the severed limb. 24 -> 70: the two opposed jets are the whole point of the moment and read as one puff at the old count.")]
         public int severBurstDroplets = 110;
@@ -173,6 +182,22 @@ namespace PoSumo
         /// Fired when a limb is torn off. Presentation + HUD; no referee listens.
         public static event System.Action<Agent_BipedBody, Region, Vector3> Dismembered;
 
+        /// Fired when a single blow takes ALL FOUR limbs off at once.
+        ///
+        /// Unlike Knockout and Dismembered above, THE REFEREE DOES LISTEN to this
+        /// one — Systems_GameMatchManager ends the round on it. It is therefore the
+        /// second presentation event with a rules consequence, and the same warning
+        /// applies: Systems_SumoMatchManager has no equivalent, so no brain has ever
+        /// trained against it. That asymmetry is deliberate — the gib is spectacle
+        /// layered on the sumo rules, like the 3-KO rule and the tawara band.
+        ///
+        /// Dismembered still fires once per limb underneath it, so the HUD mannequin
+        /// and every other listener need no special case.
+        public static event System.Action<Agent_BipedBody, Vector3> Gibbed;
+
+        /// Session tally, for measuring the rate rather than reasoning about it.
+        public static int GibCount { get; private set; }
+
         private struct Mark
         {
             public int partIndex;      // -1 = head
@@ -269,6 +294,11 @@ namespace PoSumo
         private float _nextSplashTime;
         private float _koUntil;
         private bool _knockedOut;
+        // Deliberately NEVER reset — unlike _knockedOut, which expires on a timer.
+        // A gib is not a state a fighter recovers from: the four limbs are gone for
+        // the rest of this body's life, so a second roll on the same fighter could
+        // only fire Gibbed at a referee that has already ended the round.
+        private bool _gibbed;
         private Systems_GameMatchManager _manager;
 
         private void Start()
@@ -419,6 +449,17 @@ namespace PoSumo
             // arrives here as a Chest collision — the only way to tell is to compare
             // the struck collider against the head's own.
             bool headHit = body.HeadCollider != null && contact.otherCollider == body.HeadCollider;
+
+            // GIB, checked BEFORE the head KO so the rarer, bigger event wins when a
+            // single blow qualifies for both. A hit that clears gibSpeed (11) has
+            // already cleared koSpeed (7.5), so without this order every candidate
+            // gib on a head would return early as an ordinary knockout and the roll
+            // would never happen.
+            if (allowGib && !_gibbed && speed >= gibSpeed && Random.value < gibChance)
+            {
+                Gib(contact.point);
+                return;   // the gib owns this blow; no bruise on top of four stumps
+            }
 
             if (headHit && speed >= koSpeed && !_knockedOut)
             {
@@ -607,10 +648,23 @@ namespace PoSumo
                 return;
             }
 
+            if (DetachRegion(region, worldPoint))
+            {
+                Debug.Log($"[DAMAGE] {name} lost {region} at {_regionDamage[(int)region]:F1} damage");
+            }
+        }
+
+        /// Tears one arm or leg off at its root joint and opens both cut ends.
+        /// Returns false if the region cannot come off (torso) or already has.
+        ///
+        /// Shared by the damage-threshold path above and the gib below, so the two
+        /// cannot drift apart in how a break is resolved, bled or announced.
+        private bool DetachRegion(Region region, Vector3 worldPoint)
+        {
             int rootPart = RootPartOf(region);
-            if (rootPart < 0) return;                       // the torso cannot come off
+            if (rootPart < 0) return false;                  // the torso cannot come off
             int joint = Agent_BipedBody.JointIndexForChild(rootPart);
-            if (joint < 0) return;
+            if (joint < 0) return false;
 
             // Resolve the break geometry BEFORE detaching: DetachJoint destroys the
             // HingeJoint2D, and the joint is the only thing that knows where the two
@@ -626,7 +680,7 @@ namespace PoSumo
                 breakPoint = hinge.transform.TransformPoint(hinge.anchor);
             }
 
-            if (!body.DetachJoint(joint)) return;               // false = already gone
+            if (!body.DetachJoint(joint)) return false;         // false = already gone
 
             // Sell it: blood out of BOTH ends of the break, and both ends keep
             // bleeding for a few seconds as they move. The HUD mannequin turns that
@@ -635,10 +689,78 @@ namespace PoSumo
             OpenBleed(limbPart, breakPoint);
             Dismembered?.Invoke(body, region, breakPoint);
             LimbLossCount++;
-            Debug.Log($"[DAMAGE] {name} lost {region} at {_regionDamage[(int)region]:F1} damage — " +
-                      $"bleeding from stump '{(parentPart == null ? "none" : parentPart.name)}' and " +
-                      $"cut end '{(limbPart == null ? "none" : limbPart.name)}' at {breakPoint}");
+            return true;
         }
+
+        /// Takes ALL FOUR limbs off on one blow and hands the round to the referee.
+        ///
+        /// The limbs are not thrown anywhere: DetachJoint destroys the hinge and
+        /// leaves the part as a free rigidbody carrying the velocity it already had,
+        /// so they separate under the momentum of the hit and fall to the mat.
+        /// Agent_BipedBody disables intra-biped collisions pairwise, so a loose limb
+        /// passes through the torso it came from but still lands on the clay.
+        private void Gib(Vector3 point)
+        {
+            if (_gibbed || body == null) return;
+            _gibbed = true;
+
+            // 1. The four limbs come off at their ROOTS first, through the shared
+            //    path, so the HUD mannequin gets its four Dismembered events and
+            //    each root break bleeds from both ends like an ordinary tear.
+            int limbs = 0;
+            for (int r = 0; r < GibRegions.Length; r++)
+            {
+                if (DetachRegion(GibRegions[r], point)) limbs++;
+            }
+
+            // 2. Then EVERY remaining hinge, so nothing is left joined: elbows,
+            //    knees, ankles, toes and the three spine joints. Detaching only the
+            //    roots left four intact limb chains and a whole torso — five pieces,
+            //    which reads as dismemberment rather than disintegration.
+            //
+            //    These get a one-off spray, NOT an OpenBleed. Every OpenBleed is a
+            //    sustained pump for bleedSeconds, and the four root breaks already
+            //    run eight of them; adding a further eleven joints x 2 ends would be
+            //    30 sustained wounds against a budget sized for ten, and the whole
+            //    pour would silently thin out. A burst at the break reads as the
+            //    part being torn away without competing for that budget.
+            int joints = 0;
+            if (body.Joints != null)
+            {
+                for (int j = 0; j < body.Joints.Length; j++)
+                {
+                    // IsDetached BEFORE touching the hinge. The root pass above
+                    // called Destroy on four of these, and reading .transform off a
+                    // component destroyed earlier in the same frame is exactly the
+                    // destroyed-object access the project's Unity rules warn about.
+                    if (body.IsDetached(j)) continue;
+                    HingeJoint2D hinge = body.Joints[j];
+                    if (hinge == null) continue;
+                    Vector3 breakPoint = hinge.transform.TransformPoint(hinge.anchor);
+                    if (!body.DetachJoint(j)) continue;
+                    Systems_DustPuff.BloodSpray(breakPoint, Random.insideUnitCircle.normalized,
+                                                severBurstDroplets / 3, severJetSpeed);
+                    joints++;
+                }
+            }
+
+            // 3. And the head, through the existing decapitation path so the neck
+            //    stump and the head's own cut face both pour as they always have.
+            DecapitateHead(point);
+
+            GibCount++;
+            Debug.Log($"[DAMAGE] {name} GIBBED — {limbs} limbs + {joints} further joints + head, " +
+                      $"in one blow at {point}");
+            Gibbed?.Invoke(body, point);
+        }
+
+        /// The four detachable limbs, in the order they come off. Head and torso are
+        /// excluded: the head has its own showpiece at a far lower gate, and the
+        /// torso is what everything else hangs from.
+        private static readonly Region[] GibRegions =
+        {
+            Region.ArmNear, Region.ArmFar, Region.LegNear, Region.LegFar,
+        };
 
         /// Takes the head off and bleeds both the neck stump and the loose head.
         private void DecapitateHead(Vector3 worldPoint)

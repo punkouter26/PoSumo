@@ -50,6 +50,8 @@ namespace PoSumo
         public float downGraceSeconds = 0.2f;
         [Tooltip("Seconds a fighter may lie down before the round goes to the opponent. GAME-ONLY — the training referee has no equivalent. 0 disables it.")]
         public float downOutSeconds = 3f;
+        [Tooltip("Losing all four limbs to one blow ends the round immediately. GAME-ONLY, like downOutSeconds above. Turning it off does NOT let a gibbed fighter keep going — downOutSeconds still retires it about 3 s later, since it can never satisfy the get-up condition. Copied from GameTuning in Start.")]
+        public bool gibLosesRound = true;
         /// Shrinking ring. Defaults mirror Systems_GameTuning; the ASSET wins.
         public float shrinkStartSeconds = 8f;
         public float shrinkToHalfWidth = 1.8f;
@@ -200,6 +202,7 @@ namespace PoSumo
             DoubleOut,        // both finished in the same physics step
             TimeoutDecision,  // clock expired, settled on position
             TimeoutDraw,      // clock expired, too close to call
+            Gibbed,           // lost all four limbs to one blow (game-only rule)
         }
 
         /// Per-outcome tally for the whole session, indexed by RoundOutcome.
@@ -305,6 +308,7 @@ namespace PoSumo
                 graceSeconds = tuning.graceSeconds;
                 downGraceSeconds = tuning.downGraceSeconds;
                 downOutSeconds = tuning.downOutSeconds;
+                gibLosesRound = tuning.gibLosesRound;
                 knockdownLoses = tuning.knockdownLoses;
                 knockoutsToLoseMatch = tuning.knockoutsToLoseMatch;
                 shrinkStartSeconds = tuning.shrinkStartSeconds;
@@ -412,9 +416,17 @@ namespace PoSumo
 
         // Systems_BodyDamage.Knockout is a static event: a missed unsubscribe
         // keeps a finished scene's referee counting knockouts in the next one.
-        private void OnEnable() => Systems_BodyDamage.Knockout += OnKnockout;
+        private void OnEnable()
+        {
+            Systems_BodyDamage.Knockout += OnKnockout;
+            Systems_BodyDamage.Gibbed += OnGibbed;
+        }
 
-        private void OnDisable() => Systems_BodyDamage.Knockout -= OnKnockout;
+        private void OnDisable()
+        {
+            Systems_BodyDamage.Knockout -= OnKnockout;
+            Systems_BodyDamage.Gibbed -= OnGibbed;
+        }
 
         private void ResolveWrestlers()
         {
@@ -1544,6 +1556,34 @@ namespace PoSumo
         /// referees are kept in step on the losing conditions a policy has to
         /// learn; this is not one of them. It can only end a MATCH, never a
         /// training episode, so no brain can meet a rule it never trained against.
+        /// A fighter lost all four limbs to one blow — the round is over immediately.
+        ///
+        /// This is a GAME-ONLY rule with no equivalent in Systems_SumoMatchManager,
+        /// like downOutSeconds and knockoutsToLoseMatch. No brain has trained against
+        /// it, which is fine: it is spectacle layered on the sumo rules, and the
+        /// victim could not have kept fighting anyway.
+        ///
+        /// Without it the existing down-out rule would still end the round about 3 s
+        /// later — a limbless fighter can never satisfy the get-up condition — so
+        /// this only removes the wait, and the fallback stays correct if gibLosesRound
+        /// is ever turned off.
+        private void OnGibbed(Agent_BipedBody victim, Vector3 point)
+        {
+            if (victim == null || !gibLosesRound) return;
+            // Only Fighting can be ended. The blow that gibs often lands in the same
+            // physics step as a ring-out, and a second EndRound during RoundEnded or
+            // Grace would score the round twice.
+            if (_hud == null || _phase != Phase.Fighting) return;
+
+            Agent_Biped loser = victim == _bodyA ? wrestlerA
+                              : victim == _bodyB ? wrestlerB : null;
+            if (loser == null) return;
+
+            Debug.Log($"[MATCH] gib on {(loser == wrestlerA ? nameA : nameB)} — round over");
+            EndRound(loser == wrestlerA ? wrestlerB : wrestlerA, RoundOutcome.Gibbed,
+                     null, "TORN APART");
+        }
+
         private void OnKnockout(Agent_BipedBody victim, Vector3 point)
         {
             if (victim == null || knockoutsToLoseMatch <= 0) return;
