@@ -25,7 +25,9 @@ namespace PoSumo
         private ParticleSystem _salt;
         private ParticleSystem _haze;
         private ParticleSystem _blood;
+        private ParticleSystem _spark;
         private static Texture2D _puffTexture;
+        private static Material _particleMaterial;
 
         /// Enter Play Mode domain reload is disabled in this project, so a static
         /// instance survives into the next Play session pointing at a destroyed
@@ -35,6 +37,11 @@ namespace PoSumo
         {
             _instance = null;
             _quitting = false;
+            // The cached material and texture are native objects owned by a dead
+            // session. Holding them would hand the next session a destroyed
+            // Material, which renders as magenta rather than erroring.
+            _particleMaterial = null;
+            _puffTexture = null;
         }
 
         private static Systems_DustPuff Instance
@@ -68,6 +75,7 @@ namespace PoSumo
             _salt = BuildSalt();
             _haze = BuildHaze();
             _blood = BuildBlood();
+            _spark = BuildSpark();
         }
 
         private void OnApplicationQuit() => _quitting = true;
@@ -108,6 +116,62 @@ namespace PoSumo
             emitParams.velocity = new Vector3(unit.x, unit.y + 0.6f, 0f) * Random.Range(1.4f, 2.6f);
             emitParams.applyShapeToPosition = true;
             instance._sweat.Emit(emitParams, count);
+        }
+
+        /// The "that landed" burst: a hot core plus a ring of shards thrown out
+        /// from the contact point. Fired by Systems_ImpactFx only for hits that
+        /// beat the running average, so seeing one MEANS something — which is the
+        /// entire point of it being a separate system from Burst().
+        ///
+        /// Two parts, because one alone does not read as an impact:
+        /// - the CORE is a handful of big, near-stationary blobs that expand hard
+        ///   over ~0.15 s. Expansion is what the eye reads as force; a bright dot
+        ///   that merely fades reads as a light being switched off.
+        /// - the SHARDS are an evenly-spaced ring, not random angles. Random
+        ///   angles clump, and a clumped ring reads as spray rather than a burst.
+        ///   The ring is then skewed along `direction` so the blow has a heading
+        ///   instead of being an omnidirectional firework.
+        ///
+        /// No gravity and a very short life on purpose: this is a flash, not
+        /// debris. Anything that hangs in the air is dust's job, and dust is
+        /// already emitted at the same point by the same hit.
+        public static void ImpactFlash(Vector3 position, Vector2 direction, float strength)
+        {
+            Systems_DustPuff instance = Instance;
+            if (instance == null || instance._spark == null)
+            {
+                return;
+            }
+            float weight = Mathf.Clamp01(strength);
+            Vector2 unit = direction.sqrMagnitude > 0.0001f ? direction.normalized : Vector2.up;
+
+            int coreCount = Mathf.RoundToInt(Mathf.Lerp(3f, 7f, weight));
+            for (int coreIndex = 0; coreIndex < coreCount; coreIndex++)
+            {
+                ParticleSystem.EmitParams emitParams = MakeParams(position, 0.04f);
+                emitParams.velocity = Random.insideUnitCircle * Random.Range(0.2f, 0.9f);
+                emitParams.startSize = Random.Range(0.17f, 0.32f) * Mathf.Lerp(0.75f, 1.3f, weight);
+                emitParams.startLifetime = Random.Range(0.10f, 0.18f);
+                emitParams.applyShapeToPosition = true;
+                instance._spark.Emit(emitParams, 1);
+            }
+
+            int shardCount = Mathf.RoundToInt(Mathf.Lerp(10f, 26f, weight));
+            float shardSpeed = Mathf.Lerp(3.5f, 9f, weight);
+            for (int shardIndex = 0; shardIndex < shardCount; shardIndex++)
+            {
+                float angle = (shardIndex / (float)shardCount) * Mathf.PI * 2f
+                              + Random.Range(-0.12f, 0.12f);
+                var radial = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
+                Vector2 heading = (radial + unit * 0.55f).normalized;
+
+                ParticleSystem.EmitParams emitParams = MakeParams(position, 0.03f);
+                emitParams.velocity = heading * shardSpeed * Random.Range(0.6f, 1.25f);
+                emitParams.startSize = Random.Range(0.05f, 0.11f);
+                emitParams.startLifetime = Random.Range(0.12f, 0.26f);
+                emitParams.applyShapeToPosition = true;
+                instance._spark.Emit(emitParams, 1);
+            }
         }
 
         /// The shio-maki: a handful of purifying salt thrown up over the ring
@@ -234,11 +298,23 @@ namespace PoSumo
         /// queue and three keywords and hoping they stay stable across URP
         /// versions. Sprites/Default is alpha-blended by definition, always
         /// present, and respects the per-particle vertex colour.
+        ///
+        /// CACHED and shared by every system here. All six want the identical
+        /// shader and texture and none of them writes to the material, so a
+        /// material per system was six of the same thing — and per
+        /// .claude/rules/performance.md, unique materials are what draw calls are
+        /// counted in. Cleared alongside the instance on play-session start,
+        /// because domain reload is off and a Material survives into the next
+        /// session as a leaked native object.
         private static Material ParticleMaterial()
         {
-            var material = new Material(Shader.Find("Sprites/Default")) { name = "PoSumo_Particle" };
-            material.mainTexture = PuffTexture();
-            return material;
+            if (_particleMaterial != null)
+            {
+                return _particleMaterial;
+            }
+            _particleMaterial = new Material(Shader.Find("Sprites/Default")) { name = "PoSumo_Particle" };
+            _particleMaterial.mainTexture = PuffTexture();
+            return _particleMaterial;
         }
 
         private ParticleSystem CreateSystem(string name, int maxParticles, int sortingOrder)
@@ -371,6 +447,38 @@ namespace PoSumo
             collision.bounce = 0f;
             collision.dampen = 1f;
             system.gameObject.AddComponent<Systems_RingBlood>();
+            return system;
+        }
+
+        /// Sorting order 9 — ABOVE blood (7). A flash that a droplet can draw over
+        /// is not a flash. Budget: a single burst is at most 7 core + 26 shards,
+        /// and the caller's own cooldown keeps them ~3/s, so 320 is roughly 8x the
+        /// worst case alive at once. Sized generously because the failure mode of
+        /// a small budget is a silently DROPPED emit, not an error — the same trap
+        /// documented on the blood system above.
+        private ParticleSystem BuildSpark()
+        {
+            ParticleSystem system = CreateSystem("Spark", 320, 9);
+            ParticleSystem.MainModule main = system.main;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(0.10f, 0.26f);
+            main.startSize = new ParticleSystem.MinMaxCurve(0.05f, 0.20f);
+            main.startSpeed = 0f;        // velocity comes from EmitParams
+            main.gravityModifier = 0f;   // a flash does not fall
+            // Hot white at the centre through to gold: reads as force against the
+            // dark arena without straying into the reds the blood system owns.
+            main.startColor = new ParticleSystem.MinMaxGradient(
+                new Color(1f, 0.97f, 0.82f, 1f),
+                new Color(1f, 0.72f, 0.30f, 0.9f));
+
+            ParticleSystem.SizeOverLifetimeModule size = system.sizeOverLifetime;
+            size.enabled = true;
+            size.size = new ParticleSystem.MinMaxCurve(1f, Curve(1f, 3.2f));
+
+            // Almost no hold: full brightness for a moment, then gone. A slow fade
+            // would leave a lingering glow and blunt the snap.
+            ParticleSystem.ColorOverLifetimeModule colour = system.colorOverLifetime;
+            colour.enabled = true;
+            colour.color = new ParticleSystem.MinMaxGradient(FadeOut(0.1f));
             return system;
         }
 
