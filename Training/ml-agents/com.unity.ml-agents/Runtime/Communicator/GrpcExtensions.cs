@@ -1,3 +1,4 @@
+#if UNITY_EDITOR || UNITY_STANDALONE
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -548,3 +549,4 @@ namespace Unity.MLAgents
         #endregion
     }
 }
+#endif

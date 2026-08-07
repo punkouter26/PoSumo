@@ -12,7 +12,9 @@
         "Google.Protobuf_MLAgents.dll"
     ],
     "autoReferenced": true,
-    "defineConstraints": [],
+    "defineConstraints": [
+        "UNITY_EDITOR || UNITY_STANDALONE"
+    ],
     "versionDefines": [],
     "noEngineReferences": false
 }

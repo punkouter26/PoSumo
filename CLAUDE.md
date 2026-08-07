@@ -128,15 +128,32 @@ older commits and notes.
    player builds resolve the reference to the wrong one. All 7 asmdefs reference the new
    name. **Still required at 4.1.0 / ai.inference 2.6.1** — both sides still ship the
    colliding name, verified 2026-08-06.
-3. `mlagents_envs/environment.py::_check_communication_compatibility` — `StrictVersion`
+3. `Runtime/Grpc/Unity.ML-Agents.CommunicatorObjects.asmdef` — `defineConstraints` must be
+   `["UNITY_EDITOR || UNITY_STANDALONE"]`. Upstream ships it EMPTY, so the assembly compiles
+   for Android and demands `Google.Protobuf_MLAgents.dll`, whose `.meta` carries
+   `Exclude Android: 1` — the Android player build then dies with dozens of
+   `CS0400: The type or namespace name 'Google' could not be found` across
+   `Runtime/Grpc/CommunicatorObjects/*.cs`. The trainer connection is meaningless on a
+   phone, so the constraint is the correct fix and enabling Android on the DLL is not.
+   **This patch was undocumented and was silently lost in the 4.1.0 upgrade** (`6ca7ee6`),
+   which is how it was found: the first Android build attempted afterwards failed, on
+   2026-08-06. Nothing warns you — the Editor and every training env compile clean,
+   because both are `UNITY_EDITOR || UNITY_STANDALONE`. **Only a player build for a mobile
+   target ever exercises this**, so verify an Android build after any ml-agents re-fetch
+   rather than trusting a green console.
+
+4. `mlagents_envs/environment.py::_check_communication_compatibility` — `StrictVersion`
    replaced with a manual tuple parse; the original crashes worker auto-restarts. **Still
    required at 4.1.0**, which still does `from distutils.version import StrictVersion`.
    Now only ONE copy to patch (the source tree), because the venv install is editable.
 
 **How the 4.1.0 upgrade was actually done**, since the next one will look the same:
-clone upstream to a scratch dir, apply patches 2 and 3 to that *staging* copy, and only
+clone upstream to a scratch dir, apply patches 2, 3 and 4 to that *staging* copy, and only
 then swap it over `Training/ml-agents` — so the Editor never watches a half-patched
-package. The Cecil rename cannot be compiled against directly in the MCP `execute_code`
+package. (It was done with patch 3 MISSING, because patch 3 was undocumented at the time;
+that is the whole reason it is written down now. Diff the staged tree's `.asmdef` files
+against the outgoing one before swapping — an asmdef carries no version number and a lost
+`defineConstraints` entry is invisible until a platform you rarely build for fails.) The Cecil rename cannot be compiled against directly in the MCP `execute_code`
 sandbox (`Mono.Cecil` resolves at runtime but is not a compile-time reference), so drive
 it by **reflection** off `System.Reflection.Assembly.Load("Mono.Cecil")`. Carry the
 existing `.dll.meta` forward rather than taking upstream's, to keep the plugin GUID

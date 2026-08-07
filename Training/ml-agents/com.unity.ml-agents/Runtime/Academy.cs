@@ -427,7 +427,9 @@ namespace Unity.MLAgents
             EnableAutomaticStepping();
 
             SideChannelManager.RegisterSideChannel(new EngineConfigurationChannel());
+#if UNITY_EDITOR || UNITY_STANDALONE
             SideChannelManager.RegisterSideChannel(new TrainingAnalyticsSideChannel());
+#endif
             m_EnvironmentParameters = new EnvironmentParameters();
             m_StatsRecorder = new StatsRecorder();
 

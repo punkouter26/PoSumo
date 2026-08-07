@@ -1,3 +1,4 @@
+#if UNITY_EDITOR || UNITY_STANDALONE
 using System.IO;
 using Google.Protobuf;
 using System.Collections.Generic;
@@ -158,3 +159,4 @@ namespace Unity.MLAgents.Demonstrations
         }
     }
 }
+#endif
