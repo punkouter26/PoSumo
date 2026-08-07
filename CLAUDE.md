@@ -668,6 +668,12 @@ Build settings are exactly two scenes: `SCN_TOURNAMENT` (index 0) and `SCN_SUMO`
 therefore always boots into the bracket, which loads `SCN_SUMO` for every bout and gets the
 winner back via `Systems_TournamentReporter`.
 
+A third scene, **`Assets/Scenes/SCN_BOT.unity`, is tracked in git but is NOT in build
+settings** and is loaded by nothing (found 2026-08-07). It belongs with the deliberately
+brainless `Bot_v01` roster entry above, so **do not delete it as orphaned** — it looks
+exactly like a stray scene and is not one. It ships in no build, because only
+build-settings scenes are included.
+
 **Always start a play session from `SCN_TOURNAMENT`** — never from `SCN_SUMO`, a
 `SCN_TRAIN_*` scene, or whatever the Editor was last left on (frequently `SCN_SUMO`).
 Entering Play mode inside `SCN_SUMO` runs a standalone exhibition: no bracket, no
