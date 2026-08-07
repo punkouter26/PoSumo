@@ -1,459 +1,202 @@
 # Architecture Rules
 
-## Model-View-System (MVS) Pattern
+This file describes the architecture PoSumo **actually has**. It is not a generic Unity
+template. Where it disagrees with `CLAUDE.md`, `CLAUDE.md` wins — and where either
+disagrees with the code, the code wins.
 
-All features follow a strict three-layer separation:
+**There is no VContainer, no MessagePipe, no UniTask, and no R3/UniRx in this project.**
+None of the three appear in `Packages/manifest.json` or `packages-lock.json`. Do not write
+`[Inject]`, `LifetimeScope`, `IPublisher<T>`, `ReactiveProperty<T>` or `await UniTask...` —
+none of it compiles here. An earlier version of this file mandated all of them, which is
+how plans get written against a stack that does not exist.
+
+## The shape of the project
 
 ```
-Model  — Pure C# classes. State + data only. No Unity API, no MonoBehaviour.
-View   — MonoBehaviour. Reads Model, renders visuals, forwards input. No logic.
-System — Plain C# class (registered in VContainer). Owns and mutates Models. Contains all logic.
+Assets/Scripts/
+  Agent/    Agent_*     the ragdoll biped, its brain contract, character assets
+  Sensor/   Sensor_*    observation helpers
+  Reward/   Reward_*    reward-shaping providers (plain C#, no MonoBehaviour)
+  Systems/  Systems_*   everything else — referees, presentation, persistence, UI
 ```
 
-```csharp
-// --- Model (pure C#, serializable, no Unity dependencies) ---
-public sealed class PlayerModel
-{
-    public ReactiveProperty<int> Health { get; } = new(100);
-    public ReactiveProperty<Vector3> Position { get; } = new(Vector3.zero);
-    public bool IsDead => Health.Value <= 0;
-}
-
-// --- System (plain C#, injected via VContainer, owns the Model) ---
-public sealed class PlayerSystem : IDisposable
-{
-    private readonly PlayerModel _model;
-    private readonly IPublisher<PlayerDiedMessage> _diedPublisher;
-
-    [Inject]
-    public PlayerSystem(PlayerModel model, IPublisher<PlayerDiedMessage> diedPublisher)
-    {
-        _model = model;
-        _diedPublisher = diedPublisher;
-    }
-
-    public void TakeDamage(int amount)
-    {
-        _model.Health.Value = Mathf.Max(0, _model.Health.Value - amount);
-        if (_model.IsDead)
-        {
-            _diedPublisher.Publish(new PlayerDiedMessage());
-        }
-    }
-
-    public void Dispose() { }
-}
-
-// --- View (MonoBehaviour, observes Model, no logic) ---
-public sealed class PlayerView : MonoBehaviour
-{
-    [SerializeField] private Slider _healthBar;
-
-    private PlayerModel _model;
-    private readonly CompositeDisposable _disposables = new();
-
-    [Inject]
-    public void Construct(PlayerModel model)
-    {
-        _model = model;
-    }
-
-    private void Start()
-    {
-        _model.Health
-            .Subscribe(hp => _healthBar.value = hp / 100f)
-            .AddTo(_disposables);
-    }
-
-    private void OnDestroy() => _disposables.Dispose();
-}
-```
-
-**Rules:**
-- Models NEVER reference Views or Systems
-- Systems NEVER reference Views
-- Views observe Models via `ReactiveProperty<T>.Subscribe()` — no polling in Update
-- Views call Systems for actions (injected via VContainer)
-- One System can own multiple Models; one View binds to one primary Model
-
-## VContainer for Dependency Injection
-
-VContainer is the **only** way to wire dependencies. No singletons, no static access, no `FindObjectOfType`.
-
-### NO GameContext / Service Locator (NON-NEGOTIABLE)
-
-Do NOT create a `GameContext`, `ServiceLocator`, `Dependencies`, or any "god container" class that bundles multiple dependencies into a single injectable object. This is a **Service Locator anti-pattern** that defeats the purpose of DI.
-
-```csharp
-// BAD — GameContext exposes everything to everyone
-public class GameContext
-{
-    public PlayerModel Player { get; }
-    public ScoreSystem Score { get; }      // Why should SpawnView see this?
-    public SpawnSystem Spawner { get; }    // Why should ScoreView see this?
-    public IAudioService Audio { get; }
-}
-
-// Every consumer gets access to ALL dependencies
-public sealed class ScoreView : MonoBehaviour
-{
-    [Inject]
-    public void Construct(GameContext ctx)  // Real dependencies are hidden
-    {
-        _score = ctx.Score;  // Could also access ctx.Spawner — no access control
-    }
-}
-```
-
-**Why this is wrong:**
-- **Violates least-privilege**: every consumer can access every dependency
-- **Hides real dependencies**: the constructor/Construct signature says "I need GameContext" instead of "I need ScoreModel"
-- **Untestable**: testing one class requires constructing the entire GameContext with all its dependencies
-- **Binding ≠ injection**: GameContext construction becomes a second wiring step outside the LifetimeScope, duplicating responsibility
-- **Properties that should be private are exposed**: GameContext forces public access on dependencies that only specific consumers need
-
-```csharp
-// GOOD — each class declares exactly what it needs
-public sealed class ScoreView : MonoBehaviour
-{
-    private ScoreModel _model;
-
-    [Inject]
-    public void Construct(ScoreModel model)  // Only what it needs — nothing else visible
-    {
-        _model = model;
-    }
-}
-
-public sealed class CombatSystem : IDisposable
-{
-    private readonly PlayerModel _player;
-    private readonly IPublisher<DamageDealtMessage> _pub;
-
-    // Constructor declares exact dependencies — self-documenting, testable
-    public CombatSystem(PlayerModel player, IPublisher<DamageDealtMessage> pub)
-    {
-        _player = player;
-        _pub = pub;
-    }
-}
-```
-
-**The rule:** Every class requests only its own dependencies via constructor (Systems) or `[Inject] Construct` (Views). The LifetimeScope is the single place where binding and resolution happens. No intermediary container objects.
-
-```csharp
-public sealed class GameLifetimeScope : LifetimeScope
-{
-    protected override void Configure(IContainerBuilder builder)
-    {
-        // Models — singleton per scope
-        builder.Register<PlayerModel>(Lifetime.Singleton);
-        builder.Register<InventoryModel>(Lifetime.Singleton);
-
-        // Systems — singleton per scope
-        builder.Register<PlayerSystem>(Lifetime.Singleton).AsImplementedInterfaces().AsSelf();
-        builder.Register<InventorySystem>(Lifetime.Singleton).AsImplementedInterfaces().AsSelf();
-
-        // Services — interface-based for swappability
-        builder.Register<SaveService>(Lifetime.Singleton).As<ISaveService>();
-
-        // Views — use EntryPoint for non-MonoBehaviour tick
-        builder.RegisterEntryPoint<GameLoopSystem>();
-
-        // MonoBehaviour views — find in scene or prefab
-        builder.RegisterComponentInHierarchy<PlayerView>();
-
-        // MessagePipe
-        var messagePipeOptions = builder.RegisterMessagePipe();
-        builder.RegisterMessageBroker<PlayerDiedMessage>(messagePipeOptions);
-        builder.RegisterMessageBroker<ScoreChangedMessage>(messagePipeOptions);
-        builder.RegisterMessageBroker<ItemPickedUpMessage>(messagePipeOptions);
-    }
-}
-```
-
-**Scope hierarchy:**
-```
-RootLifetimeScope          — app-wide services (audio, save, settings)
-  └─ SceneLifetimeScope    — per-scene systems and models
-       └─ Child scopes     — per-feature (e.g., UI popup, spawned entity)
-```
-
-- Use `Lifetime.Singleton` for shared state within a scope
-- Use `Lifetime.Transient` for stateless services or factories
-- Use child scopes for dynamically spawned entities that need injection
-- NEVER use `[Inject]` on fields — use constructor injection for Systems, method injection (`[Inject] public void Construct(...)`) for MonoBehaviours
-
-## MessagePipe for Communication
-
-MessagePipe is the **only** messaging system. No SO event channels, no static EventBus, no C# events for cross-system communication.
-
-```csharp
-// --- Define messages as readonly structs ---
-public readonly struct PlayerDiedMessage { }
-
-public readonly struct DamageDealtMessage
-{
-    public readonly int Amount;
-    public readonly Vector3 Position;
-
-    public DamageDealtMessage(int amount, Vector3 position)
-    {
-        Amount = amount;
-        Position = position;
-    }
-}
-
-// --- Publishing (System → System or System → View) ---
-public sealed class CombatSystem : IDisposable
-{
-    private readonly IPublisher<DamageDealtMessage> _damagePublisher;
-
-    [Inject]
-    public CombatSystem(IPublisher<DamageDealtMessage> damagePublisher)
-    {
-        _damagePublisher = damagePublisher;
-    }
-
-    public void DealDamage(int amount, Vector3 position)
-    {
-        _damagePublisher.Publish(new DamageDealtMessage(amount, position));
-    }
-
-    public void Dispose() { }
-}
-
-// --- Subscribing (in System or View) ---
-public sealed class DamagePopupSystem : IDisposable
-{
-    private readonly IDisposable _subscription;
-
-    [Inject]
-    public DamagePopupSystem(ISubscriber<DamageDealtMessage> damageSubscriber)
-    {
-        _subscription = damageSubscriber.Subscribe(OnDamageDealt);
-    }
-
-    private void OnDamageDealt(DamageDealtMessage message)
-    {
-        // spawn popup at message.Position showing message.Amount
-    }
-
-    public void Dispose() => _subscription.Dispose();
-}
-```
-
-**Rules:**
-- Messages are `readonly struct` — zero allocation
-- Register all message brokers in the LifetimeScope
-- Always dispose subscriptions (Systems via `IDisposable`, Views via `CompositeDisposable`)
-- Use `IAsyncSubscriber<T>` with UniTask when the handler needs async work
-- Use `IBufferedPublisher<T>` / `IBufferedSubscriber<T>` when late subscribers need the last value
-
-## UniTask for Async
-
-UniTask replaces coroutines entirely. No `StartCoroutine`, no `IEnumerator`, no `yield return`.
-
-```csharp
-public sealed class WaveSpawnerSystem : IDisposable
-{
-    private readonly CancellationTokenSource _cts = new();
-
-    public async UniTaskVoid StartSpawning()
-    {
-        for (int waveIndex = 0; waveIndex < 10; waveIndex++)
-        {
-            await SpawnWave(waveIndex, _cts.Token);
-            await UniTask.Delay(TimeSpan.FromSeconds(5), cancellationToken: _cts.Token);
-        }
-    }
-
-    private async UniTask SpawnWave(int waveIndex, CancellationToken token)
-    {
-        int enemyCount = waveIndex * 3;
-        for (int enemyIndex = 0; enemyIndex < enemyCount; enemyIndex++)
-        {
-            // spawn logic
-            await UniTask.Delay(TimeSpan.FromSeconds(0.2f), cancellationToken: token);
-        }
-    }
-
-    public void Dispose() => _cts.Cancel();
-}
-```
-
-**Rules:**
-- Always pass `CancellationToken` — typically from `this.GetCancellationTokenOnDestroy()` in Views, or a `CancellationTokenSource` in Systems
-- Use `UniTask` for awaitable operations, `UniTaskVoid` for fire-and-forget
-- Use `UniTask.Delay` instead of `new WaitForSeconds`
-- Use `UniTask.WhenAll` for parallel async operations
-- Use `UniTask.SwitchToMainThread()` when returning from background thread
-- No `async void` — always `async UniTask` or `async UniTaskVoid`
-
-## Composition Over Inheritance
-
-MonoBehaviour is a component, not a base class. Don't build deep inheritance trees.
-
-Max MonoBehaviour inheritance depth: 2 (base + one subclass). Beyond that, compose.
-
-Views should be thin — the logic lives in Systems, data lives in Models.
-
-## ScriptableObjects for Static Data
-
-Items, abilities, enemy configs, level data — all should be ScriptableObjects:
-
-```csharp
-[CreateAssetMenu(menuName = "Game/Weapon Definition")]
-public sealed class WeaponDefinition : ScriptableObject
-{
-    [SerializeField] private string _displayName;
-    [SerializeField] private float _damage;
-    [SerializeField] private float _fireRate;
-    [SerializeField] private GameObject _prefab;
-}
-```
-
-ScriptableObjects hold **static/config data**. Runtime mutable state goes in Models.
-
-## Input System Architecture (NON-NEGOTIABLE)
-
-Input is a **View-layer concern**. It follows the same MVS pattern: InputView reads raw input and forwards it to Systems. Systems never touch Unity Input directly.
-
-### InputView Pattern
-
-```csharp
-// InputView — thin adapter between New Input System and game Systems
-public sealed class InputView : MonoBehaviour
-{
-    private PlayerControls _controls;
-    private PlayerSystem _playerSystem;
-    private UISystem _uiSystem;
-
-    private void Awake()
-    {
-        _controls = new PlayerControls();
-    }
-
-    [Inject]
-    public void Construct(PlayerSystem playerSystem, UISystem uiSystem)
-    {
-        _playerSystem = playerSystem;
-        _uiSystem = uiSystem;
-    }
-
-    private void OnEnable()
-    {
-        _controls.Player.Enable();
-        _controls.Player.Jump.performed += OnJump;
-        _controls.Player.Attack.performed += OnAttack;
-        _controls.Player.Pause.performed += OnPause;
-    }
-
-    private void OnDisable()
-    {
-        _controls.Player.Jump.performed -= OnJump;
-        _controls.Player.Attack.performed -= OnAttack;
-        _controls.Player.Pause.performed -= OnPause;
-        _controls.Player.Disable();
-    }
-
-    private void Update()
-    {
-        Vector2 move = _controls.Player.Move.ReadValue<Vector2>();
-        _playerSystem.SetMoveInput(move);
-    }
-
-    private void OnJump(InputAction.CallbackContext ctx) => _playerSystem.Jump();
-    private void OnAttack(InputAction.CallbackContext ctx) => _playerSystem.Attack();
-    private void OnPause(InputAction.CallbackContext ctx) => _uiSystem.TogglePause();
-}
-```
-
-### VContainer Registration
-
-```csharp
-protected override void Configure(IContainerBuilder builder)
-{
-    // InputView is a MonoBehaviour — find in scene
-    builder.RegisterComponentInHierarchy<InputView>();
-}
-```
-
-### Rules
-- **InputView owns PlayerControls** — no other class creates or holds a `PlayerControls` instance
-- **InputView is a View** — it reads input and calls Systems. Zero game logic
-- **Systems are input-agnostic** — they expose methods like `SetMoveInput(Vector2)`, `Jump()`, `Attack()`. They never know where input comes from (keyboard, gamepad, AI, network replay)
-- **One InputView per scene** — prevents duplicate action subscriptions
-- **Enable/Disable is mandatory** — `OnEnable` enables action maps, `OnDisable` disables them and unsubscribes callbacks
-- **Continuous input in Update** — read `ReadValue<Vector2>()` in Update, cache it. Apply physics in FixedUpdate using cached values
-- **Discrete input via callbacks** — button presses use `performed` callbacks, not polling
-- **Action map switching lives in InputView** — controlled by Systems via method calls (e.g., `SwitchToUI()`, `SwitchToGameplay()`)
-
-### Testing Input-Driven Systems
-
-Because Systems are input-agnostic, they are trivially testable:
-```csharp
-[Test]
-public void SetMoveInput_WithRightVector_UpdatesModelPosition()
-{
-    var model = new PlayerModel();
-    var sut = new PlayerSystem(model);
-
-    sut.SetMoveInput(Vector2.right);
-    sut.Tick(1f);
-
-    Assert.That(model.Position.Value.x, Is.GreaterThan(0));
-}
-```
-
-No input mocking needed — the System never sees InputAction, PlayerControls, or any Unity Input type.
-
-## Dependency Direction
-
-```
-Views → Systems → Models
-  ↓        ↓
-MessagePipe (decoupled communication)
-```
-
-- Views depend on Systems and Models (via VContainer injection)
-- Systems depend on Models and other Systems (via VContainer injection)
-- Models depend on nothing
-- Cross-system communication goes through MessagePipe, never direct references
-- Assembly definitions enforce direction at compile time
-
-## No God Objects
-
-```csharp
-// BAD
-class GameManager : MonoBehaviour
-{
-    // Handles: score, lives, spawning, UI, audio, saving, input, pause...
-}
-
-// GOOD — separate Systems registered in VContainer
-// PlayerSystem — health, movement
-// ScoreSystem — scoring, combos
-// SpawnSystem — enemy waves
-// Each is a plain C# class with injected dependencies
-```
-
-## Scene Independence
-
-Each scene should be loadable independently via LifetimeScope hierarchy:
-1. `RootLifetimeScope` lives in a bootstrap scene (app-wide services, DontDestroyOnLoad)
-2. Each game scene has its own `SceneLifetimeScope` that inherits from Root
-3. No hidden dependencies on "the scene before this one"
-4. Scene loading/unloading is async via UniTask:
-
-```csharp
-await SceneManager.LoadSceneAsync("GameScene", LoadSceneMode.Additive).ToUniTask();
-```
-
-## No Singletons
-
-VContainer replaces all singleton patterns. Register as `Lifetime.Singleton` in the appropriate scope instead.
-
-- Need app-wide? Register in `RootLifetimeScope`
-- Need per-scene? Register in `SceneLifetimeScope`
-- Need per-feature? Create a child scope
+Exactly four folders, four prefixes. The prefix and the folder must agree. Adding a fifth
+family means adding a folder and updating `CLAUDE.md`'s Conventions section.
+
+Two assembly definitions, and that is the whole graph:
+
+| Assembly | Contains |
+|---|---|
+| `PoSumo.Runtime` | `Assets/Scripts/` — everything shipped |
+| `PoSumo.Editor` | `Assets/Editor/` — menu tools, builders, the test harness |
+
+Editor code may reference runtime code. Never the reverse. Runtime code that needs a
+`UnityEditor` type must guard it with `#if UNITY_EDITOR` — a PreToolUse hook
+(`guard-editor-runtime.sh`) blocks the unguarded case.
+
+## Scenes hold managers; everything else is built at runtime
+
+Arena and training scenes contain manager objects and (for arenas) baked arena children.
+The 14-part ragdoll is constructed in `Agent_BipedBody.Awake()` from the code tables
+`PART_DEFS` / `JOINT_DEFS`. `Agent_Biped` configures its own `BehaviorParameters` and
+`DecisionRequester` in `Awake`. There is nothing to wire in the Inspector, and a feature
+that requires Inspector wiring is fighting the project.
+
+Consequence worth stating plainly: **prefer code-built structure over serialized scene
+structure.** A serialized value in a `.unity` file is the thing that goes stale silently
+here — see the tuning-asset rule below.
+
+## Presentation companions: spawned, never placed
+
+`Systems_GameMatchManager.Start` does `new GameObject(...)` for every presentation system —
+lighting, audio, music, damage, dust, blob shadows, face mood, career recording — each
+gated by an `enable*` bool on `Assets/Settings/GameTuning.asset`.
+
+**This is the extension point.** A new presentation feature is:
+
+1. a `Systems_*` MonoBehaviour that subscribes to the match events below,
+2. an `enable*` flag on `Systems_GameTuning`,
+3. one spawn line in `Systems_GameMatchManager.Start`.
+
+It is **not** a scene object, and it is not a new manager that other systems reference
+directly. That is why the arena scenes stay small and why turning a feature off is a tick
+on one asset rather than an edit in three scenes.
+
+## Communication: C# events on the match manager
+
+There is no message bus. Cross-system communication goes through four instance events on
+`Systems_GameMatchManager` and two statics on `Systems_BodyDamage`:
+
+| Event | Signature | Meaning |
+|---|---|---|
+| `RoundStarted` | `Action` | a round began — hide result UI |
+| `RoundEnded` | `Action<Agent_Biped, Agent_Biped>` | winner, loser |
+| `MatchEnded` | `Action<Agent_Biped>` | match winner |
+| `MatchReset` | `Action` | rematch |
+| `Systems_BodyDamage.Knockout` | `static Action<Agent_BipedBody, Vector3>` | head KO — **the referee's 3-KO rule reads this** |
+| `Systems_BodyDamage.Dismembered` | `static Action<Agent_BipedBody, Region, Vector3>` | limb loss |
+
+Rules:
+
+- **Subscribe in `OnEnable`, unsubscribe in `OnDisable`.** Statics especially — a static
+  event holding a destroyed MonoBehaviour survives the scene load into the next bout.
+- **Do not add a fifth match event casually.** Four events are the entire coupling surface
+  between the referee and ~15 companions; each new one is a new thing every companion may
+  come to depend on.
+- A companion may read the manager it was spawned by. It must not reach across to another
+  companion.
+
+## Static state is legitimate here, with one mandatory rule
+
+`Systems_TournamentState`, `Systems_CareerStats`, `Systems_AcademyLifecycle` and
+`Systems_Telemetry` are static or self-spawning by design — they must outlive the
+`LoadScene` that plays each bout, and a bracket that died with the arena scene would not be
+a bracket.
+
+**Enter Play Mode domain reload is DISABLED in this project.** Static state therefore
+persists across Play sessions in the Editor unless you handle it. Every static holding game
+state must carry a `[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]`
+that either clears it (`Systems_TournamentState`, the consume-once promotion flag in
+`Systems_CareerRecorder`) or reloads it from disk (`Systems_CareerStats`). Adding new static
+game state without this is a bug that only shows up on the *second* Play session.
+
+Records are keyed by **behavior name** — the only fighter identity stable across folder and
+asset renames. Never key persisted data on folder or asset name.
+
+## Configuration lives in ScriptableObjects
+
+| Asset | Type | Holds |
+|---|---|---|
+| `Assets/Settings/GameTuning.asset` | `Systems_GameTuning` | shared match numbers + every `enable*` feature flag |
+| `Assets/Agents/<Name>_v01/<Name>_Character.asset` | `Agent_CharacterDefinition` | identity, body scales, brain generation, **all reward-shaping coefficients** |
+
+Two rules that have each cost a bug:
+
+- **Tune the asset, not the serialized scene value.** Scene components copy from
+  `GameTuning` in `Start`, so the scenes still hold stale copies that are overwritten at
+  runtime and will mislead anyone grepping the `.unity` file.
+- **When adding a shaping coefficient, default it to the constant the code used before,**
+  so an untuned character keeps training exactly what it always did.
+
+Fighter personality belongs in the character asset and the training YAML header, never in
+`Agent_Biped`.
+
+When a code default and the asset disagree, the asset wins at runtime and the field is only
+a fallback for when no tuning asset is assigned. That is a deliberate design, not drift.
+
+## Reward providers: structurally unable to end an episode
+
+`Reward_SumoObjective` and `Reward_WalkObjective` are plain C# classes. They hold the
+per-character coefficients, are handed the body and a `Reward_Context`, and **return a
+float**. They have no reference to the `Agent`, so a provider is structurally incapable of
+calling `AddReward`, `SetReward` or `EndEpisode`.
+
+Keep it that way when adding a provider:
+
+- **Terminals stay in `Agent_Biped`.** `SetReward(-1)` discards that step's shaping, so the
+  order of terminal checks against the `Evaluate` call is load-bearing.
+- **`Reward_Context` is a `readonly struct` passed by `in`.** One per agent per physics
+  step; as a class, 10 bipeds at 50 Hz would be 500 heap allocations a second in the
+  hottest path in the project.
+- **Cross-school state is owned by the agent, not duplicated per provider** —
+  `Reward_StepCadence` is shared because `BeginWalkIn` switches a fighter between Walk and
+  Sumo mid-round.
+
+## Async: no coroutines, no UniTask
+
+`Assets/Scripts/` currently contains **zero** `StartCoroutine` and zero `IEnumerator`.
+Deferred and timed work is done with accumulator fields advanced in `Update` /
+`FixedUpdate`, or with a small state machine like the referee's
+Fighting → RoundEnded → Grace → Fighting loop.
+
+Keep it that way. Do not introduce coroutines (they stop silently on `SetActive(false)` and
+allocate), and do not reach for UniTask — it is not installed.
+
+## Input
+
+`com.unity.inputsystem` 1.20.0 is installed and `Assets/Settings/InputSystem_Actions.inputactions`
+exists, but no runtime script reads either: the game's only input is UI Toolkit buttons,
+which handle their own events. Legacy `Input.GetKey` / `GetAxis` / `GetButton` must not be
+introduced. If real gameplay input is ever added, add a single `Systems_Input*` reader that
+enables its map in `OnEnable` and disables it in `OnDisable`, and have it call into the
+referee rather than mutating fighters directly.
+
+## UI
+
+Every screen is UI Toolkit built from C# at runtime. There is **no UGUI Canvas, no `.uxml`
+and no `.uss`** in the project. `Systems_UiKit` holds the tokens and builders;
+`Systems_HudRoot` is the single `UIDocument` the match screen draws through — three
+components used to add their own at equal sorting order, which has no defined draw or pick
+order, and taps were being swallowed.
+
+Build controls through `Systems_UiKit` or they will have no press feedback. Read
+`Assets/UI Toolkit/README.md` before touching UI.
+
+## Composition over inheritance
+
+MonoBehaviour is a component, not a base class. Max inheritance depth 2. Intra-biped
+collisions are disabled pairwise and every wrestler carries one
+`CompositeShadowCaster2D` — the same intent both times: **a biped is one object assembled
+from parts**, not a hierarchy.
+
+## On `Systems_GameMatchManager` being large
+
+It is ~1455 lines and it is the largest file in the project: round state machine, scoring,
+countdown, timeout tiebreak, HUD, and the spawn site for every companion. A generic rule
+would call this a god object.
+
+It is accepted, and the containment is the event surface: companions do not call back into
+it, they subscribe. Do not add unrelated responsibility to it — a new feature is a new
+`Systems_*` companion plus its `enable*` flag. Extracting the referee state machine from
+the presentation spawning would be a welcome refactor; growing the file further is not.
+
+## Verification
+
+There is no unit-test suite and no lint step. The verification tools are:
+
+- `MatchTestHarness.Run(n)` in Play mode → a `HARNESS RESULT:` win/loss tally,
+- the Game-view screenshot flow (`python Tools/unity.py shot ...`),
+- `Tools/unity.py errors` / `console-get-logs` for the console.
+
+Report a behavioural change as a harness tally, not as an impression. Judge a training run
+on ELO, not mean reward.

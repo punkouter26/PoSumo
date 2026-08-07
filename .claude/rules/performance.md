@@ -128,28 +128,29 @@ public void SetColor(Color color)
 - **Dynamic objects**: Keep same material + mesh for dynamic batching (< 300 vertices)
 - The architect MUST specify batching strategy in the TDD
 
-### UI Canvas Optimization
+### UI Optimization (UI Toolkit)
 
-```
-// BAD — one Canvas for everything
-Canvas (root)
-  ├─ HUD (updates every frame)
-  ├─ PauseMenu (rarely changes)
-  └─ ScorePopups (frequent spawns)
-
-// GOOD — split by update frequency
-Canvas_HUD (updates every frame)
-Canvas_Static (pause menu, settings — rarely rebuilds)
-Canvas_Popups (dynamic elements)
-```
+**This project has no UGUI Canvas at all** — every screen is UI Toolkit built from C# at
+runtime, with no `.uxml` and no `.uss`. Canvas-splitting, `Raycast Target` and
+`CanvasGroup` advice does not apply; do not introduce a Canvas to follow it.
 
 **Rules:**
-- **Split Canvases by update frequency** — a single changing element rebuilds the ENTIRE Canvas mesh
-- Static UI (backgrounds, labels that never change) on a separate Canvas
-- Frequently updating UI (health bars, timers, scores) on their own Canvas
-- Disable `Raycast Target` on elements that don't need click/touch detection
-- Use `CanvasGroup.alpha = 0` + `blocksRaycasts = false` instead of `SetActive(false)` to avoid rebuild on re-enable
-- Pool UI elements (popups, list items) — don't Instantiate/Destroy
+- **One `UIDocument` per screen.** The match screen draws through `Systems_HudRoot`. Three
+  components each adding their own document at equal sorting order has no defined draw or
+  pick order, and taps aimed at a button were being swallowed.
+- **Don't rebuild the hierarchy to change a value.** Build the elements once, then write
+  `.text` and `style` on the retained elements. Rebuilding per frame is UI Toolkit's
+  equivalent of a full Canvas rebuild.
+- **Mark non-interactive elements `pickingMode = PickingMode.Ignore`** (the kit's
+  `NoPick()`), so overlays and stamps cannot eat a pointer-down meant for content behind
+  them.
+- **Hide with `display: none`**, not by rebuilding — a hidden element costs no layout pass.
+- **No per-frame loops over gameplay state to feed the HUD.** A work-rate readout that
+  looped 13 actions per fighter per frame was deleted for exactly this reason; the number
+  was one nobody acted on.
+- Build controls through the shared kit (`Systems_UiKit`) — inline styles resolve above
+  every USS rule, including the runtime theme's `:hover` and `:active`, so a hand-built
+  button is visually dead on press unless the kit's press feedback is added by hand.
 
 ### Overdraw
 

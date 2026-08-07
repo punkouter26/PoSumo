@@ -78,21 +78,32 @@ Unity API is main-thread only. Background threads cannot:
 - Access `Time`, `Input`, `Physics`
 
 ```csharp
-// Return to main thread with UniTask:
-await UniTask.SwitchToMainThread();
-
-// Or with SynchronizationContext:
+// Hand work back to the main thread:
 SynchronizationContext.Current.Post(_ => { /* Unity API here */ }, null);
 ```
 
-## No Coroutines — Use UniTask
+The live example in this project is `Systems_Telemetry`: its socket thread **never touches
+a Unity API**. The main thread rebuilds the JSON on a timer into a reused `StringBuilder`
+and swaps it under a lock; the socket thread only reads that string. A background
+`FindObjectsByType` would be an immediate crash. Prefer that shape — a background thread
+that reads a prepared snapshot — over marshalling calls back one at a time.
 
-Do not use `StartCoroutine` / `IEnumerator` / `yield return`. Use UniTask for all async work.
+## No Coroutines — and no UniTask either
 
-Coroutine problems that UniTask solves:
+Do not use `StartCoroutine` / `IEnumerator` / `yield return`.
+
+Coroutine problems:
 - Coroutines stop silently when `gameObject.SetActive(false)` and don't resume
 - Coroutines have no cancellation, error handling, or return values
 - Coroutines allocate on the heap
+
+**UniTask is NOT installed in this project** — it appears in neither
+`Packages/manifest.json` nor `packages-lock.json`. `await UniTask.Delay(...)` does not
+compile here. Do not write it.
+
+Deferred and timed work is done with accumulator fields advanced in `Update` /
+`FixedUpdate`, or with an explicit state machine — the way the referee's
+Fighting → RoundEnded → Grace → Fighting loop works:
 
 ```csharp
 // BAD — coroutine
@@ -102,15 +113,26 @@ private IEnumerator WaitAndDo()
     DoSomething();
 }
 
-// GOOD — UniTask
-private async UniTask WaitAndDoAsync(CancellationToken token)
+// GOOD — an accumulator the owner can inspect, reset and serialize
+private float _graceRemaining;
+
+private void Update()
 {
-    await UniTask.Delay(TimeSpan.FromSeconds(1), cancellationToken: token);
-    DoSomething();
+    if (_graceRemaining <= 0f)
+    {
+        return;
+    }
+
+    _graceRemaining -= Time.deltaTime;
+    if (_graceRemaining <= 0f)
+    {
+        DoSomething();
+    }
 }
 ```
 
-Always pass `CancellationToken`. In Views: `this.GetCancellationTokenOnDestroy()`. In Systems: own a `CancellationTokenSource` and cancel in `Dispose()`.
+`Assets/Scripts/` currently contains zero `StartCoroutine` and zero `IEnumerator`. Keep it
+that way.
 
 ## DontDestroyOnLoad
 
