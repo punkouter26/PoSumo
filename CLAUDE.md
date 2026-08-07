@@ -12,7 +12,7 @@ match/tournament layer. Portrait orientation, Android target
 and it matches `companyName`, so the doc was the stale side. An application id is
 permanent once published, so check the constant, never this sentence). `DESIGN.md` is the original approved spec and is now
 partly historical — where it disagrees with this file or the code, the code wins
-(notably: the ring is a raised dohyo, not `|x| > 7`; its half-width is **4.0 m** and is read
+(notably: the ring is a raised dohyo, not `|x| > 7`; its half-width is **3.5 m** and is read
 from `GameTuning.asset` because the arena scenes serialize their own copy).
 
 The ring went 2.75 → 5.5 in the realism pass and back to **4.0** on 2026-07-28, because 5.5
@@ -25,8 +25,22 @@ round expire on the clock and be settled on position — no ring-out at all. The
 ring, spawn gap and timeout in every training scene, so a change here must be written into
 those scenes too or the brains train on an arena the game does not have. Its **code
 defaults were never updated** and still read 5.5 / `startHalfRange (1.7, 5.5)` /
-`spawnGapHalf 1.2`; the four training scenes serialize the correct 4 / `(1.7, 4)` / 2.5.
+`spawnGapHalf 1.2`; the four training scenes serialize 4 / `(1.7, 4)` / 2.5.
 Grep the `.unity` files, not the `.cs`, to learn what an env actually trains against.
+
+> **⚠ That warning is currently LIVE and unresolved (found 2026-08-07).** `GameTuning.asset`
+> holds `ringHalfWidth: 3.5`, so the shipped game's mat is **7 m** across. All four training
+> scenes still serialize **4**, an **8 m** mat. Every deployed brain therefore learned a
+> ring-out boundary **0.5 m further out than the one it fights on** — it believes it has
+> half a metre of mat that does not exist, on both sides. Nothing errors; the arena simply
+> ends sooner than the policy expects.
+>
+> This must be reconciled BEFORE the corrective retrain below, or the run bakes the
+> mismatch in for another generation. **Which value wins is a design decision, not a
+> cleanup** — 4.0 is what the physics argument above was derived for, while 3.5 is what
+> players actually experience and is presumably a later, undocumented tightening aimed at
+> the ring-out rate. Measured play at 3.5 still produced only 29% ring-outs against 57%
+> `downOutSeconds`, so the tightening has not yet bought what it was likely meant to buy.
 
 There are four **trained** fighters — **Matt**, **Standard**, **Nick**, **Kim** — each
 with an `.onnx`, a `*_Character.asset` and a `MANIFEST.md`. `Assets/Agents/ROSTER.md` is
@@ -600,10 +614,23 @@ a tick on one asset rather than an edit in three scenes.
 produces `[DAMAGE] Damage_Nick lost LegNear at 20.0 damage — bleeding from stump 'Pelvis'`
 and `Damage_Matt DECAPITATED at 2.8 damage`.
 
-The two gates are deliberately far apart and were pushed further apart on 2026-08-02:
-`detachAtRedMultiple` 8 → **16** (a limb needs 40 summed damage, ~10× the original 1.6)
-while `headDetachAtRedMultiple` stays **0.8** (a gate of 2.0). Losing an arm or a leg is
-now rare; decapitation stays the common showpiece finish. Both wounds of a break bleed —
+The two gates are deliberately far apart. **Read the tooltips on the fields, not this
+paragraph, for the current numbers** — both have moved repeatedly and this text has been
+wrong before. As of 2026-08-07 they are `detachAtRedMultiple` **10** (`regionRedAt` 2.5, so
+a gate of **25** summed damage) and `headDetachAtRedMultiple` **1.2** (a gate of **3.0**);
+this file previously claimed 16 and 0.8. The tooltip on `detachAtRedMultiple` is the real
+changelog — 1.6 → 8 → 16 → 3 → 6 → 10, each move with its measurement.
+
+**Measured at the 10 the tooltip asked someone to measure (2026-08-07):** a 3-match bracket
+lost three limbs, **every one of them `LegNear`, at 25.2 / 25.4 / 25.9**. That is the same
+*censored-at-the-gate* signature the tooltip records at gate 3 (7.5-8.0) and gate 6
+(15.0-15.6): limb damage in a clinch runs past wherever the bar is put, so moving the bar
+relocates the pop instead of preventing it. Three gates, three identical outcomes — **the
+constant is not the lever.** Do not spend a fourth bracket on a fifth value; the fix has to
+change the damage *distribution* (rate-limit per contact, or cap per-region accumulation
+per round), not the threshold it is being compared against.
+
+Decapitation stays the common showpiece finish. Both wounds of a break bleed —
 stump and severed end, neck stump and the head's cut face — through `OpenBleed`, and the
 jets carry a `severJetSpeed` / `decapJetSpeed` multiplier into
 `Systems_DustPuff.BloodSpray` that raises droplet speed and narrows the cone, so a cut end

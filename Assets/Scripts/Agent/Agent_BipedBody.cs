@@ -1243,6 +1243,21 @@ namespace PoSumo
         /// the 0.5 m hitbox around it — every fighter's head got hit through a ring
         /// of empty space — and a wide photo overflowed the hitbox the other way.
         /// Fitting the longest side makes both cases land inside the collider.
+        ///
+        /// **Known and deliberate: a photo head looks SMALLER than a fallback disc,
+        /// and this is not a bug to fix in code (checked 2026-08-07).** The plain
+        /// circle and the BOT disc are drawn at exactly `headDiameter` in both axes,
+        /// so they ARE the collider silhouette — which is what the project's
+        /// "drawn edge is the colliding edge" rule asks for. A photo is instead
+        /// INSCRIBED in that circle by its longest side, so Nick's 1.33:1 image
+        /// draws 0.5 m wide but only 0.375 m tall and reads visibly smaller beside
+        /// Standard's full disc. Both paths are individually correct against the
+        /// collider; the gap is inherent to fitting a non-square image into a
+        /// circle. Fitting the SHORTEST side instead would just break the rule the
+        /// other way, with the drawn face overhanging the hitbox. The only real fix
+        /// is square-cropped face art, which is an asset task — do not re-open this
+        /// one in code.
+        ///
         /// True once the head has been repainted as the BOT's solid disc. Locks out
         /// face art permanently — see ApplyBotHead.
         public bool BotHead { get; private set; }

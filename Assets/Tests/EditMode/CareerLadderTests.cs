@@ -205,6 +205,36 @@ namespace PoSumo.Tests
             Assert.IsNull(requirement);
         }
 
+        // ---- The bands must fit the roster that exists ----------------------
+
+        [Test]
+        public void TheMeasuredRosterOccupiesTheUpperLadder()
+        {
+            // Real ratings out of career.json after 238 matches, 2026-08-07. The
+            // bands were re-spread against exactly these numbers; before that the
+            // top four rungs of ten were unreachable and Nick, the leader, sat at
+            // MAEGASHIRA with 1077. If a future roster drifts, re-measure and move
+            // the bands — but never let the top of the ladder go unoccupied again.
+            Assert.AreEqual("SEKIWAKE",   Systems_CareerLadder.NameFor(Rated(1077.2f, titles: 6)));
+            Assert.AreEqual("JURYO",      Systems_CareerLadder.NameFor(Rated(1020.0f, titles: 5)));
+            Assert.AreEqual("JURYO",      Systems_CareerLadder.NameFor(Rated(1017.9f, titles: 6)));
+            Assert.AreEqual("MAKUSHITA",  Systems_CareerLadder.NameFor(Rated(984.2f,  titles: 7)));
+            Assert.AreEqual("JONIDAN",    Systems_CareerLadder.NameFor(Rated(900.7f,  titles: 1)));
+        }
+
+        [Test]
+        public void TheTopRungIsReachableFromTheObservedSpread()
+        {
+            // Max observed deviation from the 1000 mean is +77. YOKOZUNA must sit
+            // beyond that (still an achievement) but inside what a closed four-
+            // fighter pool can actually produce — not the +160 the old bands
+            // assumed and no fighter ever approached.
+            float yokozunaFloor = Systems_CareerLadder
+                .RungAt(Systems_CareerLadder.RungCount - 1).EloFloor;
+            Assert.Greater(yokozunaFloor, 1077f, "top rung must still be above the measured leader");
+            Assert.Less(yokozunaFloor, 1160f, "top rung must be closer than the unreachable old floor");
+        }
+
         [Test]
         public void EloToNextRoundsUpAndNeverGoesNegative()
         {

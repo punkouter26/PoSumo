@@ -48,18 +48,51 @@ namespace PoSumo
         /// whole point of the gate: without it the bracket would be a way to farm
         /// Elo and nothing more. Winning a tournament is the only route to Ozeki,
         /// which is exactly how promotion works in the sport.
+        /// **Re-spread against MEASURED data on 2026-08-07, and the measurement is
+        /// the reason — do not widen these back on the reasoning in the comment
+        /// above.** That reasoning predicted a dominant fighter reaching ~+160 at
+        /// K = 24. A `career.json` with **238 matches** on it says otherwise:
+        ///
+        ///     Nick 1077.2  Matt 1020.0  Standard 1017.9  Kim 984.2
+        ///
+        /// A total spread of 93 points and a maximum deviation of **+77**, against
+        /// an old SEKIWAKE floor of 1095. The top FOUR rungs of ten — SEKIWAKE,
+        /// OZEKI, YOKOZUNA and effectively KOMUSUBI — had never been occupied by
+        /// anybody, across 25 tournament titles. Forty per cent of the ladder was
+        /// decoration.
+        ///
+        /// The cause is structural and will not improve with more matches: this is
+        /// a CLOSED four-fighter pool of near-equally-matched policies, so Elo is
+        /// zero-sum around a mean pinned at 1000 and the spread is bounded by how
+        /// unequal the fighters actually are — which is "barely". The bands have to
+        /// fit the distribution that exists, not the one the K-factor theoretically
+        /// permits.
+        ///
+        /// So the upper half is compressed to sit inside the observed range: the
+        /// measured leader (1077) now stands at KOMUSUBI with SEKIWAKE one good run
+        /// away, and YOKOZUNA at 1120 is reachable but still further than anyone has
+        /// yet been. The lower half is untouched, because demotion was already
+        /// working — Bot sat at 900.7 and Kim at 984.2, both correctly placed.
+        ///
+        /// If the roster ever grows or the fighters ever diverge in strength, the
+        /// spread will widen and these want re-measuring. Read `career.json`; do not
+        /// reason about it.
         private static readonly Rung[] RUNGS =
         {
             new Rung("JONOKUCHI",  float.NegativeInfinity, 0),
             new Rung("JONIDAN",     900f, 0),
             new Rung("SANDANME",    940f, 0),
             new Rung("MAKUSHITA",   975f, 0),
+            // JURYO stays at 1005 and is NOT part of the compression: it is what
+            // keeps a fresh fighter at exactly ELO_START (1000) on MAKUSHITA, rung
+            // 3 of 10, with room to fall three and climb six. Drop it to 1000 and
+            // floors being inclusive puts every debutant on JURYO instead.
             new Rung("JURYO",      1005f, 0),
-            new Rung("MAEGASHIRA", 1035f, 0),
-            new Rung("KOMUSUBI",   1065f, 0),
-            new Rung("SEKIWAKE",   1095f, 0),
-            new Rung("OZEKI",      1125f, 1),
-            new Rung("YOKOZUNA",   1160f, 2),
+            new Rung("MAEGASHIRA", 1025f, 0),
+            new Rung("KOMUSUBI",   1045f, 0),
+            new Rung("SEKIWAKE",   1065f, 0),
+            new Rung("OZEKI",      1090f, 1),
+            new Rung("YOKOZUNA",   1115f, 2),
         };
 
         /// Returned by `IndexFor` for a fighter who has never had a decided match.

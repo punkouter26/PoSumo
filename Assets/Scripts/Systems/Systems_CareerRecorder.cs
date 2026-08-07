@@ -120,7 +120,10 @@ namespace PoSumo
             // W/L and no rank movement, and nothing anywhere said so. Seeding now
             // keeps mirrors out of the opening round, but later rounds depend on who
             // wins and cannot be prevented by the draw.
-            if (winnerName == loserName)
+            // Non-null on both sides, or this fires for an unrated bout against a
+            // brainless fighter — where NameOf returns null for BOTH names and
+            // "null == null" reads as a mirror match that never happened.
+            if (winnerName != null && winnerName == loserName)
             {
                 Debug.LogWarning($"[CAREER] mirror bout ({winnerName} v {winnerName}) — " +
                                  "no Elo, W/L or rank recorded; only the title (if this was the final) counts");
@@ -182,9 +185,32 @@ namespace PoSumo
             }
         }
 
+        /// The fighter's ladder identity, or null if the fighter does not RATE.
+        ///
+        /// A character with no `inferenceModel` has no brain and collapses as a
+        /// ragdoll — `Bot_v01` is exactly this, deliberately, and it stays in the
+        /// bracket. What it must not do is score: every `Systems_CareerStats` entry
+        /// point already discards a null name, so returning null here makes such a
+        /// bout UNRATED on both sides — no Elo moves, no W/L, no round record, no
+        /// rank change — while leaving the match itself completely untouched.
+        ///
+        /// Measured 2026-08-07, which is why this exists: a played bracket had Bot
+        /// on 6 wins, 18 losses and **1 title** in `career.json`. A title is the
+        /// gate on OZEKI and YOKOZUNA, so a brainless ragdoll was holding a
+        /// promotion key, and every fighter who beat it was banking Elo for it.
+        /// Beating a body that cannot fight is not evidence of rank either way, so
+        /// the honest record is no record — the same treatment a bye would get.
+        ///
+        /// Note this deliberately does NOT block `RecordTitle`: a real fighter who
+        /// wins the final against Bot still won the bracket, and `RecordTitle` is
+        /// called with their own name, which is not null.
         private static string NameOf(Agent_Biped fighter)
         {
             if (fighter == null)
+            {
+                return null;
+            }
+            if (fighter.character != null && fighter.character.inferenceModel == null)
             {
                 return null;
             }

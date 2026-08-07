@@ -59,6 +59,10 @@ namespace PoSumo
         private Agent_Biped _a, _b;
         private Systems_GameMatchManager _manager;
 
+        /// Seconds between fallback scans for the two fighters. See ResolveFighters.
+        private const float FIGHTER_SCAN_INTERVAL = 0.25f;
+        private float _nextFighterScan;
+
         // Temporary punch-in override (slow-mo finishes): blend toward a focus
         // transform at a tighter ortho until the realtime deadline passes.
         private Transform _focus;
@@ -123,15 +127,14 @@ namespace PoSumo
 
         private void LateUpdate()
         {
+            // Resolved FIRST, because it is also where the fighters come from.
+            if (_manager == null) _manager = FindAnyObjectByType<Systems_GameMatchManager>();
+
             if (_a == null || _b == null)
             {
-                var agents = FindObjectsByType<Agent_Biped>();
-                if (agents.Length >= 2) { _a = agents[0]; _b = agents[1]; }
-                else return;
+                ResolveFighters();
+                if (_a == null || _b == null) return;
             }
-
-            // Resolved up front: both the wide shot and the ring clamp need it.
-            if (_manager == null) _manager = FindAnyObjectByType<Systems_GameMatchManager>();
 
             float ax = _a.TorsoX, bx = _b.TorsoX;
             float mid = (ax + bx) * 0.5f;
@@ -139,7 +142,7 @@ namespace PoSumo
 
             float halfWidthNeeded = halfDist + horizontalMargin;
             float orthoNeeded = halfWidthNeeded / _cam.aspect;
-            float targetOrtho = Mathf.Clamp(orthoNeeded, minOrtho, maxOrtho);
+            float targetOrtho = Mathf.Clamp(orthoNeeded, minOrtho, MaxOrthoForAspect());
 
             // The wide shot outranks the punch-in: it is what the punch-in hands
             // over to, so if both are somehow live the pull-back wins.
@@ -187,6 +190,54 @@ namespace PoSumo
 
             var p = transform.position;
             transform.position = new Vector3(Mathf.Lerp(p.x, mid, t), Mathf.Lerp(p.y, midY, t), p.z);
+        }
+
+        /// The zoom cap, floored at whatever it actually takes to hold two fighters
+        /// on opposite rims at THIS aspect ratio.
+        ///
+        /// `maxOrtho` is a serialized number and was the single point of failure
+        /// here. `orthographicSize` is a VERTICAL half-height, so the visible width
+        /// is `ortho * aspect` and a portrait viewport divides the cap by ~0.36-0.46
+        /// before it buys any width at all. Measured 2026-08-07 with the asset at 7:
+        /// the camera showed 5.06 m of a 7 m mat and clamped there, with one fighter
+        /// 0.71 m off the left edge and the other 0.61 m off the right — mid-round,
+        /// not during a punch-in. The code default was already 9.1, raised when the
+        /// ring grew; `GameTuning.asset` still held the pre-ring-change 7 and the
+        /// asset wins at runtime, so the fix never reached the game.
+        ///
+        /// Deriving the floor removes that whole class of drift: change the ring,
+        /// change the margin, or run on a taller phone, and the cap follows. It is a
+        /// FLOOR, not a replacement — a larger authored `maxOrtho` still wins, so
+        /// this can only ever open the framing up, never tighten it.
+        private float MaxOrthoForAspect()
+        {
+            float ringHalf = _manager != null ? _manager.ringHalfWidth
+                           : tuning != null ? tuning.ringHalfWidth
+                           : 3.5f;
+            float aspect = Mathf.Max(0.01f, _cam.aspect);
+            return Mathf.Max(maxOrtho, (ringHalf + horizontalMargin) / aspect);
+        }
+
+        /// Both fighters, preferred from the referee and only then by scanning.
+        ///
+        /// The scan is throttled because `FindObjectsByType` ALLOCATES an array and
+        /// this sits in LateUpdate: before the throttle it ran every frame for as
+        /// long as either fighter was unresolved, which is every frame of every
+        /// scene load into an arena.
+        private void ResolveFighters()
+        {
+            if (_manager != null)
+            {
+                if (_manager.wrestlerA != null) _a = _manager.wrestlerA;
+                if (_manager.wrestlerB != null) _b = _manager.wrestlerB;
+                if (_a != null && _b != null) return;
+            }
+
+            if (Time.unscaledTime < _nextFighterScan) return;
+            _nextFighterScan = Time.unscaledTime + FIGHTER_SCAN_INTERVAL;
+
+            var agents = FindObjectsByType<Agent_Biped>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            if (agents.Length >= 2) { _a = agents[0]; _b = agents[1]; }
         }
     }
 }

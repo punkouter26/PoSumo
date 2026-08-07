@@ -69,6 +69,8 @@ namespace PoSumo
         public float detachAtRedMultiple = 10f;
         [Tooltip("Same, for the HEAD. Far LOWER than the limb figure so decapitation stays the spectacular finish while arms and legs mostly stay on.\n\n0.8 -> 1.2 (gate 2.0 -> 3.0) on 2026-08-05. At 0.8 a measured 7-match tournament produced EIGHT decapitations — 1.1 per match, every one crossing at 2.1-3.0 damage, i.e. squeaking over a gate it was sitting on top of. A head that comes off every match is wallpaper, not a finish.\n\nAn earlier pass tried 1.2 and reported it never crossed, but that was measured on one bout of an older build; the tournament above reached 3.0 repeatedly, so the damage distribution does now reach this gate. Note those 8 readings are CENSORED — they are the damage at the instant 2.0 was crossed, not how far a bout would have gone — so the true rate at 3.0 can only be measured, not predicted. DecapitationCount exists for exactly that: run a tournament and read the summary rather than re-deriving this from first principles.")]
         public float headDetachAtRedMultiple = 1.2f;
+        [Tooltip("Minimum seconds between damage applications to the SAME region. 0 restores the old unlimited accumulation.\n\nAdded 2026-08-07 because three successive gate values proved the gate is not the lever. detachAtRedMultiple went 3 -> 6 -> 10 (gates 7.5 -> 15 -> 25) and every measured bracket came back the same shape: 4 limbs over 16 rounds, 4 over 15, then 3 over 3 matches, with the losses CENSORED hard against whatever the gate was — 7.5-8.0, then 15.0-15.6, then 25.2-25.9. Damage in a clinch always ran past the bar, so moving the bar only ever relocated the pop.\n\nThe reason is that this is a CONTACT-COUNT process, not a force process: Sensor_Impact fires per contact at the 50 Hz physics rate, each adding up to 1.0, so a sustained clinch could deliver 50 damage a second to one limb and no threshold survives that. A refractory turns it into a TIME process. At 0.15 a region takes at most ~6.7/s, so the 25 gate needs about 3.75 s of near-continuous punishment to the same limb rather than half a second of grinding — while the head's gate of 3.0 still clears in under half a second, keeping decapitation the common showpiece finish it is supposed to be.\n\nThis shapes the DISTRIBUTION rather than the threshold, which is the thing every previous attempt could not do. Measure it the same way: LimbLossCount, DecapitationCount and the [MATCH] ROUND OUTCOMES line. If limb losses are still censored at 25.x afterwards, raise this, NOT detachAtRedMultiple.")]
+        public float regionDamageRefractory = 0.15f;
         [Tooltip("Master switch for dismemberment. Turning this off leaves the mannequin colouring intact, which is the safe fallback if detachment ever proves too swingy.")]
         public bool allowDetach = true;
 
@@ -153,6 +155,15 @@ namespace PoSumo
             new Dictionary<string, float[]>();
 
         private float[] _regionDamage = new float[REGION_COUNT];
+
+        /// Earliest `Time.time` at which each region may take damage again.
+        ///
+        /// Deliberately NOT in `RegionStore`: accumulated damage carries across
+        /// bouts of a tournament (a bruise persists), but a refractory window is a
+        /// property of the last blow, and carrying a stale one over a scene load
+        /// would silently make the first contact of a new bout free or blocked
+        /// depending on how long the load took.
+        private float[] _regionNextDamage = new float[REGION_COUNT];
 
         /// 0..1 for the HUD: 0 = untouched (green), 1 = fully red. Can exceed 1
         /// internally before a limb tears off, so it is clamped here.
@@ -633,6 +644,18 @@ namespace PoSumo
         private void AccumulateDamage(Region region, float strength, Vector3 worldPoint)
         {
             if (_regionDamage == null) return;
+
+            // Per-region refractory. Without it this is a contact-COUNT process at
+            // the 50 Hz physics rate, and a clinch can push one limb past any gate
+            // in a fraction of a second — which is why three separate threshold
+            // values all produced identically censored limb losses. See the
+            // tooltip on regionDamageRefractory.
+            if (_regionNextDamage != null)
+            {
+                if (Time.time < _regionNextDamage[(int)region]) return;
+                _regionNextDamage[(int)region] = Time.time + regionDamageRefractory;
+            }
+
             _regionDamage[(int)region] += Mathf.Clamp01(strength);
 
             if (!allowDetach || body == null) return;

@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: GameTuning
   m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Systems_GameTuning
   minOrtho: 2.8
-  maxOrtho: 7
+  maxOrtho: 9.1
   feetDrop: 0.95
   horizontalMargin: 0.8
   smoothing: 4
@@ -23,6 +23,8 @@ MonoBehaviour:
   surfaceFriction: 0.55
   tawaraBandWidth: 1.2
   tawaraFriction: 0.18
+  shrinkStartSeconds: 8
+  shrinkToHalfWidth: 1.8
   enableWalkIn: 1
   walkInHalfWidth: 8
   walkInStartGapHalf: 3
@@ -35,6 +37,7 @@ MonoBehaviour:
   graceSeconds: 0.4
   downGraceSeconds: 0.2
   downOutSeconds: 3
+  gibLosesRound: 1
   knockdownLoses: 0
   knockoutsToLoseMatch: 2
   knockoutAnnounceSeconds: 2.2
