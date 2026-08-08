@@ -69,6 +69,28 @@ namespace PoSumo
         private float _focusOrtho;
         private float _focusUntil;
         private float _wideUntil;
+        /// Blend rate while a shot is live; 0 means "use `smoothing`".
+        ///
+        /// Exists because `smoothing` is tuned for FOLLOWING — it has to ignore the
+        /// fighters' frame-to-frame jitter, so it is slow on purpose. A ceremony
+        /// beat is the opposite problem: a deliberate one-second move from the wide
+        /// establishing shot (ortho 14) down to a head (0.85). At smoothing 4 that
+        /// move is only ~half done when the beat expires, and the result reads as
+        /// the camera drifting rather than punching in.
+        private float _shotSmoothing;
+        /// How hard a punch-in pulls the frame onto its focus, 0..1, per axis. The
+        /// default 0.75 deliberately keeps some of the two-shot in view for a
+        /// slow-mo finish; a face close-up needs 1 horizontally, or the residual
+        /// quarter-pull toward the pair's midpoint slides the head out of frame.
+        ///
+        /// The two axes are separate because the countdown digit is drawn dead
+        /// centre of the stage band: with vertical centring also at 1 the head
+        /// lands exactly under it and the numeral is painted across the face. The
+        /// base target is the fighters' feet, so anything below 1 here leaves the
+        /// head riding high in frame with the digit clear of it.
+        private float _focusCenteringX = FOCUS_CENTERING_DEFAULT;
+        private float _focusCenteringY = FOCUS_CENTERING_DEFAULT;
+        private const float FOCUS_CENTERING_DEFAULT = 0.75f;
 
         /// What to punch in on for a fighter: the head if it has drawn face art,
         /// otherwise the torso. Lives here rather than at each call site because
@@ -84,11 +106,22 @@ namespace PoSumo
 
         /// Blend the camera toward `focus` at `ortho` for `realSeconds` of
         /// unscaled time. Used by the match presentation on round-deciding falls.
-        public void PunchIn(Transform focus, float ortho, float realSeconds)
+        ///
+        /// `blendSpeed` 0 keeps the normal follow smoothing; pass a higher rate for
+        /// a shot that has to ARRIVE inside its own duration rather than merely
+        /// lean that way. `centeringX`/`centeringY` at 1 frame the focus alone on
+        /// that axis. See the fields.
+        public void PunchIn(Transform focus, float ortho, float realSeconds,
+                            float blendSpeed = 0f,
+                            float centeringX = FOCUS_CENTERING_DEFAULT,
+                            float centeringY = FOCUS_CENTERING_DEFAULT)
         {
             _focus = focus;
             _focusOrtho = ortho;
             _focusUntil = Time.realtimeSinceStartup + realSeconds;
+            _shotSmoothing = blendSpeed;
+            _focusCenteringX = Mathf.Clamp01(centeringX);
+            _focusCenteringY = Mathf.Clamp01(centeringY);
         }
 
         /// Hold a wide establishing shot of the whole arena, centred on the ring
@@ -98,9 +131,10 @@ namespace PoSumo
         /// fighter-following entirely: after a match the interesting subject is
         /// the arena, not the pair, and one of them is usually off the edge
         /// dragging the midpoint with him.
-        public void PullBackWide(float realSeconds)
+        public void PullBackWide(float realSeconds, float blendSpeed = 0f)
         {
             _wideUntil = Time.realtimeSinceStartup + realSeconds;
+            _shotSmoothing = blendSpeed;
         }
 
         /// Cancels any active punch-in or wide shot and returns to normal follow.
@@ -109,6 +143,9 @@ namespace PoSumo
             _focus = null;
             _focusUntil = 0f;
             _wideUntil = 0f;
+            _shotSmoothing = 0f;
+            _focusCenteringX = FOCUS_CENTERING_DEFAULT;
+            _focusCenteringY = FOCUS_CENTERING_DEFAULT;
         }
 
         private void Awake()
@@ -151,7 +188,11 @@ namespace PoSumo
             if (focusActive) targetOrtho = Mathf.Min(targetOrtho, _focusOrtho);
             if (wideActive) targetOrtho = wideOrtho;
 
-            float t = 1f - Mathf.Exp(-smoothing * Time.deltaTime);
+            // A live shot may override the follow smoothing; see _shotSmoothing.
+            // Only while it IS live, so the return to normal follow after a shot
+            // expires is at the usual unhurried rate.
+            float blend = (wideActive || focusActive) && _shotSmoothing > 0f ? _shotSmoothing : smoothing;
+            float t = 1f - Mathf.Exp(-blend * Time.deltaTime);
             _cam.orthographicSize = Mathf.Lerp(_cam.orthographicSize, targetOrtho, t);
 
             // Vertical center of the frame sits at the wrestlers' feet.
@@ -159,8 +200,8 @@ namespace PoSumo
 
             if (focusActive)
             {
-                mid = Mathf.Lerp(mid, _focus.position.x, 0.75f);
-                midY = Mathf.Lerp(midY, _focus.position.y, 0.75f);
+                mid = Mathf.Lerp(mid, _focus.position.x, _focusCenteringX);
+                midY = Mathf.Lerp(midY, _focus.position.y, _focusCenteringY);
             }
 
             // The wide shot frames the ARENA, so it overrides the follow target

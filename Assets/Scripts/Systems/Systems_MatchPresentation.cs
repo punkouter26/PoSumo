@@ -17,6 +17,20 @@ namespace PoSumo
         [Tooltip("Throw ceremonial salt over the ring at the start of each round (shio-maki).")]
         public bool enableSaltThrow = true;
 
+        [Header("Big-hit knockback close-up")]
+        [Tooltip("Cut to a close-up of the fighter who just got driven backwards by a heavy blow, and hold it while he falls.")]
+        public bool enableKnockbackCloseUp = true;
+        [Tooltip("Impact speed (m/s) a blow must reach to be worth cutting to. Below koSpeed (7.5) so this fires on solid pushes, not only on the rare head knockout. MEASURED: 6.5 with an away-speed of 1.2 fired ZERO times across 15 rounds - sumo is a pushing contest, not a striking one, so bodies separate slowly and both bars were set for a sport this is not. Lowered again after the joint-speed reduction, which cuts impact speeds further.")]
+        public float knockbackSpeed = 4.5f;
+        [Tooltip("How fast the struck fighter must actually be travelling AWAY from the one who hit him. This is what makes it a knockback rather than a clash: without it the shot fires on any hard contact, including two fighters driving into each other and going nowhere.")]
+        public float knockbackAwaySpeed = 0.4f;
+        [Tooltip("Ortho for the knockback close-up. Looser than the KO punch so the whole falling body stays in frame — the fall is the shot, not the face.")]
+        public float knockbackOrtho = 1.9f;
+        [Tooltip("Realtime seconds the close-up is held. Long enough to cover the fall and the landing.")]
+        public float knockbackHoldSeconds = 1.3f;
+        [Tooltip("Minimum realtime gap between knockback close-ups. Without it a scrappy exchange cuts every few frames and the camera becomes unwatchable.")]
+        public float knockbackCooldown = 3f;
+
         [Header("Head KO (presentation only — does not end the round)")]
         public float koSlowMoScale = 0.18f;
         public float koSlowMoRealSeconds = 1.8f;
@@ -40,6 +54,8 @@ namespace PoSumo
         private float _wideAtReal;
         private bool _resolved;
         private bool _subscribed;
+        /// Realtime stamp the knockback close-up is allowed to fire again.
+        private float _knockbackReadyAt;
 
         /// References are resolved here rather than in OnEnable because this
         /// companion is spawned BEFORE Systems_MatchAudio is, so an OnEnable
@@ -74,6 +90,63 @@ namespace PoSumo
                 _manager.MatchEnded += OnMatchEnded;
             }
             Systems_BodyDamage.Knockout += OnKnockout;
+            Sensor_Impact.AnyImpact += OnAnyImpact;
+        }
+
+        /// Cuts to a close-up of the fighter who has just been driven backwards by a
+        /// heavy blow, and holds it while he goes over.
+        ///
+        /// Three guards, each of which this needs to be watchable:
+        ///
+        ///  - It must be a KNOCKBACK, not merely a hard contact. Two fighters
+        ///    slamming into each other and going nowhere is the single most common
+        ///    thing in a bout; without the away-speed test the camera cut on almost
+        ///    every exchange. The struck fighter has to actually be leaving.
+        ///  - It must not fight a bigger shot. A knockout fires on the same class of
+        ///    blow and owns the camera and the clock when it does, and the round-end
+        ///    and match-end beats own it afterwards — so this yields to slow motion
+        ///    and only runs while the round is actually live.
+        ///  - It must be rare. `knockbackCooldown` is realtime, like every other
+        ///    shot deadline here, so a slow-motion finish does not stretch it.
+        private void OnAnyImpact(Sensor_Impact sensor, Collision2D collision)
+        {
+            if (!enableKnockbackCloseUp || _camFollow == null || sensor == null) return;
+            if (_slowMoActive || _widePending) return;                  // a bigger shot owns the camera
+            if (_manager == null || !_manager.RoundLive) return;        // not during ceremony or result
+            if (Time.realtimeSinceStartup < _knockbackReadyAt) return;
+
+            Agent_BipedBody struck = sensor.owner;
+            if (struck == null || struck.Torso == null) return;
+
+            // Fighter-on-fighter only: the mat is by far the most frequent thing a
+            // body hits, and landing hard is not a knockback.
+            var attacker = collision.collider.GetComponentInParent<Agent_BipedBody>();
+            if (attacker == null || attacker == struck || attacker.Torso == null) return;
+
+            float hitSpeed = collision.relativeVelocity.magnitude;
+            if (hitSpeed < knockbackSpeed) return;
+
+            // Is he actually going backwards? Positive means the struck fighter is
+            // travelling along the attacker->struck axis, i.e. away from the blow.
+            // Read after the solver has run, which is when collision callbacks fire.
+            float awaySign = Mathf.Sign(struck.Torso.position.x - attacker.Torso.position.x);
+            float awaySpeed = struck.Torso.linearVelocity.x * awaySign;
+            if (awaySpeed < knockbackAwaySpeed) return;
+
+            _knockbackReadyAt = Time.realtimeSinceStartup + knockbackCooldown;
+            // Body-level lookup rather than Systems_CameraFollow.FocusPoint, which
+            // takes an Agent_Biped — Sensor_Impact only knows the Agent_BipedBody.
+            // Same preference it applies: the head if there is drawn art, else the
+            // torso. OnKnockout resolves its focus the same way.
+            Transform focus = struck.HeadRenderer != null
+                ? struck.HeadRenderer.transform
+                : struck.Torso.transform;
+            _camFollow.PunchIn(focus, knockbackOrtho, knockbackHoldSeconds);
+            // Load-bearing, like [ROUND] and WALK-IN RESULT: a camera shot leaves no
+            // other trace, and the ortho alone cannot tell this apart from the KO
+            // punch that fires on the same class of blow.
+            Systems_Log.Info($"[SHOT] knockback close-up on {struck.name} — " +
+                             $"hit {hitSpeed:F1} m/s, driven back at {awaySpeed:F1} m/s");
         }
 
         /// Match-end camera beat: hold tight on the fighter who lost for
@@ -142,8 +215,9 @@ namespace PoSumo
                 _manager.RoundStarted -= OnRoundStarted;
                 _manager.MatchEnded -= OnMatchEnded;
             }
-            // Static event — leaking this keeps a dead scene's presentation alive.
+            // Static events — leaking these keeps a dead scene's presentation alive.
             Systems_BodyDamage.Knockout -= OnKnockout;
+            Sensor_Impact.AnyImpact -= OnAnyImpact;
         }
 
         /// Ends slow motion without stepping on a pause.

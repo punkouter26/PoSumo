@@ -131,6 +131,10 @@ namespace PoSumo
         private const float ART_OVERLAP = 1f;
 
         private float[] _maxSpeed;   // deg/s per joint
+        /// Last motor speed COMMAND actually written, deg/s and facing-signed.
+        /// Slew-limited toward the action's target so the command cannot invert
+        /// in one step - see MOTOR_REVERSAL_SECONDS.
+        private float[] _motorSpeedCmd;
         private float[] _maxTorque;
         // Derived from _maxTorque once in Build(). Both are constant for the body's
         // whole life, and FixedUpdate is the hottest path in the project — 13 joints
@@ -169,6 +173,21 @@ namespace PoSumo
         /// faster than fall, as in vivo.
         private const float ACT_RISE_TAU = 0.05f;
         private const float ACT_FALL_TAU = 0.07f;
+
+        /// Seconds a joint's motor command needs to travel its FULL range, i.e. to
+        /// reverse from -maxSpeed to +maxSpeed.
+        ///
+        /// This is the other half of the activation dynamics below, and it was
+        /// missing. `ApplyMotor` smoothed the TORQUE over 50-70 ms but wrote
+        /// `motorSpeed` straight from the action, so the target VELOCITY could
+        /// invert between two physics steps. A policy whose output alternates near
+        /// the rails — which PPO's are prone to do, and which `jerkPenalty` only
+        /// discourages rather than prevents — then whipped a knee across 1000 deg/s
+        /// of command in 20 ms. That is the flicker: not the peak speed, but the
+        /// instantaneous reversal.
+        ///
+        /// 0.12 s is roughly how quickly a person can reverse a loaded limb.
+        private const float MOTOR_REVERSAL_SECONDS = 0.12f;
 
         /// Torque budget actually in force at each joint this step, after the
         /// force-velocity scaling and the activation lag. Persisted because the
@@ -358,19 +377,19 @@ namespace PoSumo
         //   elbow    100 -> 60  (human ~50-70)
         private static readonly JointDef[] JOINT_DEFS =
         {
-            new JointDef(1, 0,  0f, 0.964f,-120f,  30f, 300f, 400f), // hip near
-            new JointDef(2, 1,  0f, 0.533f,   0f, 150f, 250f, 500f), // knee near
-            new JointDef(3, 2,  0f, 0.10f,  -35f,  35f, 160f, 400f), // ankle near
-            new JointDef(4, 0,  0f, 0.964f,-120f,  30f, 300f, 400f), // hip far
-            new JointDef(5, 4,  0f, 0.533f,   0f, 150f, 250f, 500f), // knee far
-            new JointDef(6, 5,  0f, 0.10f,  -35f,  35f, 160f, 400f), // ankle far
-            new JointDef(7, 0,  0f, 1.130f, -20f,  20f, 180f, 250f), // spine 1 (pelvis->lower back)
-            new JointDef(8, 7,  0f, 1.259f, -20f,  20f, 180f, 250f), // spine 2 (lower->upper back)
-            new JointDef(9, 8,  0f, 1.388f, -20f,  20f, 180f, 250f), // spine 3 (upper back->chest)
-            new JointDef(10, 9, 0f, 1.471f,-120f, 120f,  80f, 500f), // shoulder near (on chest)
-            new JointDef(11,10, 0f, 1.144f,-150f,   0f,  60f, 500f), // elbow near
-            new JointDef(12, 9, 0f, 1.471f,-120f, 120f,  80f, 500f), // shoulder far (on chest)
-            new JointDef(13,12, 0f, 1.144f,-150f,   0f,  60f, 500f), // elbow far
+            new JointDef(1, 0,  0f, 0.964f,-120f,  30f, 300f, 260f), // hip near
+            new JointDef(2, 1,  0f, 0.533f,   0f, 150f, 250f, 320f), // knee near
+            new JointDef(3, 2,  0f, 0.10f,  -35f,  35f, 160f, 220f), // ankle near
+            new JointDef(4, 0,  0f, 0.964f,-120f,  30f, 300f, 260f), // hip far
+            new JointDef(5, 4,  0f, 0.533f,   0f, 150f, 250f, 320f), // knee far
+            new JointDef(6, 5,  0f, 0.10f,  -35f,  35f, 160f, 220f), // ankle far
+            new JointDef(7, 0,  0f, 1.130f, -20f,  20f, 180f, 160f), // spine 1 (pelvis->lower back)
+            new JointDef(8, 7,  0f, 1.259f, -20f,  20f, 180f, 160f), // spine 2 (lower->upper back)
+            new JointDef(9, 8,  0f, 1.388f, -20f,  20f, 180f, 160f), // spine 3 (upper back->chest)
+            new JointDef(10, 9, 0f, 1.471f,-120f, 120f,  80f, 320f), // shoulder near (on chest)
+            new JointDef(11,10, 0f, 1.144f,-150f,   0f,  60f, 320f), // elbow near
+            new JointDef(12, 9, 0f, 1.471f,-120f, 120f,  80f, 320f), // shoulder far (on chest)
+            new JointDef(13,12, 0f, 1.144f,-150f,   0f,  60f, 320f), // elbow far
             // MTP (toe) joints — UNPOWERED, and they must stay last. ApplyMotor and
             // CollectObservations both index 0..ActionCount-1, so appending here adds
             // a joint to the body without touching the 13-action / 42-obs contract
@@ -760,6 +779,7 @@ namespace PoSumo
             _passiveStiffness = new float[JOINT_DEFS.Length];
             _passiveDamping = new float[JOINT_DEFS.Length];
             _appliedTorque = new float[JOINT_DEFS.Length];
+            _motorSpeedCmd = new float[JOINT_DEFS.Length];
             _fatigue = new float[JOINT_DEFS.Length];
             for (int jointDefIndex = 0; jointDefIndex < JOINT_DEFS.Length; jointDefIndex++)
             {
@@ -836,6 +856,14 @@ namespace PoSumo
             if (_fatigue != null)
             {
                 System.Array.Clear(_fatigue, 0, _fatigue.Length);
+            }
+            // Same reasoning as fatigue: a slew-limited motor command is carried
+            // state, so leaving last episode's value in place would start the new
+            // one mid-swing and make its opening dynamics depend on how the previous
+            // episode happened to end.
+            if (_motorSpeedCmd != null)
+            {
+                System.Array.Clear(_motorSpeedCmd, 0, _motorSpeedCmd.Length);
             }
             RestoreMotors();   // a limp body from last round must drive again
             for (int partIndex = 0; partIndex < Parts.Length; partIndex++)
@@ -1047,7 +1075,13 @@ namespace PoSumo
             // only place that absorbs the missing one.
             if (joint == null) return;
             var m = joint.motor;
-            m.motorSpeed = Mathf.Clamp(action, -1f, 1f) * _maxSpeed[jointIndex] * facingSign;
+            // Slew-limited, not written straight through: see MOTOR_REVERSAL_SECONDS.
+            // The clamp is on the COMMAND, so the joint can still be driven to full
+            // speed - it just cannot get there, or reverse, instantly.
+            float desiredSpeed = Mathf.Clamp(action, -1f, 1f) * _maxSpeed[jointIndex] * facingSign;
+            float maxDelta = 2f * _maxSpeed[jointIndex] * Time.fixedDeltaTime / MOTOR_REVERSAL_SECONDS;
+            _motorSpeedCmd[jointIndex] = Mathf.MoveTowards(_motorSpeedCmd[jointIndex], desiredSpeed, maxDelta);
+            m.motorSpeed = _motorSpeedCmd[jointIndex];
 
             // FORCE-VELOCITY (Hill). A HingeJoint2D motor is an ideal servo: left
             // alone it delivers its FULL torque at any speed up to the target, so a

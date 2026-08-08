@@ -50,6 +50,7 @@ param(
     [Parameter(Mandatory)][string]$EnvName,
     [ValidateRange(1, 16)][int]$NumEnvs = 6,
     [ValidateRange(1024, 65000)][int]$BasePort = 5005,
+    [string]$InitializeFrom,
     [switch]$Force,
     [switch]$Resume
 )
@@ -115,6 +116,17 @@ $learnArgs = @(
 )
 if ($Force) { $learnArgs += '--force' }
 if ($Resume) { $learnArgs += '--resume' }
+# --initialize-from resolves BY BEHAVIOR NAME and RELATIVE TO --results-dir, so
+# the source run must sit inside Training/results and must carry a behavior of
+# the same name as the one being trained. network_settings must also match the
+# source trunk exactly (512 x 3 here) or the load fails.
+if ($InitializeFrom) {
+    $sourceDir = Join-Path $repoRoot "Training/results/$InitializeFrom"
+    if (-not (Test-Path $sourceDir)) {
+        throw "InitializeFrom '$InitializeFrom' not found at $sourceDir"
+    }
+    $learnArgs += "--initialize-from=$InitializeFrom"
+}
 
 Write-Host "Starting trainer: $RunId"
 Write-Host "  envs $NumEnvs on ports $BasePort..$($BasePort + $NumEnvs - 1)"

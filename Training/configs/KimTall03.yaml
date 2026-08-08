@@ -1,0 +1,87 @@
+# Kim WALK-TALL 03 — created 2026-08-08. Warm start from kim_fatigue01.
+#
+# THE FIX THIS RUN TESTS: the walk gate is now on HEIGHT, not knee bend.
+#
+#   was:  walkGate = stanceFloor + (1 - stanceFloor) * KneeBend
+#   now:  walkGate = stanceFloor + (1 - stanceFloor) * TallFactor
+#
+# walkGate multiplies the forward-speed term, which is the largest thing in the
+# walk school. The old form paid up to 6.7x for moving in a deep crouch, which
+# is precisely why the fighters crawled to the middle. Pointing the same
+# multiplier at torso height inverts it: at stanceFloor 0.3 a crawler keeps 30%
+# of its forward reward and a fighter at full standing height keeps 100%.
+#
+# TWO WEAKER ATTEMPTS WERE MEASURED FIRST. Both are recorded because each looked
+# adequate on paper and neither was:
+#
+#   Tall01, cold retrain, 6M steps, staminaObservation on (46 obs).
+#     Raised the floor to 0.6, ZEROED walkBendReward, added a 0.003 additive
+#     height term. Fight: ELO +596 (983 -> 1579), a textbook accept curve.
+#     Walk: COLLAPSED — torso 0.33-0.35 m and no travel at all, walk-in hit its
+#     stall timeout. Zeroing the bend reward removed the crouch the gait was
+#     balancing on before anything replaced it, and 6M cold steps cannot learn a
+#     tall balanced gait from scratch while the shared trunk is also learning
+#     self-play sumo. Separately, 0.003 x 1500 steps = +4.5 beats the +3
+#     graduation bonus that ENDS the episode, so not finishing outpaid finishing.
+#
+#   Tall02, warm start, 2M steps at LR 1e-4, back to 45 obs.
+#     Kept the knee-bend gate at a 0.85 floor plus a 0.0015 additive height term.
+#     Fight: ELO +500 (1289 -> 1789). Walk: RESTORED but UNCHANGED in height,
+#     0.56-0.74 against the shipped brain's 0.55-0.76. An additive term worth
+#     ~10% of per-step income does not overturn a posture baked into an 8.4M
+#     trunk at a reduced learning rate.
+#
+# The lesson: a multiplicative gate produced the crouch, so only a multiplicative
+# gate removes it. The additive height reward stays at 0.0015 because it still
+# supplies a gradient toward standing when forward speed is zero, but it is no
+# longer doing the work.
+#
+# COEFFICIENTS: stanceFloor 0.3, height 0.0015, bend 0.0002 (small, NOT zero —
+# zero is what collapsed Tall01), upright 0.001, stall 0.0025 (standing still
+# nets ~0/step, so a statue cannot out-earn graduating).
+#
+# For Kim at kim_fatigue01: moving at 1.4 m/s, tall pays ~3.1x what crawling pays,
+# which is the same order of force the crouch gate used to have in reverse.
+#
+# WARM START from kim_fatigue01, the shipped lineage. The policy already walks; this run changes what
+# posture pays, not whether it can locomote. LR 1e-4, max_steps 2.5M.
+#
+# ACCEPTANCE, in this order:
+#   1. torso height while travelling rises above ~0.85 (was 0.55-0.76)
+#   2. the walk-in still reaches CONTACT rather than the stall timeout
+#   3. ELO has not slid
+# Criterion 2 is not optional — Tall01 passed nothing because it failed it.
+
+behaviors:
+  Kim:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 0.0001
+      beta: 0.005
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:
+      normalize: true
+      hidden_units: 512
+      num_layers: 3
+      vis_encode_type: simple
+    reward_signals:
+      extrinsic:
+        gamma: 0.997
+        strength: 1.0
+    keep_checkpoints: 20
+    checkpoint_interval: 100000
+    max_steps: 2500000
+    time_horizon: 1000
+    summary_freq: 20000
+    threaded: true
+    self_play:
+      window: 25
+      play_against_latest_model_ratio: 0.25
+      save_steps: 50000
+      swap_steps: 50000
+      team_change: 250000

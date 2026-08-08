@@ -75,6 +75,10 @@ namespace PoSumo
         public bool allowDetach = true;
 
         [Header("Gib (all four limbs at once)")]
+        [Tooltip("Probability that an arm or leg ACTUALLY comes off once it has reached the detach gate. 0.5 = half as likely as before, which is what this was set to on 2026-08-08.\n\nRolled ONCE PER LIMB, not once per blow. A limb that loses its roll is spared for the rest of the tournament and cannot be torn off by damage again, however much more it takes. A per-blow re-roll would be nearly useless: damage keeps arriving after the gate, so the limb would simply come off on the second or third roll and the observed rate would barely move.\n\nThis is a PROBABILITY dial and not a threshold on purpose. Raising detachAtRedMultiple does not reduce how often limbs come off — measured three times (gates 3, 6 and 10 produced losses at 7.5-8.0, 15.0-15.6 and 25.2-25.9), because limb damage in a clinch runs past wherever the bar is put. Moving the bar relocates the pop; only a roll changes the rate.\n\nThe head is deliberately exempt — decapitation is the showpiece finish and keeps its own headDetachAtRedMultiple gate. Measure with LimbLossCount, not by reasoning about this number.")]
+        [Range(0f, 1f)]
+        public float limbDetachChance = 0.5f;
+
         [Tooltip("Master switch for the gib. Independent of allowDetach on purpose: the gib is a rare showpiece, and turning ordinary dismemberment off to calm a bout down should not also remove it.")]
         public bool allowGib = true;
         [Tooltip("Impact speed at or above which a hit is eligible to gib. ABOVE koSpeed (7.5), so only the class of blow that could already knock a head out can take every limb off.\n\nThis is an eligibility gate, not the rate — gibChance below is what makes it rare. Two dials rather than one because a pure speed threshold cannot hold a fixed rate: the force distribution moves whenever a brain is retrained or a physique changes, so a bar tuned to fire on 1% of hits today fires on some other fraction tomorrow. Measure with GibCount, not by reasoning about this number.")]
@@ -156,6 +160,21 @@ namespace PoSumo
 
         private float[] _regionDamage = new float[REGION_COUNT];
 
+        /// Per-region outcome of the once-per-limb `limbDetachChance` roll:
+        /// 0 = not yet rolled, 1 = spared, 2 = cleared to come off.
+        ///
+        /// Tournament-persistent alongside RegionStore, and for the same reason.
+        /// Accumulated damage carries across the bouts of a bracket, so a limb that
+        /// has already passed its gate would re-roll on the very next contact of the
+        /// next bout — and a limb that gets a fresh roll every bout is not 50% less
+        /// likely to come off, it is merely delayed. The verdict has to persist
+        /// exactly as long as the damage that triggered it.
+        private static readonly Dictionary<string, byte[]> DetachRollStore =
+            new Dictionary<string, byte[]>();
+
+        private byte[] _detachRoll = new byte[REGION_COUNT];
+        private const byte ROLL_NONE = 0, ROLL_SPARED = 1, ROLL_ALLOWED = 2;
+
         /// Earliest `Time.time` at which each region may take damage again.
         ///
         /// Deliberately NOT in `RegionStore`: accumulated damage carries across
@@ -229,6 +248,7 @@ namespace PoSumo
         {
             Store.Clear();
             RegionStore.Clear();
+            DetachRollStore.Clear();
         }
 
         /// Wipe all accumulated damage. Called when a tournament is reset so a new
@@ -237,6 +257,7 @@ namespace PoSumo
         {
             Store.Clear();
             RegionStore.Clear();
+            DetachRollStore.Clear();
         }
 
         /// Live damage components, keyed by the body they mark. Systems_RingBlood
@@ -346,6 +367,11 @@ namespace PoSumo
                 _regionDamage = new float[REGION_COUNT];
                 RegionStore[key] = _regionDamage;
             }
+            if (!DetachRollStore.TryGetValue(key, out _detachRoll))
+            {
+                _detachRoll = new byte[REGION_COUNT];
+                DetachRollStore[key] = _detachRoll;
+            }
             Active[body] = this;
 
             // Replay everything this fighter has taken so far this tournament.
@@ -379,6 +405,12 @@ namespace PoSumo
         }
 
         /// Re-sever anything already past the threshold, without presentation.
+        ///
+        /// Must honour the spare roll, or the whole mechanism leaks: damage is
+        /// tournament-persistent, so a limb spared in the quarter-final is still
+        /// past its gate when the semi-final scene loads and this pass would tear it
+        /// off with no roll and no log line — turning "50% of limbs survive" into
+        /// "50% of limbs survive until the next scene load".
         private void ReapplyStandingDismemberment()
         {
             if (!allowDetach || body == null) return;
@@ -386,6 +418,7 @@ namespace PoSumo
             for (int r = 0; r < REGION_COUNT; r++)
             {
                 if (_regionDamage[r] < limit) continue;
+                if (_detachRoll != null && _detachRoll[r] == ROLL_SPARED) continue;
                 int rootPart = RootPartOf((Region)r);
                 if (rootPart < 0) continue;
                 int joint = Agent_BipedBody.JointIndexForChild(rootPart);
@@ -667,9 +700,27 @@ namespace PoSumo
 
             if (region == Region.Head)
             {
-                DecapitateHead(worldPoint);
+                DecapitateHead(worldPoint);   // the head is exempt from the spare roll
                 return;
             }
+
+            // Once-per-limb spare roll — see limbDetachChance. Rolled HERE, at the
+            // moment the gate is first cleared, and remembered: damage keeps
+            // arriving after the gate, so re-rolling per blow would only delay the
+            // loss by a contact or two instead of preventing it.
+            int regionIndex = (int)region;
+            if (_detachRoll == null) return;
+            if (_detachRoll[regionIndex] == ROLL_NONE)
+            {
+                bool allowed = Random.value < limbDetachChance;
+                _detachRoll[regionIndex] = allowed ? ROLL_ALLOWED : ROLL_SPARED;
+                if (!allowed)
+                {
+                    Systems_Log.Info($"[DAMAGE] {name} SPARED {region} at " +
+                                     $"{_regionDamage[regionIndex]:F1} damage — detach roll failed");
+                }
+            }
+            if (_detachRoll[regionIndex] == ROLL_SPARED) return;
 
             if (DetachRegion(region, worldPoint))
             {

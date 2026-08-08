@@ -1,0 +1,89 @@
+# Nick WALK-TALL 02 — created 2026-08-08. WARM START from nick_fatigue01.
+#
+# SUPERSEDES NickTall01.yaml, which was a COLD retrain and FAILED. Keeping the
+# measurement, because it is the reason this config exists:
+#
+#   matt_tall01 ran 6M cold steps in 105 min. The FIGHT came out well —
+#   self-play ELO climbed +596 (983 -> 1579), monotonic, which is the accept
+#   signal. The WALK came out broken. Measured in-game on the walk-in:
+#
+#     standing pose            torso 1.06 m above the mat
+#     shipped Matt (fatigue01) torso 0.55-0.76 m, and it TRAVELS -3.00 -> -0.82
+#     matt_tall01              torso 0.33-0.35 m, and it does NOT travel at all
+#
+#   So the cold run did not produce a tall walker, it produced a collapsed one,
+#   and the walk-in hit its stall timeout. Two causes, both mine:
+#
+#   1. walkBendReward was set to 0 and walkStanceFloor to 0.6, which removed the
+#      crouch the gait was balancing on before anything replaced it. A tall
+#      bipedal gait is a much harder control problem than a low shuffle, and 6M
+#      cold steps is nowhere near enough to find one — especially with the same
+#      trunk also learning self-play sumo, which is where the capacity went.
+#   2. walkHeightReward 0.003 over a 1500-step walk episode is up to +4.5,
+#      against a +3 graduation bonus that ENDS the episode. That inverts the
+#      objective: not finishing pays better than finishing. Classic.
+#
+# WHAT THIS RUN DOES DIFFERENTLY
+#   - WARM START from nick_fatigue01, which already walks. We are nudging
+#     posture, not learning locomotion from scratch. LR drops 3e-4 -> 1e-4 and
+#     max_steps is 2M against that ~8.4M trunk.
+#   - staminaObservation is BACK OFF. It is the only reason Tall01 had to be
+#     cold: it takes the vector 45 -> 46 and no checkpoint can then be loaded.
+#     The upright gait is the goal that was actually asked for; stamina is
+#     deferred to a future long cold run and CLAUDE.md's note still stands.
+#   - Coefficients re-derived against the per-EPISODE budget, not the per-step
+#     one, which is the arithmetic Tall01 got wrong:
+#
+#       walkStanceFloor  0.15 -> 0.85   the crouch GATE was the real culprit:
+#                                       straight legs used to earn 15% of the
+#                                       forward reward, so crawling paid ~4x.
+#       walkHeightReward     -> 0.0015  1500 steps of it is 2.25 at most, and
+#                                       the stall penalty cancels it when the
+#                                       walker is not travelling.
+#       walkBendReward       -> 0.0002  small, NOT zero. Zero is what removed
+#                                       the stability the gait was using.
+#       walkStallPenalty 0.0008 -> 0.0025  standing still now nets ~0 per step,
+#                                       so a statue cannot out-earn graduating.
+#
+#     Moving at 1.4 m/s: tall ~0.0075/step against crouched ~0.0068 — tall wins
+#     by ~10%, where it used to LOSE by ~4x. Deliberately a narrow margin: the
+#     point is to tip the optimum, not to pay so much for posture that the
+#     fighter stops walking to collect it. That is the mistake Tall01 made.
+#
+# ACCEPTANCE: torso height while travelling should rise from 0.55-0.76 toward
+# 0.85+, and it must still TRAVEL — check the walk-in reaches contact rather
+# than hitting the stall timeout. Then check ELO did not slide.
+
+behaviors:
+  Nick:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 0.0001
+      beta: 0.005
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:
+      normalize: true
+      hidden_units: 512
+      num_layers: 3
+      vis_encode_type: simple
+    reward_signals:
+      extrinsic:
+        gamma: 0.997
+        strength: 1.0
+    keep_checkpoints: 20
+    checkpoint_interval: 100000
+    max_steps: 2000000
+    time_horizon: 1000
+    summary_freq: 20000
+    threaded: true
+    self_play:
+      window: 25
+      play_against_latest_model_ratio: 0.25
+      save_steps: 50000
+      swap_steps: 50000
+      team_change: 250000

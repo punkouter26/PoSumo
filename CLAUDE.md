@@ -411,6 +411,53 @@ was preserved deliberately, because these are small floats accumulated at 50 Hz.
   a walk-in that brushes the other fighter banks that momentum for the first sumo step
   after `EndWalkIn`.
 
+#### The fighters crawl during the walk-in, and FOUR retrains failed to fix it (2026-08-08)
+
+Do not spend a fifth run on this without reading all of it. The measured gait height (torso
+above the mat, standing pose is 1.06 m) went:
+
+| brain | gait height | travels | note |
+|---|---|---|---|
+| shipped `*_fatigue01` | 0.55-0.76 | yes | the crawl being complained about |
+| `tall01` cold 6M, additive 0.003 | **0.33-0.35** | **NO** | collapsed, walk-in hit its stall timeout |
+| `tall02` warm 2M, additive 0.0015 | 0.56-0.74 | yes | no change |
+| `tall03` warm 2.5M, height GATE, ramp 0.65-0.95 | 0.54-0.71 | yes | no change |
+| `tall04` warm 2.5M, height gate, ramp 0.45-1.00 | 0.59-0.74 | yes | no change |
+
+The **diagnosis of the cause was right**: `walkGate` multiplied the dominant forward-speed
+term by `KneeBend`, so at a 0.15 floor straight legs earned 15% of it and a deep crouch
+100% — crawling paid ~4x. That gate is now on `TallFactor` instead, which is the correct
+mechanism and is kept.
+
+**Three separate things were learned the hard way, all of them still live traps:**
+
+1. **A shaping term that saturates outside the range the policy occupies is not weak, it
+   is ABSENT — and looks identical to weak from the outside.** `WALK_TALL_Y`/`WALK_CROUCH_Y`
+   were first copied from the sumo school as 0.95/0.65 on the reasoning that both schools
+   should share one ruler. The walking gait lives at 0.46-0.80, so `TallFactor` was clamped
+   at zero across nearly all of it: the reward could not tell 0.60 from 0.55. Two runs were
+   spent tuning the *strength* of something that was not connected. Always check a new
+   term's ramp against a measured distribution of the quantity it reads.
+2. **You cannot out-shape a terminal.** In `Mode.Walk` a fall is `SetReward(-1)` (which
+   also discards that step's shaping) plus the forgone `+3` graduation — about **-4**. The
+   whole tall-vs-crawl per-step advantage is **0.0063**. Break-even is an extra fall
+   probability of **0.16% per step**, i.e. one extra fall per ~13 s of walking. A tall
+   bipedal gait on this ragdoll is certainly more fall-prone than that, so **crouching is
+   correct play** and no reasonable coefficient changes it. Raising the shaping further
+   just re-runs `tall01`.
+3. **Never zero a stabilising term to make room for a new one.** `tall01` set
+   `walkBendReward` to 0 and the gait collapsed outright: the crouch was load-bearing for
+   balance, and nothing had replaced it yet.
+
+If a genuinely upright gait is wanted, the lever is NOT reward coefficients. It is either
+far more training (a stable tall gait is a much harder control problem, and the shared
+trunk spends its capacity on self-play sumo — note every one of these runs improved the
+FIGHT, ELO +500 to +638, while the walk stood still), or reducing the fall risk/penalty
+during a walk curriculum so the policy can afford to experiment with standing up.
+
+`walkHeightReward` (additive, small) and the height gate both remain in place: they cost
+nothing and are the right shape. They are simply not sufficient.
+
 ### Two referees, deliberately kept in sync
 - `Systems_SumoMatchManager` — **training** referee. Loss = a foot below `footOffMatY`
   (−0.06) or torso below `fallY`; timeout ⇒ `EpisodeInterrupted` (draw). Per-round domain
@@ -422,8 +469,41 @@ was preserved deliberately, because these are small floats accumulated at 50 Hz.
   `tournamentPointsToWin` (bracket), countdown freeze, timeout tiebreak on position, UI
   Toolkit HUD built in code. Spawns every runtime companion and exposes
   `RoundEnded` / `RoundStarted` / `MatchEnded` / `MatchReset` — the events every
-  presentation system subscribes to. At 1455 lines it is the largest file in the project
-  and the entry point for anything match-shaped.
+  presentation system subscribes to. It is the largest file in the project and the entry
+  point for anything match-shaped.
+
+**The MATCH opens Intro → WalkIn → Fighting; later rounds open Grace → Fighting**
+(2026-08-07). The ceremony is a match thing, not a round thing — `_walkInPlayed` gates it,
+so only round 1 gets it and rounds 2+ still open from the stand-off with the plain
+`countdownSeconds` countdown. The order used to be the reverse of this: the walk-in ran
+first and had no countdown at all, while the countdown only ever appeared on later rounds.
+
+- **`Phase.Intro`** — both fighters frozen by `PoseNeutral` on the WALK-IN marks
+  (±`walkInStartGapHalf`), `introCountdownSeconds` (4) counting down, one camera beat per
+  digit: face A, wide, face B, wide. Frozen and not held by the walk policy, because the
+  walk task strides straight through its target and would leave during the count.
+- Zero shows **"HAKKEYOI!"** and hands over to `Phase.WalkIn`. `"FIGHT!"` still belongs to
+  the moment of contact, which is seconds later — do not merge the two banners.
+- A stalled or timed-out approach now **starts the fight on the spot** (park at the
+  stand-off, `BeginSimulation`, `FlashFight`) instead of re-running a countdown the
+  ceremony already played. A policy that cannot close 3 m of empty mat is a training
+  problem; the referee is not the place to hide it.
+
+Two traps this cost, both worth knowing before touching any camera shot:
+
+- **A shot's deadline is REALTIME, a countdown digit is game time**, and they diverge hard
+  across the arena scene load. The opening face zoom's 1.05 s window expired inside the
+  load hitch before the camera had rendered enough frames to move — measured, ortho drifted
+  4.20 → 6.34 toward ordinary follow framing instead of reaching 1.20, while every later
+  beat landed exactly. Nothing errored; the first beat simply did not happen.
+  `TickIntroCountdown` therefore RE-ISSUES the current beat every physics step rather than
+  only on the digit change.
+- **`Systems_CameraFollow.smoothing` (4) is tuned for FOLLOWING**, so it is slow on purpose
+  and cannot carry a deliberate one-second move from wide (ortho 14) to a head. `PunchIn` /
+  `PullBackWide` take an optional `blendSpeed` (ceremony uses 18) and per-axis `centering`
+  for this. Vertical centring is deliberately **below** 1 — the countdown digit is drawn
+  dead centre of the stage band, and a head centred on both axes gets the numeral painted
+  across the face.
 
 Falling is **not** a loss in either referee (`knockdownLoses` is off). If you change a
 losing condition, change it in **both** — they have silently diverged before, and
@@ -637,6 +717,30 @@ relocates the pop instead of preventing it. Three gates, three identical outcome
 constant is not the lever.** Do not spend a fourth bracket on a fifth value; the fix has to
 change the damage *distribution* (rate-limit per contact, or cap per-region accumulation
 per round), not the threshold it is being compared against.
+
+**That advice was taken on 2026-08-08 via a PROBABILITY dial rather than a distribution
+change: `Systems_BodyDamage.limbDetachChance`, default `0.5`** — arms and legs are now half
+as likely to come off. It is rolled **once per limb**, not once per blow, and the verdict is
+remembered in `DetachRollStore` for as long as the damage that caused it (i.e. the whole
+tournament). Both halves of that are load-bearing:
+
+- A per-blow re-roll would be nearly useless. Damage keeps arriving after the gate, so the
+  limb would simply come off on the second or third roll and the observed rate would barely
+  move — the same "censored at the gate" trap in a new costume.
+- `ReapplyStandingDismemberment` **must skip spared regions**, and now does. Damage is
+  tournament-persistent, so a limb spared in the quarter-final is still past its gate when
+  the next scene loads; without the check that pass would tear it off with no roll and no
+  log line, turning "half of limbs survive" into "half survive until the next scene load".
+
+Verified live: two limbs crossed the gate at ~25 damage in one bracket, one came off
+(`lost LegNear at 25.1`) and one did not (`SPARED LegNear at 25.3 — detach roll failed`).
+The head is exempt (decapitation keeps `headDetachAtRedMultiple`), and the **gib path
+bypasses the roll entirely** — it calls `DetachRegion` directly, which is deliberate: the
+gib is a rare showpiece with its own `gibChance`, and `allowGib` is already independent of
+`allowDetach` for the same reason.
+
+Note `Systems_BodyDamage` does **not** read `GameTuning` and is spawned fresh per match, so
+unlike most tuning in this project its **code defaults are what actually run**.
 
 Decapitation stays the common showpiece finish. Both wounds of a break bleed —
 stump and severed end, neck stump and the head's cut face — through `OpenBleed`, and the

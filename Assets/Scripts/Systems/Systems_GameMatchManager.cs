@@ -17,7 +17,7 @@ namespace PoSumo
     /// MarkBracketBout). UI Toolkit only.
     public sealed class Systems_GameMatchManager : MonoBehaviour
     {
-        private enum Phase { Fighting, RoundEnded, Grace, WalkIn, MatchOver }
+        private enum Phase { Fighting, RoundEnded, Grace, Intro, WalkIn, MatchOver }
 
         public Agent_Biped wrestlerA;           // teamId 0
         public Agent_Biped wrestlerB;           // teamId 1
@@ -85,8 +85,12 @@ namespace PoSumo
         public float neutralGapHalf = 0.9f;
 
         [Header("Walk-in intro")]
-        [Tooltip("Rounds open with both fighters walking in on their locomotion brain, then the mat contracts and the countdown runs.")]
+        [Tooltip("The match opens with a ceremony countdown over two frozen fighters on the far marks, then they walk in on their locomotion brain and the fight starts where they meet. Later rounds skip both and open from the stand-off with the plain countdown above.")]
         public bool enableWalkIn = true;
+        [Tooltip("Length of the opening ceremony countdown, in seconds. The camera takes ONE beat per digit — in on A, out, in on B, out — so four is the shortest count that fits a full in-and-out on both faces. Raise it in steps of two or the last fighter looked at is left zoomed when the count ends.")]
+        public int introCountdownSeconds = 4;
+        [Tooltip("Camera ortho for the ceremony face shots. Looser than countdownHeadOrtho because this one is actually REACHED: ortho is a half-HEIGHT and portrait aspect is ~0.46, so 0.85 is a 0.78 m-wide frame that the foreground crowd row fills and that throws the head off-screen on the slightest blend lag. 1.2 frames head and chest with margin to spare.")]
+        public float introFaceOrtho = 1.2f;
         [Tooltip("Platform half-width during the walk-in. The mat contracts back to ringHalfWidth before the fight, so the FIGHTING ring is unchanged and the fight brains never see a size they were not trained on.")]
         public float walkInHalfWidth = 4f;
         [Tooltip("Half the gap the fighters start from. They walk from here all the way to contact, so this is the full approach distance each fighter covers minus half a body.")]
@@ -134,6 +138,21 @@ namespace PoSumo
         /// Metres of closing that count as progress. Below this it is jitter — the
         /// fighters sway on the spot even when they are going nowhere.
         private const float WALKIN_PROGRESS_EPSILON = 0.05f;
+        /// How long a single camera beat is held, in realtime seconds. Slightly
+        /// over the one second a countdown digit lasts, so a beat covers its whole
+        /// digit and the blend has landed before the next beat overrides it.
+        private const float CAMERA_BEAT_SECONDS = 1.05f;
+        /// Camera blend rate for a ceremony beat, against the follow default of 4.
+        /// Chosen so the move is ~95% complete a sixth of the way into its beat and
+        /// then HOLDS: the hold is what makes it read as a shot rather than a pan
+        /// that never settles, and it is also what keeps the subject centred — a
+        /// still-travelling frame this tight has its subject against the edge.
+        /// See PunchOnFace.
+        private const float CEREMONY_BLEND = 18f;
+        /// Vertical pull of a ceremony face shot onto the head, against a base
+        /// target down at the fighters' feet. Below 1 so the head rides high and
+        /// the centred countdown digit falls on the chest instead of the face.
+        private const float INTRO_FACE_CENTERING_Y = 0.82f;
         private float _savedGroundWidth;
         private float _braceStarted = -999f;
         private float _releaseTime = -1f;
@@ -394,8 +413,8 @@ namespace PoSumo
 
             if (enableWalkIn && WalkBrainsReady())
             {
-                _phase = Phase.WalkIn;
-                BeginWalkInPhase();
+                _phase = Phase.Intro;
+                BeginIntroPhase();
             }
             else
             {
@@ -465,8 +484,47 @@ namespace PoSumo
         /// Round opening: both fighters hold a neutral standing pose at the
         /// stand-off gap, physics off, until the countdown releases them.
 
-        /// Opens the round: widen the mat, stand both fighters at the far ends and
-        /// hand them to their locomotion brains to walk to the stand-off marks.
+        /// Opens the MATCH: widen the mat, stand both fighters frozen on the far
+        /// marks and run the ceremony countdown over them, one camera beat per
+        /// digit. Zero hands over to the walk-in, which is where they actually move.
+        ///
+        /// Frozen rather than held by the walk policy: the count is four seconds,
+        /// and only a policy can keep a live ragdoll upright that long — but the
+        /// walk policy does not own the body until BeginWalkInPhase, and handing it
+        /// over early would have them stride off during the count. See PoseNeutral
+        /// on why a braked ragdoll is not an alternative.
+        private void BeginIntroPhase()
+        {
+            _walkInPlayed = true;
+            WidenMatForWalkIn();
+            // On the WALK-IN marks, not the stand-off ones: the count is the beat
+            // before the approach, so they have to already be standing where the
+            // approach starts or they would teleport outward at zero.
+            PoseNeutral(wrestlerA, -walkInStartGapHalf);
+            PoseNeutral(wrestlerB, +walkInStartGapHalf);
+            _countdownLeft = introCountdownSeconds;
+            _lastCountdownDigit = -1;
+        }
+
+        /// Widens the platform for the ceremony and the approach.
+        ///
+        /// `_savedGroundWidth` is captured ONCE and never overwritten, because both
+        /// the intro and the walk-in call this: a second capture would save the
+        /// already-widened span as the "original" and ContractMat would restore the
+        /// intro mat permanently, leaving every later round on an 8 m ground.
+        private void WidenMatForWalkIn()
+        {
+            if (_arena == null) return;
+            // SetPlatformHalfWidth clamps to groundWidth * 0.5, so widening the
+            // mat past its configured span needs groundWidth raised first or the
+            // request is silently capped and the fighters spawn off the edge.
+            if (_savedGroundWidth <= 0f) _savedGroundWidth = _arena.groundWidth;
+            _arena.groundWidth = Mathf.Max(_savedGroundWidth, walkInHalfWidth * 2f + 0.8f);
+            _arena.SetPlatformHalfWidth(walkInHalfWidth);
+        }
+
+        /// Opens the approach: unfreeze both fighters where the intro left them and
+        /// hand them to their locomotion brains to walk into each other.
         ///
         /// The widening is temporary and purely for the intro — EndWalkInPhase
         /// contracts the platform back to ringHalfWidth before anyone fights, so
@@ -474,25 +532,19 @@ namespace PoSumo
         private void BeginWalkInPhase()
         {
             _walkInPlayed = true;
-            // Pull the camera out for the ceremony. At normal framing the start
+            // Pull the camera out for the approach. At normal framing the start
             // marks sit outside the frame, so the fighters appeared from
             // off-screen already halfway through their walk — the approach is the
             // point, so it has to be visible from the first stride. Held a beat
-            // past the timeout; the arrival path clears it early.
+            // past the timeout; the arrival path clears it early. This also
+            // continues the wide beat the countdown ended on, so the handover from
+            // ceremony to approach is one unbroken shot.
             if (_camFollow != null)
             {
                 _camFollow.PullBackWide(walkInTimeout + 1f);
             }
 
-            if (_arena != null)
-            {
-                // SetPlatformHalfWidth clamps to groundWidth * 0.5, so widening the
-                // mat past its configured span needs groundWidth raised first or the
-                // request is silently capped and the fighters spawn off the edge.
-                _savedGroundWidth = _arena.groundWidth;
-                _arena.groundWidth = Mathf.Max(_savedGroundWidth, walkInHalfWidth * 2f + 0.8f);
-                _arena.SetPlatformHalfWidth(walkInHalfWidth);
-            }
+            WidenMatForWalkIn();
             float centre = transform.position.x;
 
             // Order matters. Swap the brain FIRST, then EndEpisode so
@@ -1206,7 +1258,113 @@ namespace PoSumo
         private void PunchOnHead(Agent_Biped fighter)
         {
             if (_camFollow == null || fighter == null) return;
-            _camFollow.PunchIn(Systems_CameraFollow.FocusPoint(fighter), countdownHeadOrtho, 1.05f);
+            _camFollow.PunchIn(Systems_CameraFollow.FocusPoint(fighter), countdownHeadOrtho, CAMERA_BEAT_SECONDS);
+        }
+
+        /// The ceremony version of PunchOnHead: same head, but the shot has to
+        /// ARRIVE inside its one-second beat rather than lean toward the fighter.
+        ///
+        /// The round countdown can use the plain follow smoothing because it starts
+        /// from an ordinary two-shot barely a metre wider than its target. The
+        /// ceremony starts from the wide establishing shot at ortho 14 and has to
+        /// cross most of that range — measured at the default smoothing of 4, the
+        /// move is only about half done when the beat expires, and it reads as a
+        /// drift rather than a punch. Full centring for the same reason: the
+        /// default leaves a quarter of the pull on the pair's midpoint, which
+        /// slides the head out of frame once the frame is a couple of metres tall.
+        private void PunchOnFace(Agent_Biped fighter)
+        {
+            if (_camFollow == null || fighter == null) return;
+            // Locked on horizontally, deliberately loose vertically: the countdown
+            // digit is drawn dead centre of the stage band, and a head centred on
+            // both axes gets the numeral painted straight across the face. Easing
+            // off the vertical pull leaves the head riding high with the digit on
+            // the chest below it. See Systems_CameraFollow's centring fields.
+            _camFollow.PunchIn(Systems_CameraFollow.FocusPoint(fighter), introFaceOrtho,
+                               CAMERA_BEAT_SECONDS, CEREMONY_BLEND, 1f, INTRO_FACE_CENTERING_Y);
+        }
+
+        /// The ceremony countdown, run over two frozen fighters on the walk-in
+        /// marks. Same digits and same pop as the round countdown, but the camera
+        /// works through IntroCameraBeat instead, and zero releases them to WALK
+        /// rather than to fight — so it ends on the gyoji's call, not on "FIGHT!".
+        private void TickIntroCountdown()
+        {
+            _countdownLeft -= Time.fixedDeltaTime;
+            if (_countdownLeft <= 0f)
+            {
+                FlashHakkeyoi();
+                _phase = Phase.WalkIn;
+                BeginWalkInPhase();
+                return;
+            }
+
+            int digit = Mathf.CeilToInt(_countdownLeft);
+            if (digit != _lastCountdownDigit)
+            {
+                _lastCountdownDigit = digit;
+                _countdown.text = digit.ToString();
+                _hud.ShowCentre(_countdown);
+                _countdown.PopFontSize(Systems_UiKit.FONT_MEGA + 28, Systems_UiKit.FONT_MEGA, 260);
+                // Cancel the outgoing beat before the incoming one is issued. A
+                // wide shot OUTRANKS a punch-in inside Systems_CameraFollow, so a
+                // still-live wide would swallow the face zoom that follows it.
+                if (_camFollow != null) _camFollow.ClearShots();
+            }
+
+            // Re-issued EVERY physics step, not only when the digit changes.
+            //
+            // A camera shot's deadline is in REALTIME (Systems_CameraFollow uses
+            // realtimeSinceStartup so a slow-mo finish is not stretched by
+            // timeScale) while a countdown digit is in game time, and the two
+            // diverge hard across the arena scene load. Measured: the very first
+            // beat's 1.05 s realtime window expired inside the load hitch before
+            // the camera had rendered enough frames to move, so the OPENING face
+            // zoom silently did not happen at all — ortho drifted 4.20 -> 6.34
+            // toward the ordinary follow framing instead of reaching 1.20, while
+            // every later beat landed on its mark exactly. Refreshing the deadline
+            // each step keeps the shot alive for the whole digit no matter what
+            // the frame times do, and costs four field writes at 50 Hz.
+            IntroCameraBeat(introCountdownSeconds - digit);
+        }
+
+        /// One camera move per countdown digit: in on A's face, out, in on B's
+        /// face, out. Even beats zoom, odd beats release, and the fighter switches
+        /// every second beat — so a four-count reads as a look at each man rather
+        /// than one long push, and the last beat leaves the camera wide for the
+        /// walk-in to inherit.
+        ///
+        /// The release is a PullBackWide, not a bare ClearShots: without an
+        /// explicit wide shot the follow camera snaps straight back to a tight
+        /// two-shot of a pair standing 6 m apart, which is barely a pull-out at
+        /// all. Clearing the outgoing beat is the CALLER's job — see
+        /// TickIntroCountdown, which does it once per digit rather than on every
+        /// one of the 50 refreshes a second this gets.
+        private void IntroCameraBeat(int beat)
+        {
+            if (_camFollow == null) return;
+            if ((beat & 1) == 1)
+            {
+                _camFollow.PullBackWide(CAMERA_BEAT_SECONDS, CEREMONY_BLEND);
+                return;
+            }
+            PunchOnFace((beat / 2) % 2 == 0 ? wrestlerA : wrestlerB);
+        }
+
+        /// "HAKKEYOI!" — the gyoji's call to begin, shown when the ceremony count
+        /// hits zero and the fighters are released to walk. The fight itself has
+        /// not started yet, so this is deliberately NOT "FIGHT!": that banner still
+        /// belongs to the moment they meet and the fight brains take the bodies
+        /// (see FlashFight), which is several seconds later.
+        private void FlashHakkeyoi()
+        {
+            if (_hud == null || _countdown == null) return;
+            // Same size as "FIGHT!" and for the same reason — a word at the digit's
+            // 112pt runs past the edge of a 720pt-wide panel.
+            _countdown.style.fontSize = Systems_UiKit.FONT_HERO;
+            _countdown.text = "HAKKEYOI!";
+            _hud.ShowCentre(_countdown);
+            _countdown.schedule.Execute(HideCountdown).StartingIn(900);
         }
 
         private void HideCountdown()
@@ -1307,11 +1465,11 @@ namespace PoSumo
                     _phaseLeft -= Time.fixedDeltaTime;
                     if (_phaseLeft <= 0f)
                     {
-                        // Only the round that opens the match walks in.
+                        // Only the round that opens the match gets the ceremony.
                         if (enableWalkIn && !_walkInPlayed && WalkBrainsReady())
                         {
-                            _phase = Phase.WalkIn;
-                            BeginWalkInPhase();
+                            _phase = Phase.Intro;
+                            BeginIntroPhase();
                             return;
                         }
                         _phase = Phase.Fighting;
@@ -1321,6 +1479,14 @@ namespace PoSumo
                         StartCountdown();
                         RoundStarted?.Invoke();
                     }
+                    return;
+
+                case Phase.Intro:
+                    // Ceremony countdown over two frozen fighters on the far marks.
+                    // No clock, no scoring, no physics — the fighters are held by
+                    // PoseNeutral and TickIntroCountdown hands them to the walk-in
+                    // at zero.
+                    TickIntroCountdown();
                     return;
 
                 case Phase.WalkIn:
@@ -1370,23 +1536,31 @@ namespace PoSumo
                                          $"B={(_walkInColsB == null ? -1 : _walkInColsB.Length)}, " +
                                          $"Ax={wrestlerA.TorsoX:F2} Bx={wrestlerB.TorsoX:F2} " +
                                          $"startGapHalf={walkInStartGapHalf:F1} — " +
-                                         "parking at the stand-off and opening with the countdown instead");
+                                         "parking at the stand-off and starting the fight anyway");
                         // They never made contact. Put them on the stand-off marks
-                        // and open the round the pre-walk-in way, countdown and all,
-                        // so a failed approach degrades to a normal round start
-                        // instead of stranding the match in this phase.
+                        // and open the round ON THE SPOT — no second countdown. The
+                        // ceremony count has already played, so re-running it would
+                        // count the same round in twice; and a policy that cannot
+                        // close 3 m of empty mat is a training problem, not
+                        // something the referee should paper over with more dead air.
                         HoldUpright();
                         EndWalkInPhase();
                         ContractMat();
-                        // Drop the wide ceremony shot so the camera settles onto
-                        // the pair before the countdown punches in on their heads.
+                        // Drop the wide ceremony shot so the camera settles back
+                        // onto the pair for the fight.
                         if (_camFollow != null) _camFollow.ClearShots();
                         _braceStarted = Time.time;
                         _phase = Phase.Fighting;
                         _elapsed = 0f;
                         _downA = _downB = 0f;
                         _gibbedA = _gibbedB = false;
-                        StartCountdown();
+                        // HoldUpright froze them; BeginSimulation is what puts the
+                        // physics and the fight brains back, exactly as the contact
+                        // path does. Zeroed so the Fighting branch does not fall
+                        // into TickCountdown on the next step.
+                        _countdownLeft = 0f;
+                        BeginSimulation();
+                        FlashFight();
                         RoundStarted?.Invoke();
                     }
                     return;

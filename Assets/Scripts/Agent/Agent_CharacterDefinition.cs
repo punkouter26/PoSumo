@@ -89,12 +89,14 @@ namespace PoSumo
         [Tooltip("Reward per m/s of forward speed toward the target, gated by stance.")]
         public float walkForwardReward = 0.004f;
         [Range(0f, 1f)]
-        [Tooltip("Fraction of the forward reward earned with straight legs; deep stance earns 100%. Low = must crouch to be paid.")]
+        [Tooltip("Fraction of the forward reward earned while CRAWLING; walking at full standing height earns 100%. Low = must stand up to be paid. NOTE this gate was on knee bend until 2026-08-08 and meant the opposite — it paid for a deep crouch, which is exactly what produced the crawl. See Reward_WalkObjective.Evaluate.")]
         public float walkStanceFloor = 0.15f;
         [Tooltip("Per-step reward for knee bend while walking.")]
         public float walkBendReward = 0.0006f;
-        [Tooltip("Per-step reward for an upright chest while walking.")]
+        [Tooltip("Per-step reward for an upright chest while walking. This is chest ORIENTATION only — a deep crouch with a vertical chest scores a full 1.0 here, which is why it cannot stop a crawl on its own. Use walkHeightReward for that.")]
         public float walkUprightReward = 0.001f;
+        [Tooltip("Per-step reward for carrying the torso at standing height (0.95 m above the mat) rather than crouched (0.65 m). THIS is the anti-crawl term: walkUprightReward measures which way the chest points, this measures how far off the mat it is. 0 disables it and restores the pre-2026-08-07 gait.")]
+        public float walkHeightReward = 0f;
         [Tooltip("Bonus per alternating-foot step. High = dances, low = drives.")]
         public float walkCadenceReward = 0.002f;
         [Tooltip("Per-step cost of motor effort while walking.")]

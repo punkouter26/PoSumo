@@ -51,9 +51,10 @@ MonoBehaviour:
   jerkPenalty: 0.00015
   straightLegEarnFraction: 0.75
   walkForwardReward: 0.004
-  walkStanceFloor: 0.15
-  walkBendReward: 0.0006
+  walkStanceFloor: 0.25
+  walkBendReward: 0.0002
   walkUprightReward: 0.001
+  walkHeightReward: 0.0015
   walkCadenceReward: 0.002
   walkEnergyPenalty: 0.0003
-  walkStallPenalty: 0.0008
+  walkStallPenalty: 0.0025

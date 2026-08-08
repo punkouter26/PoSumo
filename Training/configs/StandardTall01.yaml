@@ -1,0 +1,100 @@
+# Standard WALK-TALL 01 — created 2026-08-07. COLD retrain, no warm start.
+#
+# WHY THIS RUN EXISTS
+# The walk school paid for a crouch and got one. Forward speed was multiplied by
+# walkGate = walkStanceFloor + (1-walkStanceFloor)*KneeBend with a floor of 0.15,
+# so straight legs earned 15% of the forward reward and a deep crouch earned
+# 100%; walkBendReward paid for bend again on top. walkUprightReward existed but
+# could not counter it, because Upright is the chest's ORIENTATION — a body
+# folded into a crouch with a vertical chest scores a perfect 1.0. Measured at
+# 1.4 m/s the old shaping paid 0.0072/step crouched against 0.0018/step tall, so
+# the fighters crawled to the middle during the ceremonial walk-in. Correct
+# behaviour for the reward that was written; the reward was wrong.
+#
+# Reward_WalkObjective gains walkHeightReward, which measures torso height above
+# ArenaGroundY (0.65 m crouch -> 0.95 m standing). Character sheets now carry
+# height 0.003 / stanceFloor 0.6 / bend 0 / upright 0.0015. New economics at the
+# same speed: 0.0082 tall against 0.0071 crouched.
+#
+# The SUMO school is deliberately untouched — its hips-low and stance terms are
+# correct for sumo, which is a crouched sport. Only the walk lane stands up.
+#
+# WHY COLD, and why the LR is not reduced
+# staminaObservation is switched ON in this run (CLAUDE.md had it pending since
+# the 2026-08-05 fatigue model: the body fatigues whether or not the policy can
+# perceive it, so it could not learn to pace itself). That takes the vector
+# 45 -> 46, which changes the input layer, so no *_fatigue01 checkpoint can be
+# loaded and --initialize-from is not available. This is a from-scratch trunk at
+# the full 0.0003, not a corrective pass.
+#
+# BUDGET, stated honestly: max_steps 6M against the 12-45M the shipped trunks
+# took. This run is time-boxed to roughly two hours as one of four sequential
+# retrains inside a 9 hour window. Expect a competent walk — the walk lane
+# graduates in ~1500 steps an episode and learns fast — and an IMMATURE fight
+# policy. Do not deploy on the strength of the gait alone.
+#
+# num_envs 6, base port recorded at launch. The shipped brains were trained at
+# 3; ML-Agents batches experience differently per env count, so this is a
+# different run and not merely a faster one.
+#
+# ACCEPTANCE: judge the fight on the SHAPE of the self-play ELO curve, never on
+# mean reward, and judge the walk by watching the walk-in. If the gait stands up
+# but ELO slides against Standard.onnx as shipped, the walk shaping has bled into the
+# fight through the shared trunk — back off walkStanceFloor first, not the
+# height term. The shipped .onnx is git-tracked, so a bad deploy reverts with
+# git checkout.
+
+behaviors:
+  Standard:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 0.0003
+      beta: 0.005
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:
+      normalize: true
+      hidden_units: 512
+      num_layers: 3
+      vis_encode_type: simple
+    reward_signals:
+      extrinsic:
+        gamma: 0.997
+        strength: 1.0
+    keep_checkpoints: 20
+    checkpoint_interval: 100000
+    max_steps: 6000000
+    time_horizon: 1000
+    summary_freq: 30000
+    threaded: true
+    self_play:
+      window: 25
+      play_against_latest_model_ratio: 0.25
+      save_steps: 50000
+      swap_steps: 50000
+      team_change: 250000
+environment_parameters:
+  platform_difficulty:
+    curriculum:
+    - name: wide
+      completion_criteria:
+        measure: progress
+        behavior: Standard
+        signal_smoothing: true
+        min_lesson_length: 100
+        threshold: 0.3
+      value: 0.0
+    - name: mixed
+      completion_criteria:
+        measure: progress
+        behavior: Standard
+        signal_smoothing: true
+        min_lesson_length: 100
+        threshold: 0.6
+      value: 0.5
+    - name: full
+      value: 1.0
