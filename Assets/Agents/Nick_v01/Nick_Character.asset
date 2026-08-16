@@ -31,7 +31,7 @@ MonoBehaviour:
   extendedObservations: 1
   decisionPeriod: 3
   contactObservations: 0
-  staminaObservation: 0
+  staminaObservation: 1
   inferenceModel: {fileID: 5022602860645237092, guid: 1f15b9a7469d7cc4daafd2020713ebc9, type: 3}
   useBot: 0
   uprightReward: 0.0008

@@ -1,0 +1,104 @@
+# Standard STAMINA 01 Aaa created 2026-08-15. COLD retrain, no warm start.
+#
+# WHY THIS RUN EXISTS
+# `staminaObservation` is now ON in every *_Character.asset. The body has
+# fatigued since 2026-08-05 (Xia two-state muscle model, 35% depth) but the
+# policy could not PERCEIVE it: a fighter got quietly weaker through a round
+# with no way to learn to pace itself, or to time a push against a tiring
+# opponent. CLAUDE.md has listed this as "turn on for the next run" ever since.
+#
+# WHY COLD, and why that is not optional
+# The flag takes the observation vector 45 -> 46. That changes the input layer
+# SHAPE, so no existing checkpoint can warm-start it and `--initialize-from`
+# will fail outright. Same wall the 44 -> 45 task-flag change hit, and the same
+# one that forced *_tall01 to be cold. Hence learning_rate back to 3e-4 and
+# learning_rate back to 3e-4: a reduced LR is for nudging a trunk, and there
+# is no trunk here. See the 3M gate note below for why max_steps is not 15M.
+#
+# TWO REFEREE RULES ARE NEW TO TRAINING IN THIS RUN (2026-08-15). Both were
+# game-only until now, so no previous brain has ever seen either:
+#   * downOutSeconds 3 Aaa lying down for 3 s forfeits the round, with a tiebreak
+#     against whoever went down first. Measured play had 57% of rounds decided
+#     by exactly this rule against 29% ring-outs, so every prior policy was
+#     optimising against a referee it never actually meets.
+#   * the low-friction tawara band at the rim, 1.2 m at friction 0.18, which
+#     turns "almost out" into "out".
+# Systems_SumoMatchManager's stale code defaults were corrected in the same
+# pass (ring 5.5 -> 3.5, timeout 30 -> 20, spawn gap 1.2 -> 2.5) to match
+# GameTuning.asset. Envs MUST be rebuilt or none of this is in the run.
+#
+# WALK SHAPING IS UNCHANGED from StandardTall04, deliberately. Four runs failed to
+# raise the gait and the reason is arithmetic, not tuning: a fall in Mode.Walk
+# costs about -4 against a tall-vs-crawl per-step advantage of 0.0063, so
+# crouching is correct play until the fall PENALTY changes. Do not spend this
+# run re-litigating it. The height gate and the small additive term stay
+# because they cost nothing and are the right shape.
+#
+# THIS IS A 3M GATE RUN, NOT THE FULL RETRAIN. max_steps is 3000000 so the run
+# ENDS on its own in roughly an hour per fighter, before committing a machine
+# overnight. The full cold budget for this problem is 15M Aaa the *_unified0N
+# runs that established these bodies all used it.
+#
+# AT 3M, JUDGE "IS IT LEARNING", NOT "IS IT GOOD". A cold policy 20% of the way
+# through its budget is undertrained by construction, and rejecting it for
+# playing badly would be rejecting it for being young. The three things that
+# actually mean something this early:
+#   1. ELO SLOPE is positive. Not the level Aaa a new run-id restarts self-play
+#      ELO at 1200, so it cannot be compared with tall04's number at all.
+#      A monotonic climb is healthy; a sustained slide is a real regression.
+#   2. Stamina VARIES over a round. Check the per-fighter stamina scalar on
+#      TensorBoard (Systems_Telemetry writes it into StatsRecorder). Flat means
+#      the 46th observation is not reaching the policy and the whole point of
+#      this run is missing Aaa stop and fix rather than training on.
+#   3. Mean reward carries real VARIANCE. Pinned just under a terminal bonus
+#      with near-zero variance is the walk-lane facingSign failure signature
+#      (CLAUDE.md), not convergence.
+#
+# TO GO LONG after the gate passes: set max_steps to 15000000 here and relaunch
+# with --resume (never --force, which deletes the run). The linear LR schedule
+# is computed as (1 - step/max_steps), so raising max_steps steps the learning
+# rate back UP at the resume point Aaa from ~0 at the end of the 3M schedule to
+# ~2.4e-4. That is expected and is the normal way to extend a run; it is only a
+# problem if you forget it happened and read the jump as instability.
+#
+# ONLY THEN, before deploying: ring-out share must rise from the measured 29%
+# (read the `[MATCH] ROUND OUTCOMES:` lines in a played bracket, do not invent a
+# new metric Aaa this is the number downOutSeconds-in-training exists to move),
+# and a head-to-head against the shipped brain via MatchTestHarness.Run(10).
+# Nothing about a raw ELO number licenses overwriting a .onnx.
+#
+# Envs are rebuilt from SCN_TRAIN_STANDARD -> Builds/StandardEnv.
+
+behaviors:
+  Standard:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 0.0003
+      beta: 0.005
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:
+      normalize: true
+      hidden_units: 512
+      num_layers: 3
+      vis_encode_type: simple
+    reward_signals:
+      extrinsic:
+        gamma: 0.997
+        strength: 1.0
+    keep_checkpoints: 20
+    checkpoint_interval: 100000
+    max_steps: 9000000
+    time_horizon: 1000
+    summary_freq: 20000
+    threaded: true
+    self_play:
+      window: 25
+      play_against_latest_model_ratio: 0.25
+      save_steps: 50000
+      swap_steps: 50000
+      team_change: 250000

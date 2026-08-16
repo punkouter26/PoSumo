@@ -3,11 +3,22 @@ using UnityEngine;
 
 namespace PoSumo
 {
-    /// Training referee for the sumo env. Mirrors the deployed game's rules
-    /// exactly: falling down is NOT a loss — a wrestler loses only after
-    /// physically dropping off the dohyo (torso below fallY). Each round can
-    /// randomize the starting platform width and surface friction so policies
-    /// train across the whole endgame space. Timeout is a draw.
+    /// Training referee for the sumo env. Mirrors the deployed game's rules:
+    /// falling down is NOT an instant loss — a wrestler loses by dropping off the
+    /// dohyo (a foot below footOffMatY, or the torso below fallY as a backstop),
+    /// or by lying down past downOutSeconds. Each round can randomize the
+    /// starting platform width and surface friction so policies train across the
+    /// whole endgame space. Timeout is a draw.
+    ///
+    /// Every number here that also exists in Assets/Settings/GameTuning.asset
+    /// must equal the value in that asset. This component does NOT read it —
+    /// each training scene carries its own serialized copy — so the code default
+    /// is what a NEW scene inherits, and it is the thing that goes stale
+    /// silently. It had: ring 5.5 vs a shipped 3.5, timeout 30 vs 20, spawn gap
+    /// 1.2 vs 2.5. Corrected 2026-08-15.
+    ///
+    /// The one shipped rule not reproduced here is the head-KO count; see the
+    /// note beside downOutSeconds for why it cannot be.
     public sealed class Systems_SumoMatchManager : MonoBehaviour
     {
         public Agent_Biped wrestlerA;
@@ -18,13 +29,37 @@ namespace PoSumo
         // it is fed to the agent as a normalised edge-distance observation, so
         // training on 2.75 and fighting on 5.5 hands the brain an input
         // distribution it never saw.
-        public float ringHalfWidth = 5.5f;
-        public float roundTimeoutSeconds = 30f;
+        //
+        // 3.5 is the SHIPPED value in Assets/Settings/GameTuning.asset. This
+        // default said 5.5 long after the four SCN_TRAIN_* scenes had been moved
+        // to 3.5, so the code and the scenes disagreed by a whole 2 m of mat and
+        // only the scenes were ever right. Anyone adding a fifth training scene
+        // inherited the wrong arena silently. Keep this equal to GameTuning.
+        public float ringHalfWidth = 3.5f;
+        // 20 s, matching GameTuning.roundTimeoutSeconds. The code default here
+        // was 30 while every training scene serialised 20 — same drift as above.
+        public float roundTimeoutSeconds = 20f;
         [Tooltip("Legacy rule: any non-foot ground contact loses. Off for game parity.")]
         public bool knockdownLoses = false;
         public float fallY = -0.2f;
         [Tooltip("Game parity: a foot dropping below this height loses the bout (stepping out). Must match Systems_GameMatchManager.footOffMatY.")]
         public float footOffMatY = -0.06f;
+
+        [Header("Game parity rules")]
+        [Tooltip("Seconds a fighter may lie down before the round is awarded to the opponent. 0 disables it. Must match GameTuning.downOutSeconds.\n\nPorted from Systems_GameMatchManager on 2026-08-15. It had been game-only, so no brain had ever learned that staying down is fatal — and measured play had 57% of rounds decided by exactly this rule. A policy trained without it is optimising for a referee it will never meet.")]
+        public float downOutSeconds = 3f;
+        [Tooltip("Width in metres of the slick band at each rim. Must match GameTuning.tawaraBandWidth. Applied to the arena in Start, so a stale serialized value on Systems_SumoArena is overwritten at runtime exactly like ringHalfWidth is.")]
+        public float tawaraBandWidth = 1.2f;
+        [Tooltip("Friction inside the tawara band. Must match GameTuning.tawaraFriction.")]
+        public float tawaraFriction = 0.18f;
+
+        // NOT PORTED: knockoutsToLoseMatch. The head-KO rule reads
+        // Systems_BodyDamage.Knockout, and Systems_BodyDamage is a presentation
+        // companion that only Systems_GameMatchManager spawns — a training env
+        // has no damage model at all, so there is no event to listen for. Adding
+        // one is not a referee change: it would put dismemberment and its mass
+        // changes into the training physics, which invalidates every brain for a
+        // rule that fires once or twice a match. Left game-only, deliberately.
 
         [Header("Domain randomization")]
         public bool randomizeRounds = true;
@@ -33,20 +68,22 @@ namespace PoSumo
         // wider than that — and the game ring is now 5.5. Edge distance reaches the
         // policy normalised by ringHalfWidth, so a brain that only ever saw the
         // narrow end reads the wide ring as a feature range it was never trained
-        // on. Spanning 1.7 to 5.5 teaches edge distance across scales instead of
-        // memorising one mat.
-        public Vector2 startHalfRange = new Vector2(1.7f, 5.5f);
+        // on. The upper bound must therefore track ringHalfWidth — it said 5.5
+        // while the scenes said 3.5, so this default randomised across half a
+        // metre of mat per side that the game does not have.
+        public Vector2 startHalfRange = new Vector2(1.7f, 3.5f);
         public Vector2 frictionRange = new Vector2(0.5f, 1.1f);
 
         [Header("Curriculum dials (overridden by trainer environment_parameters)")]
-        [Tooltip("Half the spawn gap between wrestlers. Lessons start close (0.9) and widen to 1.2.")]
-        public float spawnGapHalf = 1.2f;
+        [Tooltip("Half the spawn gap between wrestlers. 2.5 is the stand-off the four training scenes serialize and the value the 3.5 ring was tuned around; this default said 1.2, from the old 5.5-metre arena.")]
+        public float spawnGapHalf = 2.5f;
         [Tooltip("Random mid-round perturbation shove impulse (N·s). Lessons start heavy (45) and fade to 0.")]
         public float shoveImpulse = 0f;
         [Tooltip("0 = always full stable platform, 1 = full width/friction randomization.")]
         public float platformDifficulty = 1f;
 
         private float _elapsed;
+        private float _downA, _downB;
         private float _startHalf;
         private float _nextShoveTime;
         private Agent_BipedBody _bodyA, _bodyB;
@@ -62,6 +99,17 @@ namespace PoSumo
                 }
             }
             if (arena == null) arena = FindAnyObjectByType<Systems_SumoArena>();
+            // Before ResetRound below, which reaches SetPlatformHalfWidth ->
+            // EnsureTawaraBands: the band is rebuilt from these two numbers, so
+            // writing them afterwards would leave the first round on whatever the
+            // scene happened to serialize (0.7 on both sumo arenas, against the
+            // game's 1.2). The slick rim is what turns "almost out" into "out",
+            // so a brain trained without it has never felt the edge give way.
+            if (arena != null)
+            {
+                arena.tawaraBandWidth = tawaraBandWidth;
+                arena.tawaraFriction = tawaraFriction;
+            }
             wrestlerA.opponent = wrestlerB;
             wrestlerB.opponent = wrestlerA;
             wrestlerA.ringHalfWidth = ringHalfWidth;
@@ -97,14 +145,36 @@ namespace PoSumo
                 _nextShoveTime = _elapsed + Random.Range(3f, 7f);
             }
 
-            bool aOut = Loses(wrestlerA);
-            bool bOut = Loses(wrestlerB);
+            // Down-out, mirroring Systems_GameMatchManager. IsDown is any
+            // non-foot ground contact, so this is a lying-down timer, not a
+            // stumble timer — it only runs while the fighter is actually on the
+            // mat and it resets the instant a knee or an elbow comes off it.
+            if (downOutSeconds > 0f)
+            {
+                _downA = wrestlerA.IsDown ? _downA + Time.fixedDeltaTime : 0f;
+                _downB = wrestlerB.IsDown ? _downB + Time.fixedDeltaTime : 0f;
+            }
+            bool aDownOut = downOutSeconds > 0f && _downA >= downOutSeconds;
+            bool bDownOut = downOutSeconds > 0f && _downB >= downOutSeconds;
+
+            bool aOut = Loses(wrestlerA) || aDownOut;
+            bool bOut = Loses(wrestlerB) || bDownOut;
 
             if (aOut || bOut)
             {
                 if (aOut && !bOut) EndRound(winner: wrestlerB, loser: wrestlerA);
                 else if (bOut && !aOut) EndRound(winner: wrestlerA, loser: wrestlerB);
-                else Draw(); // simultaneous — call it a draw
+                // Both down past the count: the one who went down FIRST has the
+                // larger timer and loses. Same tiebreak the game referee uses —
+                // without it a mutual pile-up is a draw and neither policy learns
+                // that getting up sooner wins.
+                else if (aDownOut && bDownOut && !Mathf.Approximately(_downA, _downB))
+                {
+                    bool aLoses = _downA > _downB;
+                    EndRound(winner: aLoses ? wrestlerB : wrestlerA,
+                             loser: aLoses ? wrestlerA : wrestlerB);
+                }
+                else Draw(); // genuinely simultaneous — call it a draw
             }
             else if (_elapsed >= roundTimeoutSeconds)
             {
@@ -150,6 +220,7 @@ namespace PoSumo
         private void ResetRound()
         {
             _elapsed = 0f;
+            _downA = _downB = 0f;
             _nextShoveTime = Random.Range(2f, 5f);
 
             // Curriculum lessons override the dials each round.

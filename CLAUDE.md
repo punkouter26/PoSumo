@@ -24,9 +24,13 @@ round expire on the clock and be settled on position — no ring-out at all. The
 `Systems_SumoMatchManager` does **not** read `GameTuning` — it carries its own copy of the
 ring, spawn gap and timeout in every training scene, so a change here must be written into
 those scenes too or the brains train on an arena the game does not have. Its **code
-defaults were never updated** and still read 5.5 / `startHalfRange (1.7, 5.5)` /
-`spawnGapHalf 1.2`; the four training scenes serialize 4 / `(1.7, 4)` / 2.5.
-Grep the `.unity` files, not the `.cs`, to learn what an env actually trains against.
+defaults were finally corrected on 2026-08-15** and now read 3.5 / `startHalfRange
+(1.7, 3.5)` / `spawnGapHalf 2.5` / `roundTimeoutSeconds 20`, matching both
+`GameTuning.asset` and what the four training scenes serialize. They had read
+5.5 / `(1.7, 5.5)` / 1.2 / 30 — the code and the scenes disagreed by 2 m of mat for
+months, and only a new scene would ever have been bitten by it.
+Grep the `.unity` files, not the `.cs`, to learn what an existing env trains against;
+the `.cs` is what a NEW scene inherits, so both have to be right.
 
 > **That warning fired for real on 2026-08-07, and the fix is the template for next time.**
 > `GameTuning.asset` held `ringHalfWidth: 3.5` (a **7 m** mat) while all four training
@@ -79,7 +83,7 @@ re-run training locally to recreate that directory.
 
 | Layer | Tool | Version | Notes |
 |---|---|---|---|
-| Engine | Unity Editor | **6000.5.6f1** (Unity 6.2) | changeset 0e0577a1a2ac. Was 6000.5.4f1 (d550df8bd089) — see the drift note below |
+| Engine | Unity Editor | **6000.5.8f1** (Unity 6.2) | changeset 5cb7df797b7d. Drifted 6000.5.4f1 → 6000.5.6f1 → 6000.5.8f1, each time WITHOUT this table moving. Re-read `ProjectSettings/ProjectVersion.txt`; it is authoritative and this row is not |
 | Engine | Unity Hub | 3.x | headless CLI broken — install modules via UI |
 | Package | com.unity.ml-agents | **4.1.0** | LOCAL `file:` package with patches. Upgraded from 4.0.0 (release_23) on 2026-08-06 — re-fetching is now a documented procedure, not a prohibition, but it still LOSES the patches below |
 | Package | com.unity.ai.inference | 2.6.1 | auto-dependency of ML-Agents (`Unity.InferenceEngine.ModelAsset`). Was 2.2.1 |
@@ -97,7 +101,7 @@ re-run training locally to recreate that directory.
 | Python | numpy | 1.23.5 | pinned by mlagents |
 | Python | onnx | 1.15.0 | |
 | Python | tensorboard | 2.20.0 | always run during training |
-| Android | Build Support module | 6000.5.6f1 | must match the editor version |
+| Android | Build Support module | 6000.5.8f1 | must match the editor version — so it moves every time the row above does. Verified 2026-08-15: only `6000.5.8f1` is installed under `C:/Program Files/Unity/Hub/Editor/`, so an Android build will use a matching module |
 | Android | OpenJDK | 17.0.18+8 | embedded in AndroidPlayer |
 | Android | NDK | r27c | |
 | Android | SDK build-tools | 36.0.0 | |
@@ -509,15 +513,31 @@ Falling is **not** a loss in either referee (`knockdownLoses` is off). If you ch
 losing condition, change it in **both** — they have silently diverged before, and
 policies then never learn that a stray foot over the edge is fatal.
 
-**Three game-only rules exist that the brains never train against**, and that asymmetry is
-deliberate — they are spectacle layered on the sumo rules, not sumo rules:
-`downOutSeconds` (3 s lying down forfeits the round — `IsDown` can latch permanently once
-a leg is under the body, and measured play had half of every round be two motionless
-ragdolls waiting out the clock), `knockoutsToLoseMatch` (head KOs lose the match
-outright, via `Systems_BodyDamage.Knockout` — **2** in `GameTuning.asset`, which is what
-runs; this line said 3, which is only the code fallback), and the low-friction `tawara` band at the
-rim (`tawaraBandWidth` / `tawaraFriction`) that turns "almost out" into "out".
-`Systems_SumoMatchManager` has no equivalent of any of them.
+Three rules used to be game-only. **Two of them were ported into the training referee on
+2026-08-15 and one cannot be**, so the asymmetry is now down to a single rule:
+
+- **`downOutSeconds`** (3 s lying down forfeits the round — `IsDown` can latch permanently
+  once a leg is under the body, and measured play had half of every round be two motionless
+  ragdolls waiting out the clock). **Now in both referees**, tiebreak included: both down
+  past the count awards it against whoever went down first. It had to move — measured play
+  had **57%** of rounds decided by this rule against 29% ring-outs, so a policy trained
+  without it was optimising against a referee it never meets.
+- **The low-friction `tawara` band** at the rim (`tawaraBandWidth` / `tawaraFriction`) that
+  turns "almost out" into "out". **Now in both.** `Systems_SumoMatchManager` writes both
+  values onto `Systems_SumoArena` in `Start`, *before* the first `ResetRound`, because the
+  band is rebuilt inside `SetPlatformHalfWidth` → `EnsureTawaraBands`. The training scenes
+  serialize 0.7 on the arena against the game's 1.2; the referee now overwrites it at
+  runtime, exactly as it already did for `ringHalfWidth`.
+- **`knockoutsToLoseMatch`** (head KOs lose the match outright, via
+  `Systems_BodyDamage.Knockout` — **2** in `GameTuning.asset`, which is what runs; this
+  line said 3, which is only the code fallback). **Still game-only, and deliberately so.**
+  `Systems_BodyDamage` is a presentation companion that only `Systems_GameMatchManager`
+  spawns, so a training env has no damage model and no event to subscribe to. Adding one
+  is not a referee change — it puts dismemberment and its mass changes into the training
+  physics, invalidating every brain, for a rule that fires once or twice a match.
+
+None of this is retroactive: **every currently shipped brain was trained before the port**
+and has never seen either rule. They take effect on the next training run.
 
 Shared numbers live in `Assets/Settings/GameTuning.asset` (`Systems_GameTuning`); scene
 components copy from it in `Start`, so tune the asset, not serialized scene values — the
@@ -1072,10 +1092,26 @@ generator does nothing until the menu item is re-run, and nothing in the game wa
   no-op. `NormalizeVoice` rebases so max gain is exactly 1.0; the asset had never been
   regenerated after that fix.
 
-Audio content is uneven and this is not a bug: only **Matt and Nick have voice clips**, and
-only **Kim, Matt and Nick have face art** — Standard has neither. `Systems_FighterVoice` and
-`Systems_FaceMood` both disable themselves rather than warn, so a silent, faceless fighter
-looks intentional. The bracket seeds all four twice.
+Audio content is uneven and this is not a bug. **Matt and Nick have all three voice sets**
+(Happy / Sad / Insult, 5 levels each); **Kim has Happy only** as of 2026-08-15, so she
+cheers a win and is silent when losing or taunting; **Standard has none**. Only
+**Kim, Matt and Nick have face art** — Standard has neither art nor voice.
+`Systems_FighterVoice` and `Systems_FaceMood` both disable themselves rather than warn, so
+a silent, faceless fighter looks intentional. The bracket seeds all four twice.
+
+**A missing set and an incomplete set behave differently, and only one of them is quiet.**
+`LoadSet` returns null when it finds *zero* clips — no log line, which is why Standard and
+Kim's Sad/Insult are silent rather than noisy. Find 1-4 of 5 and it `Debug.LogWarning`s on
+every match. So a partially-delivered set is worse than none: fill all five levels or
+leave the set empty, never in between. Naming is exact —
+`Resources/Audio/Voice/<Behavior>_<Happy|Sad|Insult>_<1-5>.wav`, where the behavior name
+is the one on the character asset. There is no second accepted spelling any more.
+
+Level 1 is the mildest read and **level 5 fires on the match win**, so order a set by
+intensity, not by whatever the source files were called. Clip LENGTH matters at level 5
+specifically: `_nextAllowedTime` is `clip.length * 0.6`, so a long line mutes that fighter
+for a proportional stretch afterwards — free on a match win, costly anywhere else. Kim's
+level 5 is 7.96 s for exactly this reason.
 
 `SCN_TOURNAMENT` has **no AudioListener in the scene** — the game boots into it (build index
 0), so `Systems_TournamentBracket.EnsureAudioListener()` adds one in `Start`. It is
