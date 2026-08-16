@@ -77,6 +77,7 @@ namespace PoSumo
         private bool enableVoice = true, enableLighting = true, enableImpactFx = true;
         private bool enableAtmosphere = true, enableMusic = true;
         private bool enableBodyDamage = true;
+        private bool enableStrikeImpulse = true;
         [Tooltip("Round-opening countdown length; physics and brains are held until it finishes.")]
         public int countdownSeconds = 3;
         [Tooltip("Camera ortho when the countdown punches in on a fighter's head.")]
@@ -358,6 +359,7 @@ namespace PoSumo
                 enableAtmosphere = tuning.enableAtmosphere;
                 enableMusic = tuning.enableMusic;
                 enableBodyDamage = tuning.enableBodyDamage;
+                enableStrikeImpulse = tuning.enableStrikeImpulse;
             }
 
             // NOT ANDed with Systems_ArenaLighting.LightingEffects, and that is
@@ -828,6 +830,7 @@ namespace PoSumo
                 SpawnVoice(wrestlerB, mirrorMatch ? mirrorPitchScale : 1f);
             }
             SpawnCompanion<Systems_ImpactFx>(enableImpactFx, "ImpactFx");
+            SpawnCompanion<Systems_StrikeImpulse>(enableStrikeImpulse, "StrikeImpulse");
             SpawnCompanion<Systems_ArenaLighting>(enableLighting, "ArenaLighting");
             SpawnCompanion<Systems_CareerRecorder>(recordCareerStats, "CareerRecorder");
             SpawnCompanion<Systems_ArenaAtmosphere>(enableAtmosphere, "Atmosphere");

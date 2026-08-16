@@ -47,7 +47,17 @@ namespace PoSumo
 
         [Header("Game parity rules")]
         [Tooltip("Seconds a fighter may lie down before the round is awarded to the opponent. 0 disables it. Must match GameTuning.downOutSeconds.\n\nPorted from Systems_GameMatchManager on 2026-08-15. It had been game-only, so no brain had ever learned that staying down is fatal — and measured play had 57% of rounds decided by exactly this rule. A policy trained without it is optimising for a referee it will never meet.")]
-        public float downOutSeconds = 3f;
+        // 0 since 2026-08-16, to follow GameTuning.downOutSeconds back to 0. The
+        // rule was removed from the game because the SHRINKING MAT below now does
+        // its job better: a fighter who stays down is squeezed off the edge and
+        // loses a ring-out, which is how sumo ends, instead of being retired by a
+        // count that reads on screen as the game giving up. Measured play after the
+        // change was 4 rounds, 4 ring-outs, no stalls and no draws.
+        //
+        // Do NOT raise this without also removing the shrink, and do not remove the
+        // shrink without restoring this. Either alone brings back the stall the
+        // count was written for: two motionless bodies on a mat that never closes.
+        public float downOutSeconds = 0f;
         [Tooltip("Width in metres of the slick band at each rim. Must match GameTuning.tawaraBandWidth. Applied to the arena in Start, so a stale serialized value on Systems_SumoArena is overwritten at runtime exactly like ringHalfWidth is.")]
         public float tawaraBandWidth = 1.2f;
         [Tooltip("Friction inside the tawara band. Must match GameTuning.tawaraFriction.")]
@@ -82,9 +92,15 @@ namespace PoSumo
         [Tooltip("0 = always full stable platform, 1 = full width/friction randomization.")]
         public float platformDifficulty = 1f;
 
+        [Tooltip("Seconds into the round before the mat starts closing in. 0 disables the shrink. Must match GameTuning.shrinkStartSeconds.\n\nDeliberately late: the opening exchange should be fought on a full mat, and starting the squeeze at t=0 would make every round a scramble for the middle.")]
+        public float shrinkStartSeconds = 8f;
+        [Tooltip("Half-width the mat closes to by the bell, at the default ring size. Must match GameTuning.shrinkToHalfWidth.\n\nScaled by the round's randomized start width, so a domain-randomized small ring shrinks by the same PROPORTION rather than to the same absolute number — which would mean no shrink at all on an already-narrow round.")]
+        public float shrinkToHalfWidth = 1.8f;
+
         private float _elapsed;
         private float _downA, _downB;
         private float _startHalf;
+        private float _appliedHalf;
         private float _nextShoveTime;
         private Agent_BipedBody _bodyA, _bodyB;
 
@@ -110,6 +126,15 @@ namespace PoSumo
                 arena.tawaraBandWidth = tawaraBandWidth;
                 arena.tawaraFriction = tawaraFriction;
             }
+            // Strikes launch in training too, so a policy meets the same physics it
+            // will fight under. Sensor_Impact.AnyImpact is a STATIC event, so one
+            // instance serves every body in the scene — and a training scene holds
+            // several referees, hence the scene-wide check rather than one each.
+            if (FindAnyObjectByType<Systems_StrikeImpulse>() == null)
+            {
+                new GameObject("StrikeImpulse").AddComponent<Systems_StrikeImpulse>();
+            }
+
             wrestlerA.opponent = wrestlerB;
             wrestlerB.opponent = wrestlerA;
             wrestlerA.ringHalfWidth = ringHalfWidth;
@@ -157,6 +182,8 @@ namespace PoSumo
             bool aDownOut = downOutSeconds > 0f && _downA >= downOutSeconds;
             bool bDownOut = downOutSeconds > 0f && _downB >= downOutSeconds;
 
+            TickShrinkingRing();
+
             bool aOut = Loses(wrestlerA) || aDownOut;
             bool bOut = Loses(wrestlerB) || bDownOut;
 
@@ -180,6 +207,45 @@ namespace PoSumo
             {
                 Draw();
             }
+        }
+
+        /// Closes the mat in as the round clock runs down, mirroring
+        /// Systems_GameMatchManager.TickShrinkingRing so a policy trains against the
+        /// arena it will actually fight on.
+        ///
+        /// Nothing here detects anything: Loses() is purely vertical (a foot below
+        /// the mat surface) and SetPlatformHalfWidth moves the real platform
+        /// collider, so withdrawing the floor produces an ordinary ring-out through
+        /// the path that already exists. That is why this is a dozen lines and not
+        /// a new losing condition.
+        ///
+        /// The one difference from the game referee is the proportional target: a
+        /// training round randomizes its start width, so shrinking to a FIXED 1.8
+        /// would be a no-op on any round that already started near it.
+        private void TickShrinkingRing()
+        {
+            if (arena == null || shrinkStartSeconds <= 0f) return;
+
+            float span = roundTimeoutSeconds - shrinkStartSeconds;
+            float target = _startHalf;
+            if (span > 0f && _elapsed > shrinkStartSeconds)
+            {
+                float endHalf = ringHalfWidth > 0f
+                    ? shrinkToHalfWidth * (_startHalf / ringHalfWidth)
+                    : shrinkToHalfWidth;
+                float progress = Mathf.Clamp01((_elapsed - shrinkStartSeconds) / span);
+                target = Mathf.Lerp(_startHalf, endHalf, progress);
+            }
+
+            // 1 cm of hysteresis: below that the contraction is invisible and only
+            // costs a collider rebuild, every physics step, on every arena in a
+            // scene that holds several.
+            if (Mathf.Abs(target - _appliedHalf) < 0.01f) return;
+            _appliedHalf = target;
+            arena.SetPlatformHalfWidth(target);
+            // The slick rim travels with the edge, or the bales stay out at the
+            // original radius and the contracted mat has full grip up to a cliff.
+            arena.EnsureTawaraBands(target);
         }
 
         private bool Loses(Agent_Biped w)
@@ -253,6 +319,11 @@ namespace PoSumo
                 if (arena != null) arena.SetSurfaceFriction(0.9f);
             }
             if (arena != null) arena.SetPlatformHalfWidth(_startHalf);
+            // Reset AFTER the width is applied, so the first TickShrinkingRing of
+            // the new round compares against the width the round actually opens on.
+            // Left stale, a round following a fully-shrunk one sees its target as
+            // already applied and the mat never re-opens.
+            _appliedHalf = _startHalf;
         }
     }
 }

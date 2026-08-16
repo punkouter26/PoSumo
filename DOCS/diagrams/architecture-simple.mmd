@@ -1,0 +1,80 @@
+flowchart TB
+    %% PoSumo - Unified Architecture (SIMPLE)
+    %% Conceptual layers
+
+    subgraph Train["Offline: Training (Training/configs)"]
+        direction LR
+        Yaml["PPO YAML config<br/>+ env exe"]:::tr
+        ML["mlagents-learn<br/>self-play PPO"]:::tr
+        PT[checkpoint.pt]:::tr
+        ONNX[BehaviorName.onnx]:::tr
+    end
+
+    subgraph Edit["Editor (Assets/Editor)"]
+        direction LR
+        Menu["PoSumo menu tools<br/>Build Env / Deploy / Harness"]:::ed
+    end
+
+    subgraph Game["Runtime (Assets/Scripts)"]
+        direction TB
+        subgraph Agent["Agent_"]
+            AB["Agent_Biped<br/>13 actions, 45 obs"]:::ag
+            ABB["Agent_BipedBody<br/>14-part ragdoll"]:::ag
+            ACD["Agent_CharacterDefinition<br/>ScriptableObject"]:::ag
+        end
+        subgraph Reward["Reward_"]
+            RS[Reward_SumoObjective]:::rw
+            RW[Reward_WalkObjective]:::rw
+            RC[Reward_Context + Cadence]:::rw
+        end
+        subgraph Sensor["Sensor_"]
+            SBC[Sensor_BodyPartContact]:::sn
+            SI[Sensor_Impact]:::sn
+        end
+        subgraph Systems["Systems_"]
+            SMM["Systems_SumoMatchManager<br/>training referee"]:::sys
+            GMM["Systems_GameMatchManager<br/>game referee"]:::sys
+            BRK[Systems_TournamentBracket]:::sys
+            TR[Systems_TournamentReporter]:::sys
+            TUN["Systems_GameTuning<br/>ScriptableObject"]:::sys
+            ACD_Sys[Systems_MatchRoster]:::sys
+        end
+    end
+
+    subgraph Comp["Assets/Settings"]
+        direction LR
+        GT[GameTuning.asset]:::as
+        IP[InputSystem_Actions]:::as
+        PS[GamePanelSettings]:::as
+        URP[UniversalRP.asset]:::as
+    end
+
+    Yaml --> ML --> PT --> ONNX
+    ONNX --> AB
+    Menu --> ONNX
+    ABB --> AB
+    SBC --> AB
+    SI --> AB
+    AB --> RS
+    AB --> RW
+    RC --> RS
+    RC --> RW
+    AB --> SMM
+    AB --> GMM
+    GMM --> BRK
+    BRK --> TR
+    TR --> GMM
+    TUN --> GMM
+    TUN --> SMM
+    ACD --> AB
+    ACD --> ABB
+    ACD_Sys --> ACD
+    GT --> TUN
+
+    classDef tr fill:#eef6ff,stroke:#3a78c2,color:#0e2a4d
+    classDef ed fill:#fff4e5,stroke:#d9923a,color:#4a2e08
+    classDef ag fill:#e8f7e8,stroke:#3a9a3a,color:#103d10
+    classDef rw fill:#fdeeee,stroke:#c93b3b,color:#4a0e0e
+    classDef sn fill:#fff4e5,stroke:#d9923a,color:#4a2e08
+    classDef sys fill:#fde2f3,stroke:#c43b8d,color:#4a0d2c
+    classDef as fill:#f0f0f0,stroke:#666,color:#222

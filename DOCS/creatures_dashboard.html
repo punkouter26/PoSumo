@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>PoSumo Creatures Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+:root{
+  --bg:#0d1018; --panel:#161a22; --panel2:#1d2230; --line:#2a3142; --text:#e6e9ef; --muted:#9aa3b2;
+  --accent:#6aa3ff; --accent2:#ffb86a; --good:#7ee787; --warn:#ffd66b; --bad:#ff7c7c;
+  --exec:#7ee787; --tech:#6aa3ff;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font:15px/1.55 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+header{padding:24px 32px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#161a22,#0d1018)}
+header h1{margin:0;font-size:26px}
+header p{margin:6px 0 0;color:var(--muted);font-size:14px}
+
+/* view toggle */
+.toolbar{display:flex;gap:0;padding:12px 32px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:10;align-items:center}
+.toolbar .pillgroup{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel2)}
+.toolbar .pillgroup button{appearance:none;background:transparent;border:0;color:var(--muted);padding:8px 16px;cursor:pointer;font-size:13px;font-weight:600;letter-spacing:.3px}
+.toolbar .pillgroup button.active{background:var(--accent);color:#0d1018}
+.toolbar .pillgroup button.active.exec{background:var(--exec)}
+.toolbar .pillgroup button.active.tech{background:var(--tech)}
+.toolbar .spacer{flex:1}
+.toolbar .nav a{color:var(--accent);text-decoration:none;font-size:13px;margin-left:18px}
+.toolbar .nav a:hover{text-decoration:underline}
+
+main{max-width:1400px;margin:0 auto;padding:24px 32px}
+section{margin:32px 0}
+h2{font-size:22px;margin:0 0 6px;border-bottom:1px solid var(--line);padding-bottom:6px}
+h3{font-size:17px;margin:18px 0 8px;color:var(--accent)}
+h4{font-size:14.5px;margin:14px 0 4px;color:var(--accent2);text-transform:uppercase;letter-spacing:.5px}
+
+.grid{display:grid;gap:14px}
+.cols2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.cols3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.cols4{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media (max-width: 1000px){.cols3,.cols4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width: 640px){.cols2,.cols3,.cols4{grid-template-columns:1fr}}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.card .head{display:flex;align-items:center;gap:10px}
+.card .swatch{width:24px;height:24px;border-radius:50%;border:2px solid #fff2;flex:0 0 24px}
+.card h3{margin:0;font-size:17px}
+.card .meta{font-size:12px;color:var(--muted)}
+.card p{margin:0;font-size:13px}
+
+.kpi{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 14px}
+.kpi .label{font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.5px}
+.kpi .value{font-size:22px;font-weight:600;color:var(--accent)}
+.kpi .sub{font-size:11px;color:var(--muted)}
+
+.progress{background:var(--panel2);border:1px solid var(--line);border-radius:6px;height:18px;overflow:hidden;position:relative}
+.progress .fill{height:100%;background:linear-gradient(90deg,#6aa3ff,#7ee787);transition:width .4s}
+.progress .label{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;font-weight:600}
+
+.tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;margin-right:4px}
+.tag.prod{background:#1a3b1a;color:var(--good);border:1px solid #2c5b2c}
+.tag.stage{background:#3b2f1a;color:var(--accent2);border:1px solid #5b4a2c}
+.tag.bot{background:#3b1a3b;color:#d57bff;border:1px solid #5b2c5b}
+.tag.warn{background:#3b2f1a;color:var(--warn);border:1px solid #5b4a2c}
+.tag.bad{background:#3b1a1a;color:var(--bad);border:1px solid #5b2c2c}
+
+img.svg{width:100%;height:auto;background:#fff;border-radius:6px;border:1px solid var(--line);padding:6px;display:block;margin:8px 0}
+
+table{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--panel2);color:var(--accent);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+tr:nth-child(odd) td{background:#131720}
+
+code,kbd{background:#0b0e14;padding:2px 6px;border-radius:4px;font-size:12.5px;color:#f0c674;border:1px solid var(--line)}
+pre{background:#0b0e14;border:1px solid var(--line);padding:12px 14px;border-radius:6px;overflow:auto;font-size:12.5px;line-height:1.45}
+
+.view{display:none}
+.view.active{display:block}
+
+.matrix-wrap{overflow:auto;border:1px solid var(--line);border-radius:8px}
+.matrix-wrap table{margin:0;border:0}
+
+.legend{display:flex;flex-wrap:wrap;gap:8px;font-size:11.5px;color:var(--muted);margin:8px 0}
+.legend .swatch{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:middle;margin-right:4px}
+
+footer{margin-top:48px;padding:20px 32px;color:var(--muted);font-size:12px;border-top:1px solid var(--line);text-align:center}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>PoSumo - Creatures Dashboard</h1>
+  <p>Interactive view of the four shipped fighters and the bot. Toggle between <b>Executive</b> (behaviour evolution, training status, progress bars, high-level diagrams) and <b>Technical</b> (ONNX tensor graphs, joint physics, observation vector, hyperparameters).</p>
+</header>
+
+<div class="toolbar">
+  <div class="pillgroup" role="tablist" aria-label="View mode">
+    <button id="btn-exec" class="exec active" aria-pressed="true" onclick="setView('exec')">Executive</button>
+    <button id="btn-tech" class="tech" aria-pressed="false" onclick="setView('tech')">Technical</button>
+  </div>
+  <div class="spacer"></div>
+  <div class="nav">
+    <a href="index.html">&larr; Documentation Index</a>
+    <a href="onnx_summary.md">ONNX / Rig Inventory</a>
+    <a href="scenes.html">Scenes</a>
+  </div>
+</div>
+
+<main>
+
+<!-- ============================================================== -->
+<div id="view-exec" class="view active">
+
+<section>
+  <h2>Fighter Roster</h2>
+  <p>Four trained fighters plus one deliberately brainless bot. The bot exists to pad the 8-slot bracket and is accepted as broken.</p>
+
+  <div class="grid cols4">
+    <div class="card">
+      <div class="head"><span class="swatch" style="background:#d63b3b"></span><h3>Matt</h3><span class="tag prod">Production</span></div>
+      <div class="meta">Behavior: <code>Matt</code> &middot; v01 &middot; 2.13 MB</div>
+      <p><b>Role:</b> Balanced baseline. Lightweight body (massScale 1.0), standard stance reward. The "default" fighter used as the trunk ancestor for cross-character warm starts.</p>
+      <div class="progress"><div class="fill" style="width:88%"></div><span class="label">Behaviour evolution 88%</span></div>
+      <div class="meta">Final ELO (vs pool) <b>~1140</b> &middot; mean reward (fight) <b>~36</b></div>
+    </div>
+    <div class="card">
+      <div class="head"><span class="swatch" style="background:#3bd6a8"></span><h3>Standard</h3><span class="tag prod">Production</span></div>
+      <div class="meta">Behavior: <code>Standard</code> &middot; v01 &middot; 2.13 MB</div>
+      <p><b>Role:</b> Reference fighter; identical physics to Matt but distinct character sheet. Ships the legacy 41-obs / period-5 brain that is the compat fallback in <code>Agent_Biped</code>.</p>
+      <div class="progress"><div class="fill" style="width:80%"></div><span class="label">Behaviour evolution 80%</span></div>
+      <div class="meta">Final ELO (vs pool) <b>~1080</b> &middot; mean reward (fight) <b>~31</b></div>
+    </div>
+    <div class="card">
+      <div class="head"><span class="swatch" style="background:#3b9ad6"></span><h3>Nick</h3><span class="tag prod">Production</span></div>
+      <div class="meta">Behavior: <code>Nick</code> &middot; v01 &middot; 2.13 MB</div>
+      <p><b>Role:</b> Light and mobile (massScale 0.85). Higher closing reward, lower stance reward - the "perimeter" playstyle. Speaks and emotes fully (Happy / Sad / Insult, 5 levels each).</p>
+      <div class="progress"><div class="fill" style="width:84%"></div><span class="label">Behaviour evolution 84%</span></div>
+      <div class="meta">Final ELO (vs pool) <b>~1115</b> &middot; mean reward (fight) <b>~33</b></div>
+    </div>
+    <div class="card">
+      <div class="head"><span class="swatch" style="background:#b89040"></span><h3>Kim</h3><span class="tag prod">Production</span></div>
+      <div class="meta">Behavior: <code>Kim</code> &middot; v01 &middot; 2.13 MB</div>
+      <p><b>Role:</b> Heavy planted anchor (massScale 1.45, widthScale 1.30). Higher stance reward, lower closing - the "lean and hold" playstyle. Cheers a win, silent when losing or taunting (only Happy voice set).</p>
+      <div class="progress"><div class="fill" style="width:78%"></div><span class="label">Behaviour evolution 78%</span></div>
+      <div class="meta">Final ELO (vs pool) <b>~1050</b> &middot; mean reward (fight) <b>~30</b></div>
+    </div>
+    <div class="card">
+      <div class="head"><span class="swatch" style="background:#7d7d7d"></span><h3>Bot</h3><span class="tag bot">Bot (no brain)</span></div>
+      <div class="meta">Behavior: <code>Bot</code> &middot; v01 &middot; 0 ONNX</div>
+      <p><b>Role:</b> Deliberately brainless. <code>Agent_Bot</code> drives a procedural heuristic so the body still moves, but logs <code>character 'Bot' has no inferenceModel</code> on every match and collapses as a ragdoll. Accepted.</p>
+      <div class="progress"><div class="fill" style="width:0%;background:var(--bad)"></div><span class="label">No brain assigned</span></div>
+      <div class="meta">ELO <b>n/a</b> &middot; reward <b>n/a</b> &middot; logs at <span class="tag bad">Error</span> on every match</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Training Status</h2>
+  <p>All four shipped brains were trained against the same ring-out curriculum and self-play pool; the cognitive profile diverged only via the per-character reward shaping.</p>
+  <div class="grid cols4">
+    <div class="kpi"><div class="label">Network Trunk</div><div class="value">512 x 3</div><div class="sub">3 dense layers, 512 units each, input normalize</div></div>
+    <div class="kpi"><div class="label">Algorithm</div><div class="value">PPO</div><div class="sub">self-play, window 25, swap 50k</div></div>
+    <div class="kpi"><div class="label">Total Steps (per fighter)</div><div class="value">~12-45M</div><div class="sub">varies; corrective runs 1-3M warm-start</div></div>
+    <div class="kpi"><div class="label">Mean Reward (fight)</div><div class="value">~30-36</div><div class="sub">shaping only; not comparable across runs</div></div>
+    <div class="kpi"><div class="label">Decision Period</div><div class="value">3 ticks</div><div class="sub">0.06 s per decision; 50 Hz physics</div></div>
+    <div class="kpi"><div class="label">Observation Dim</div><div class="value">45</div><div class="sub">base 42 + 3 extended; append order locked</div></div>
+    <div class="kpi"><div class="label">Buffer / Batch</div><div class="value">20480 / 2048</div><div class="sub">GAE lambda 0.95, gamma 0.997</div></div>
+    <div class="kpi"><div class="label">Promotion Status</div><div class="value"><span class="tag prod">Production</span></div><div class="sub">all 4 shipped to Assets/Agents/&lt;Name&gt;_v01/&lt;Name&gt;.onnx</div></div>
+  </div>
+</section>
+
+<section>
+  <h2>Mean Reward vs Target Progress (per fighter)</h2>
+  <p>Mean reward bars represent the most recent measurable fight-run mean reward; target bars show the per-fighter mean reward needed for sustained ring-out win-rate &gt; 35% (rough heuristic from the May-June 2026 sweeps). Bars are not cumulative - use TensorBoard ELO curve for ranking.</p>
+
+  <div class="grid cols2">
+    <div class="card">
+      <h3>Matt</h3>
+      <div class="meta">Last measured: <code>matt_fatigue01</code> cool-down, TensorBoard run 26</div>
+      <p>Mean (fight) vs target</p>
+      <div class="progress"><div class="fill" style="width:90%"></div><span class="label">36.0 / 40 target</span></div>
+      <p>Mean (walk)</p>
+      <div class="progress"><div class="fill" style="width:75%;background:linear-gradient(90deg,#ffb86a,#ff7c7c)"></div><span class="label">2.5 / 3.0 target</span></div>
+      <p>Stamina avg over round</p>
+      <div class="progress"><div class="fill" style="width:40%;background:linear-gradient(90deg,#7ee787,#6aa3ff)"></div><span class="label">0.42 / 1.00</span></div>
+    </div>
+    <div class="card">
+      <h3>Standard</h3>
+      <div class="meta">Last measured: <code>standard_fatigue01</code></div>
+      <p>Mean (fight) vs target</p>
+      <div class="progress"><div class="fill" style="width:78%"></div><span class="label">31.0 / 40 target</span></div>
+      <p>Mean (walk)</p>
+      <div class="progress"><div class="fill" style="width:90%;background:linear-gradient(90deg,#ffb86a,#ff7c7c)"></div><span class="label">2.7 / 3.0 target</span></div>
+      <p>Stamina avg over round</p>
+      <div class="progress"><div class="fill" style="width:45%;background:linear-gradient(90deg,#7ee787,#6aa3ff)"></div><span class="label">0.48 / 1.00</span></div>
+    </div>
+    <div class="card">
+      <h3>Nick</h3>
+      <div class="meta">Last measured: <code>nick_fatigue01</code></div>
+      <p>Mean (fight) vs target</p>
+      <div class="progress"><div class="fill" style="width:83%"></div><span class="label">33.0 / 40 target</span></div>
+      <p>Mean (walk)</p>
+      <div class="progress"><div class="fill" style="width:80%;background:linear-gradient(90deg,#ffb86a,#ff7c7c)"></div><span class="label">2.6 / 3.0 target</span></div>
+      <p>Stamina avg over round</p>
+      <div class="progress"><div class="fill" style="width:38%;background:linear-gradient(90deg,#7ee787,#6aa3ff)"></div><span class="label">0.40 / 1.00</span></div>
+    </div>
+    <div class="card">
+      <h3>Kim</h3>
+      <div class="meta">Last measured: <code>kim_fatigue01</code></div>
+      <p>Mean (fight) vs target</p>
+      <div class="progress"><div class="fill" style="width:75%"></div><span class="label">30.0 / 40 target</span></div>
+      <p>Mean (walk)</p>
+      <div class="progress"><div class="fill" style="width:60%;background:linear-gradient(90deg,#ffb86a,#ff7c7c)"></div><span class="label">2.0 / 3.0 target</span></div>
+      <p>Stamina avg over round</p>
+      <div class="progress"><div class="fill" style="width:55%;background:linear-gradient(90deg,#7ee787,#6aa3ff)"></div><span class="label">0.58 / 1.00</span></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Executive architecture</h2>
+  <p>Pipeline from a YAML config to runtime inference. Read top-to-bottom: training produces ONNX, the editor deploys it, runtime loads it into the brain agent, the agent drives the body, the referees and presentation companions finish the picture.</p>
+  <img class="svg" src="assets/architecture-simple.svg" alt="Architecture overview" />
+</section>
+
+<section>
+  <h2>Lifecycle overview</h2>
+  <p>The single-tick loop. Every 20 ms: collect, normalize, infer, apply motors, step physics, sample sensors, evaluate reward, check terminals.</p>
+  <img class="svg" src="assets/lifecycle-simple.svg" alt="Lifecycle overview" />
+</section>
+
+</div>
+
+<!-- ============================================================== -->
+<div id="view-tech" class="view">
+
+<section>
+  <h2>Tensor Blueprint</h2>
+  <p>45-float observation vector, the 3x512 dense trunk, the 13-action head, and the 13 motor drives it lands on. Toes are unpowered and not in the action space.</p>
+  <img class="svg" src="assets/tensor-blueprint.svg" alt="Tensor blueprint" />
+</section>
+
+<section>
+  <h2>Detailed Lifecycle - tensors and PhysX</h2>
+  <p>Per-step tensor path with the Sentis engine, Hill force-velocity curve, activation lag, fatigue integrator, motor slew limiter, and the PhysX 2D island solver. This is what one 20 ms tick actually does.</p>
+  <img class="svg" src="assets/lifecycle-detailed.svg" alt="Lifecycle detailed" />
+</section>
+
+<section>
+  <h2>Reward Tree</h2>
+  <p>Three trees: Sumo (per-character), Walk (per-character), Shared (energy / jerk / effort / cadence). Terminals only fire from <code>Agent_Biped</code>; providers cannot end an episode.</p>
+  <img class="svg" src="assets/reward-tree.svg" alt="Reward tree" />
+</section>
+
+<section>
+  <h2>Hyperparameter Matrix</h2>
+  <p>PPO config, network architecture, reward signals, self-play settings, training schedule, and reward-weight matrix from the per-character character sheet.</p>
+  <img class="svg" src="assets/hyperparameters.svg" alt="Hyperparameter matrix" />
+</section>
+
+<section>
+  <h2>Detailed Architecture - memory + tensor path</h2>
+  <p>Includes the editor tools, the two referees, the static state cleared on <code>SubsystemRegistration</code>, every presentation companion, and the engines (Sentis, PhysX 2D, UI Toolkit).</p>
+  <img class="svg" src="assets/architecture-detailed.svg" alt="Architecture detailed" />
+</section>
+
+<section>
+  <h2>ONNX tensor graphs</h2>
+  <p>All four shipped brains share the same input/output contract: <code>obs_0 [batch, 45]</code> -&gt; 3x <code>Dense(512, ReLU)</code> with input normalization -&gt; <code>Linear(13)</code>. 14 initializers, ~445k parameters, 2.13 MB. Inference runs at Sentis via <code>Unity.InferenceEngine.ModelAsset</code>.</p>
+
+  <div class="matrix-wrap">
+  <table>
+    <thead><tr><th>Fighter</th><th>File</th><th>Size (MB)</th><th>Input</th><th>Hidden</th><th>Output</th><th>Init.</th><th>Params (approx)</th></tr></thead>
+    <tbody>
+      <tr><td><span class="swatch" style="background:#d63b3b;display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle;margin-right:6px"></span>Matt</td><td><code>Assets/Agents/Matt_v01/Matt.onnx</code></td><td>2.13</td><td>obs_0 [batch, 45]</td><td>3x Dense(512)</td><td>continuous_actions [batch, 13]</td><td>14</td><td>~445k</td></tr>
+      <tr><td><span class="swatch" style="background:#3bd6a8;display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle;margin-right:6px"></span>Standard</td><td><code>Assets/Agents/Standard_v01/Standard.onnx</code></td><td>2.13</td><td>obs_0 [batch, 45]</td><td>3x Dense(512)</td><td>continuous_actions [batch, 13]</td><td>14</td><td>~445k</td></tr>
+      <tr><td><span class="swatch" style="background:#3b9ad6;display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle;margin-right:6px"></span>Nick</td><td><code>Assets/Agents/Nick_v01/Nick.onnx</code></td><td>2.13</td><td>obs_0 [batch, 45]</td><td>3x Dense(512)</td><td>continuous_actions [batch, 13]</td><td>14</td><td>~445k</td></tr>
+      <tr><td><span class="swatch" style="background:#b89040;display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle;margin-right:6px"></span>Kim</td><td><code>Assets/Agents/Kim_v01/Kim.onnx</code></td><td>2.13</td><td>obs_0 [batch, 45]</td><td>3x Dense(512)</td><td>continuous_actions [batch, 13]</td><td>14</td><td>~445k</td></tr>
+      <tr><td><span class="swatch" style="background:#7d7d7d;display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle;margin-right:6px"></span>Bot</td><td>-</td><td>0</td><td>n/a</td><td>n/a</td><td>n/a</td><td>0</td><td>0</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Sentis outputs in full</h3>
+  <table>
+    <thead><tr><th>Tensor</th><th>Shape</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>version_number</code></td><td>[1]</td><td>Engine ABI version; mismatch raises on load.</td></tr>
+      <tr><td><code>memory_size</code></td><td>[1]</td><td>Hidden-state width (always 0 here; trunk is feed-forward).</td></tr>
+      <tr><td><code>continuous_actions</code></td><td>[batch, 13]</td><td>Stochastic action sample (mean + fixed sigma at inference).</td></tr>
+      <tr><td><code>continuous_action_output_shape</code></td><td>[1]</td><td>Schema echo.</td></tr>
+      <tr><td><code>deterministic_continuous_actions</code></td><td>[batch, 13]</td><td>Greedy mean path; used for inference-only playbacks.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>Joint physics specification</h2>
+  <p>All 16 joints on the right side. Mirrored by <code>facingSign</code> on the left. Powered joints (13) drive the policy; unpowered (2 toes) complete the foot without changing the action space.</p>
+  <table>
+    <thead><tr><th>#</th><th>Joint</th><th>Range (deg)</th><th>Torque (N m)</th><th>Speed (deg/s)</th><th>Reversal</th><th>Passive stiffness</th><th>Powered</th></tr></thead>
+    <tbody>
+      <tr><td>0 / 3</td><td>Hip near / far</td><td>-120 .. 30</td><td>300</td><td>260</td><td>0.12 s</td><td>6% / 90 deg</td><td>yes</td></tr>
+      <tr><td>1 / 4</td><td>Knee near / far</td><td>0 .. 150</td><td>250</td><td>320</td><td>0.12 s</td><td>6% / 90 deg</td><td>yes</td></tr>
+      <tr><td>2 / 5</td><td>Ankle near / far</td><td>-35 .. 35</td><td>160</td><td>220</td><td>0.12 s</td><td>6% / 90 deg</td><td>yes</td></tr>
+      <tr><td>6 / 7 / 8</td><td>Spine 1 / 2 / 3</td><td>-20 .. 20</td><td>180</td><td>160</td><td>0.12 s</td><td>6% / 90 deg</td><td>yes</td></tr>
+      <tr><td>9 / 11</td><td>Shoulder near / far</td><td>-120 .. 120</td><td>80</td><td>320</td><td>0.12 s</td><td>6% / 90 deg</td><td>yes</td></tr>
+      <tr><td>10 / 12</td><td>Elbow near / far</td><td>-150 .. 0</td><td>60</td><td>320</td><td>0.12 s</td><td>6% / 90 deg</td><td>yes</td></tr>
+      <tr><td>14 / 15</td><td>Toe MTP near / far</td><td>-35 .. 35</td><td>40</td><td>400</td><td>n/a</td><td>6% / 90 deg</td><td>no</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Force-velocity &amp; activation</h3>
+  <ul>
+    <li><b>Hill a/F0:</b> 0.25 - concentric torque falls off with shortening velocity.</li>
+    <li><b>Eccentric gain:</b> 1.5x - braced isometric resists stretch.</li>
+    <li><b>Activation time constants:</b> rise 0.05 s, fall 0.07 s (muscle activation is asymmetric).</li>
+    <li><b>Motor reversal slew:</b> 0.12 s end-to-end - prevents instantaneous inversion between steps.</li>
+    <li><b>Passive damping:</b> 10% per 400 deg/s.</li>
+    <li><b>End-range stiffening:</b> cubic past 70% of half-range, gain 6x at the stop.</li>
+    <li><b>Fatigue:</b> Xia two-state, rate 0.06/s, recovery 0.10/s, depth 0.35 (35% max loss).</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Observation vector breakdown</h2>
+  <p>Every entry is normalized and parent-local in the facing frame. The task flag at index 35 is what separates a fight observation from a walk observation.</p>
+  <table>
+    <thead><tr><th>Index</th><th>Count</th><th>Slot</th><th>Source</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td>1</td><td>torsoVel.x</td><td><code>Rigidbody2D.linearVelocity.x</code> on Torso</td></tr>
+      <tr><td>1</td><td>1</td><td>torsoVel.y</td><td><code>Rigidbody2D.linearVelocity.y</code> on Torso</td></tr>
+      <tr><td>2</td><td>1</td><td>upright</td><td>dot(Torso.up, worldUp) [-1, 1]</td></tr>
+      <tr><td>3</td><td>1</td><td>torsoY</td><td><code>Torso.position.y - arenaGroundY</code></td></tr>
+      <tr><td>4</td><td>1</td><td>rootMass</td><td><code>Torso.mass</code></td></tr>
+      <tr><td>5..17</td><td>13</td><td>joint angle</td><td><code>HingeJoint2D.jointAngle</code> in deg, divided by limit, multiplied by facingSign</td></tr>
+      <tr><td>18..30</td><td>13</td><td>joint speed</td><td>deg/s, slew-limited</td></tr>
+      <tr><td>31..34</td><td>4</td><td>foot contact</td><td>near/far x foot, normalized load</td></tr>
+      <tr><td>35</td><td>1</td><td>task flag</td><td>1 = sumo, 0 = walk</td></tr>
+      <tr><td>36..39</td><td>4</td><td>opponent or walk target</td><td>relX, relY, velX, velY</td></tr>
+      <tr><td>40..41</td><td>2</td><td>edge distances</td><td>nearX, farX relative to <code>ringHalfWidth</code></td></tr>
+      <tr><td>42..44</td><td>3</td><td>extended (opt-in)</td><td>opponent uprightness, down flag, edge distance (Matt / Kim)</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>Hyperparameters in full</h2>
+  <table>
+    <thead><tr><th>Group</th><th>Field</th><th>Value</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="8">Hyperparameters</td><td><code>batch_size</code></td><td>2048</td></tr>
+      <tr><td><code>buffer_size</code></td><td>20480</td></tr>
+      <tr><td><code>learning_rate</code></td><td>3.0e-4 (linear schedule)</td></tr>
+      <tr><td><code>beta</code> (entropy)</td><td>5.0e-3</td></tr>
+      <tr><td><code>epsilon</code> (clip)</td><td>0.2</td></tr>
+      <tr><td><code>lambd</code> (GAE)</td><td>0.95</td></tr>
+      <tr><td><code>num_epoch</code></td><td>3</td></tr>
+      <tr><td><code>learning_rate_schedule</code></td><td>linear</td></tr>
+      <tr><td rowspan="4">Network</td><td><code>normalize</code></td><td>true</td></tr>
+      <tr><td><code>hidden_units</code></td><td>512</td></tr>
+      <tr><td><code>num_layers</code></td><td>3</td></tr>
+      <tr><td><code>vis_encode_type</code></td><td>simple</td></tr>
+      <tr><td rowspan="2">Reward</td><td><code>extrinsic.gamma</code></td><td>0.997</td></tr>
+      <tr><td><code>extrinsic.strength</code></td><td>1.0</td></tr>
+      <tr><td rowspan="5">Self-play</td><td><code>window</code></td><td>25</td></tr>
+      <tr><td><code>play_against_latest_model_ratio</code></td><td>0.25</td></tr>
+      <tr><td><code>save_steps</code></td><td>50000</td></tr>
+      <tr><td><code>swap_steps</code></td><td>50000</td></tr>
+      <tr><td><code>team_change</code></td><td>250000</td></tr>
+      <tr><td rowspan="6">Schedule</td><td><code>max_steps</code></td><td>15,000,000</td></tr>
+      <tr><td><code>time_horizon</code></td><td>1000</td></tr>
+      <tr><td><code>checkpoint_interval</code></td><td>250,000</td></tr>
+      <tr><td><code>keep_checkpoints</code></td><td>5</td></tr>
+      <tr><td><code>summary_freq</code></td><td>30,000</td></tr>
+      <tr><td><code>threaded</code></td><td>true</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>Scene layout (Tech view)</h2>
+  <img class="svg" src="assets/scenes-layout.svg" alt="Scenes layout" />
+</section>
+
+</div>
+
+</main>
+
+<footer>
+  <p>PoSumo - Unity 6000.5.8f1 - ML-Agents 4.1.0 - InferenceEngine 2.6.1 - Last revision 2026-08-16.</p>
+</footer>
+
+<script>
+function setView(mode){
+  document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+  document.getElementById('view-' + mode).classList.add('active');
+  document.getElementById('btn-exec').classList.toggle('active', mode === 'exec');
+  document.getElementById('btn-tech').classList.toggle('active', mode === 'tech');
+  document.getElementById('btn-exec').setAttribute('aria-pressed', mode === 'exec');
+  document.getElementById('btn-tech').setAttribute('aria-pressed', mode === 'tech');
+}
+// Mermaid fallback not used here; diagrams are pre-rendered SVGs.
+</script>
+</body>
+</html>

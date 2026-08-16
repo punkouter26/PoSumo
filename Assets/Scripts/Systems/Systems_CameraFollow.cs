@@ -277,7 +277,7 @@ namespace PoSumo
             if (Time.unscaledTime < _nextFighterScan) return;
             _nextFighterScan = Time.unscaledTime + FIGHTER_SCAN_INTERVAL;
 
-            var agents = FindObjectsByType<Agent_Biped>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            var agents = FindObjectsByType<Agent_Biped>(FindObjectsInactive.Exclude);
             if (agents.Length >= 2) { _a = agents[0]; _b = agents[1]; }
         }
     }

@@ -1,0 +1,57 @@
+flowchart LR
+    %% PoSumo - Tensor Blueprint & Actuator Map
+    %% Observation layout (45-float vector) -> Hidden trunk -> Action distribution -> Joint drives
+
+    subgraph Obs["Observation tensor obs_0  shape batch x 45"]
+        direction TB
+        O1["Body state 5<br/>torsoVel.x, .y, upright,<br/>torsoY, rootMass"]:::obs
+        O2[Joint angles 13]:::obs
+        O3[Joint speeds 13]:::obs
+        O4["Foot contacts 4<br/>left/right x near/far"]:::obs
+        O5["Task flag 1<br/>1 = sumo, 0 = walk"]:::obs
+        O6["Opponent or walk target 4<br/>relX, relY, velX, velY"]:::obs
+        O7["Edge distances 2<br/>nearX, farX relative to ringHalfWidth"]:::obs
+    end
+
+    subgraph Net["ONNX policy  (hidden_units=512, num_layers=3, simple)"]
+        L1["Dense 512<br/>+ L2 normalize"]:::net
+        L2[Dense 512]:::net
+        L3[Dense 512]:::net
+    end
+
+    subgraph Head["Action head 13 continuous"]
+        Mean[mean μ from Linear 13]:::head
+        Sigma[fixed sigma 0.0 at inference]:::head
+        Action["continuous_actions  shape batch x 13 in range -1..1"]:::head
+    end
+
+    subgraph Drives["Joint drives (one action each)"]
+        direction TB
+        J1["HipNear / HipFar<br/>range -120..30 deg<br/>torque 300 N·m"]:::drive
+        J2["KneeNear / KneeFar<br/>0..150 deg<br/>torque 250 N·m"]:::drive
+        J3["AnkleNear / AnkleFar<br/>+/-35 deg<br/>torque 160 N·m"]:::drive
+        J4["Spine 1/2/3<br/>+/-20 deg each<br/>torque 180 N·m"]:::drive
+        J5["ShoulderNear / ShoulderFar<br/>+/-120 deg<br/>torque 80 N·m"]:::drive
+        J6["ElbowNear / ElbowFar<br/>-150..0 deg<br/>torque 60 N·m"]:::drive
+    end
+
+    O1 --> L1
+    O2 --> L1
+    O3 --> L1
+    O4 --> L1
+    O5 --> L1
+    O6 --> L1
+    O7 --> L1
+    L1 --> L2 --> L3 --> Mean --> Action
+    Mean --> Sigma
+    Action --> J1
+    Action --> J2
+    Action --> J3
+    Action --> J4
+    Action --> J5
+    Action --> J6
+
+    classDef obs fill:#eef6ff,stroke:#3a78c2,color:#0e2a4d
+    classDef net fill:#fde2f3,stroke:#c43b8d,color:#4a0d2c
+    classDef head fill:#fff4e5,stroke:#d9923a,color:#4a2e08
+    classDef drive fill:#e8f7e8,stroke:#3a9a3a,color:#103d10

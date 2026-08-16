@@ -1,0 +1,134 @@
+flowchart TB
+    %% PoSumo - Unified Architecture (DETAILED)
+    %% Memory + tensor flow between editor, runtime, training, and PhysX/Sentis
+
+    subgraph Editor["Editor  (Assets/Editor)"]
+        BTE["BuildTrainingEnv<br/>BuildOptions.Development"]:::ed
+        BAB["BuildAndroid / AAB"]:::ed
+        DPB[DeployBrain]:::ed
+        MTH[MatchTestHarness]:::ed
+        GA["GenerateAudio / NormalizeVoice"]:::ed
+    end
+
+    subgraph Build["Build output"]
+        direction LR
+        EnvExe["Builds/<Name>Env/<Name>Env.exe"]:::as
+        APK["Builds/Android/PoSumo.apk"]:::as
+    end
+
+    subgraph Trainer["Python trainer  Training/venv"]
+        direction TB
+        ML[mlagents-learn.exe]:::tr
+        TB[TensorBoard :6006]:::tr
+        CK["checkpoint.pt + <Behavior>.onnx"]:::tr
+    end
+
+    subgraph Runtime["Runtime  PoSumo.Runtime assembly"]
+        direction TB
+        subgraph Mgrs["Systems_GameMatchManager (game referee)"]
+            MGR1["Phase state machine<br/>Fighting -> RoundEnded -> Grace"]:::mgr
+            MGR2[Scoring + countdown + tiebreak]:::mgr
+            MGR3["Spawns every companion<br/>enable* gates"]:::mgr
+        end
+        subgraph Refs["Two referees"]
+            TG["Systems_SumoMatchManager<br/>training"]:::sys
+            GG["Systems_GameMatchManager<br/>game"]:::sys
+        end
+        subgraph StaticS["Static state  cleared on SubsystemRegistration"]
+            TS["Systems_TournamentState<br/>8-slot bracket"]:::static
+            CS["Systems_CareerStats<br/>Elo + records"]:::static
+            AL[Systems_AcademyLifecycle]:::static
+        end
+        subgraph Companions["Presentation companions  spawned by MGR3"]
+            MP[Systems_MatchPresentation]:::sys
+            MA[Systems_MatchAudio + FighterVoice]:::sys
+            AL2[Systems_ArenaLighting + Atmosphere]:::sys
+            BS[Systems_BodySurface]:::sys
+            BD[Systems_BodyDamage + Knockout static]:::sys
+            FM[Systems_FaceMood]:::sys
+            IX[Systems_ImpactFx + DustPuff + BlobShadow]:::sys
+            CR[Systems_CareerRecorder + Screen]:::sys
+        end
+        subgraph Body["Ragdoll  (in scene)"]
+            ABB["Agent_BipedBody<br/>PART_DEFS / JOINT_DEFS"]:::body
+            AR["Systems_SumoArena<br/>raised dohyo"]:::arena
+        end
+        subgraph Brain["Brain  (per fighter)"]
+            ABT["Agent_Biped<br/>BehaviorParameters"]:::brain
+            ONNX["(<Behavior>.onnx<br/>45 obs -> 13 acts)"]:::brain
+            ACD["Agent_CharacterDefinition<br/>ScriptableObject"]:::brain
+        end
+        subgraph Rewards["Reward providers  pure C#"]
+            RSO[Reward_SumoObjective]:::reward
+            RWO[Reward_WalkObjective]:::reward
+            RSC[Reward_StepCadence]:::reward
+            RC[Reward_Context readonly struct]:::reward
+        end
+    end
+
+    subgraph Sentinel["Sentinels"]
+        direction LR
+        L1["Systems_Log  Conditional attribute UNITY_EDITOR"]:::log
+        L2["Systems_Telemetry  HTTP :8787+"]:::log
+    end
+
+    subgraph Engine["Engines"]
+        direction LR
+        SE["Unity InferenceEngine<br/>Sentis ONNX runtime"]:::engine
+        PX["Unity Physics 2D<br/>PhysX HingeJoint2D"]:::engine
+        UI["UI Toolkit<br/>UIDocument only"]:::engine
+    end
+
+    BTE --> EnvExe
+    BAB --> APK
+    EnvExe --> ML
+    ML --> TB
+    ML --> CK
+    CK --> DPB
+    DPB --> ONNX
+    ABT -->|request| SE
+    SE -->|"float array 13"| ABT
+    ABB --> PX
+    PX --> ABB
+    GG --> UI
+    AR --> PX
+    ACD --> ABT
+    ACD --> ABB
+    ACD --> RSO
+    ACD --> RWO
+    RC --> RSO
+    RC --> RWO
+    RSC --> RSO
+    RSC --> RWO
+    ABT --> RSO
+    ABT --> RWO
+    ABT --> RC
+    ABB --> ABT
+    BD -->|Knockout static event| GG
+    GG --> MP
+    GG --> MA
+    GG --> AL2
+    GG --> BS
+    GG --> BD
+    GG --> FM
+    GG --> IX
+    GG --> CR
+    TS --> BRK
+    BRK --> GG
+    CR --> CS
+    MTH --> GG
+    L1 -.->|all logs| Sentinel
+    L2 -.->|metrics| Trainer
+
+    classDef ed fill:#fff4e5,stroke:#d9923a,color:#4a2e08
+    classDef tr fill:#eef6ff,stroke:#3a78c2,color:#0e2a4d
+    classDef as fill:#f0f0f0,stroke:#666,color:#222
+    classDef mgr fill:#fde2f3,stroke:#c43b8d,color:#4a0d2c
+    classDef sys fill:#fde2f3,stroke:#c43b8d,color:#4a0d2c
+    classDef static fill:#eee9fb,stroke:#6a3fc9,color:#1f0e4a
+    classDef body fill:#fff4e5,stroke:#d9923a,color:#4a2e08
+    classDef arena fill:#fff4e5,stroke:#d9923a,color:#4a2e08
+    classDef brain fill:#e8f7e8,stroke:#3a9a3a,color:#103d10
+    classDef reward fill:#fdeeee,stroke:#c93b3b,color:#4a0e0e
+    classDef log fill:#f0f0f0,stroke:#666,color:#222
+    classDef engine fill:#eef6ff,stroke:#3a78c2,color:#0e2a4d

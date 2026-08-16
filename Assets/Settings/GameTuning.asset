@@ -36,7 +36,7 @@ MonoBehaviour:
   betweenRoundsPause: 2.5
   graceSeconds: 0.4
   downGraceSeconds: 0.2
-  downOutSeconds: 3
+  downOutSeconds: 0
   gibLosesRound: 1
   knockdownLoses: 0
   knockoutsToLoseMatch: 2
@@ -50,3 +50,4 @@ MonoBehaviour:
   enableAtmosphere: 1
   enableMusic: 1
   enableBodyDamage: 1
+  enableStrikeImpulse: 1

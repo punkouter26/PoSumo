@@ -1,0 +1,63 @@
+flowchart TB
+    %% PoSumo - Build Settings + Scene Hierarchy
+
+    subgraph BS["Build Settings  (File -> Build Profiles)"]
+        direction LR
+        IDX0["Build index 0<br/>SCN_TOURNAMENT"]:::bs
+        IDX1["Build index 1<br/>SCN_SUMO"]:::bs
+    end
+
+    subgraph Stale["Tracked but NOT in build settings  (do not delete)"]
+        BOT["SCN_BOT<br/>deliberately brainless Bot_v01"]:::stale
+    end
+
+    subgraph TrainScn["Training scenes  Assets/Scenes/Training"]
+        direction LR
+        TM[SCN_TRAIN_MATT]:::tr
+        TS[SCN_TRAIN_STANDARD]:::tr
+        TN[SCN_TRAIN_NICK]:::tr
+        TK[SCN_TRAIN_KIM]:::tr
+    end
+
+    subgraph Tour["SCN_TOURNAMENT  (build index 0)"]
+        direction TB
+        TB_Brk["Systems_TournamentBracket<br/>seeds and runs bracket"]:::mgr
+        TB_Career["Systems_CareerScreen<br/>banzuke overlay"]:::mgr
+        TB_Audio[AudioListener added at runtime]:::mgr
+        TB_HUD[UIDocument for bracket]:::ui
+    end
+
+    subgraph Sumo["SCN_SUMO  (build index 1)"]
+        direction TB
+        SU_Arena["Systems_SumoArena<br/>raised dohyo + tawara"]:::arena
+        SU_Ring2["Systems_SumoMatchManager<br/>training referee"]:::mgr
+        SU_Roster["Systems_MatchRoster<br/>assigns characters"]:::mgr
+        SU_Cam[Camera + AudioListener]:::mgr
+        SU_HUD["Systems_HudRoot<br/>match HUD UIDocument"]:::ui
+        SU_Fighters["2x Agent_BipedBody<br/>+ Agent_Biped"]:::body
+    end
+
+    subgraph Trn["SCN_TRAIN_*  (one per fighter)"]
+        direction TB
+        TR_Arena[Systems_SumoArena]:::arena
+        TR_Ref[Systems_SumoMatchManager]:::mgr
+        TR_Fighters["4 sumo agents<br/>+ 6 walk agents on lane below"]:::body
+        TR_Static["Walk target<br/>virtual opponent anchor"]:::body
+        TR_Cam[Fixed overhead camera]:::mgr
+    end
+
+    IDX0 --> Tour
+    IDX1 --> Sumo
+    TM --> Trn
+    TS --> Trn
+    TN --> Trn
+    TK --> Trn
+    BOT -.->|not loaded| Stale
+
+    classDef bs fill:#eef6ff,stroke:#3a78c2,color:#0e2a4d
+    classDef stale fill:#f0f0f0,stroke:#999,color:#444,stroke-dasharray: 5 5
+    classDef tr fill:#eef6ff,stroke:#3a78c2,color:#0e2a4d
+    classDef mgr fill:#fde2f3,stroke:#c43b8d,color:#4a0d2c
+    classDef arena fill:#fff4e5,stroke:#d9923a,color:#4a2e08
+    classDef body fill:#e8f7e8,stroke:#3a9a3a,color:#103d10
+    classDef ui fill:#f0f0f0,stroke:#666,color:#222

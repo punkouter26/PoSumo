@@ -1,0 +1,56 @@
+flowchart TD
+    %% PoSumo - Dynamic Lifecycle & Execution Loop (DETAILED)
+    %% Per-physics-step tensor and memory flow with Sentis + PhysX
+
+    Start([Physics step begin<br/>fixedDeltaTime = 0.02 s]):::start
+    Collect["Agent_Biped.CollectObservations<br/>+ Reward_Context.San"]:::collect
+    Buff["Observation buffer<br/>float array (45) facing-local frame"]:::buff
+    Norm["Observation normalizer<br/>Running mean/var"]:::norm
+    Sentis["Unity InferenceEngine Sentis<br/>3x Dense(512) ReLU + Linear(13)"]:::sentis
+    Action["Action buffer<br/>float array (13) clipped to -1..1"]:::act
+    Slew["Motor slew limiter<br/>MOTOR_REVERSAL_SECONDS = 0.12"]:::slew
+    Hill["Hill force-velocity + activation lag<br/>ACT_RISE_TAU 0.05 / FALL 0.07"]:::hill
+    Fatigue["Fatigue integrator<br/>FATIGUE_RATE 0.06 / DEPTH 0.35"]:::fat
+    Joint["HingeJoint2D motor torque<br/>13 powered joints"]:::joint
+    PhysX["PhysX 2D step<br/>island solver, broadphase"]:::physx
+    Sensor["Sensor_BodyPartContact<br/>+ Sensor_Impact Raycast"]:::sensor
+    Reward["Reward_SumoObjective / WalkObjective<br/>+ Reward_StepCadence"]:::reward
+    Ref["Referee terminal checks<br/>footOffMatY, fallY, downOut"]:::ref
+    End{"episode done?"}:::endnode
+    Reset["EndEpisode + OnEpisodeBegin<br/>ResetPose, fatigue=0"]:::reset
+
+    Start --> Collect
+    Collect --> Buff
+    Buff --> Norm
+    Norm --> Sentis
+    Sentis --> Action
+    Action --> Slew
+    Slew --> Hill
+    Hill --> Fatigue
+    Fatigue --> Joint
+    Joint --> PhysX
+    PhysX --> Sensor
+    Sensor --> Collect
+    PhysX --> Reward
+    Reward --> Ref
+    Ref --> End
+    End -->|no| Start
+    End -->|yes| Reset
+    Reset --> Start
+
+    classDef start fill:#fff,stroke:#000,color:#000
+    classDef collect fill:#eef6ff,stroke:#3a78c2,color:#0e2a4d
+    classDef buff fill:#e8f7e8,stroke:#3a9a3a,color:#103d10
+    classDef norm fill:#e8f7e8,stroke:#3a9a3a,color:#103d10
+    classDef sentis fill:#fde2f3,stroke:#c43b8d,color:#4a0d2c
+    classDef act fill:#fde2f3,stroke:#c43b8d,color:#4a0d2c
+    classDef slew fill:#fff4e5,stroke:#d9923a,color:#4a2e08
+    classDef hill fill:#fff4e5,stroke:#d9923a,color:#4a2e08
+    classDef fat fill:#fff4e5,stroke:#d9923a,color:#4a2e08
+    classDef joint fill:#fff4e5,stroke:#d9923a,color:#4a2e08
+    classDef physx fill:#f0f0f0,stroke:#444,color:#111
+    classDef sensor fill:#eef6ff,stroke:#3a78c2,color:#0e2a4d
+    classDef reward fill:#e8f7e8,stroke:#3a9a3a,color:#103d10
+    classDef ref fill:#fdeeee,stroke:#c93b3b,color:#4a0e0e
+    classDef endnode fill:#fff,stroke:#000,color:#000
+    classDef reset fill:#fdeeee,stroke:#c93b3b,color:#4a0e0e

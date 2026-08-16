@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>PoSumo - Scenes Layout</title>
+<style>
+:root{
+  --bg:#0f1115; --panel:#161a22; --panel2:#1d2230; --line:#262b36; --text:#e6e9ef; --muted:#9aa3b2;
+  --accent:#6aa3ff; --accent2:#ffb86a; --good:#7ee787; --bad:#ff7c7c; --code:#0b0e14;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font:15px/1.55 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+header{padding:24px 32px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#161a22,#0f1115)}
+header h1{margin:0;font-size:26px;letter-spacing:.3px}
+header p{margin:6px 0 0;color:var(--muted);font-size:14px}
+nav{padding:12px 32px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:5}
+nav a{color:var(--accent);text-decoration:none;margin-right:18px;font-size:14px}
+nav a:hover{text-decoration:underline}
+main{max-width:1300px;margin:0 auto;padding:24px 32px}
+section{margin:36px 0}
+h2{font-size:22px;margin:0 0 6px;border-bottom:1px solid var(--line);padding-bottom:6px}
+h3{font-size:18px;margin:24px 0 8px;color:var(--accent)}
+h4{font-size:15px;margin:18px 0 6px;color:var(--accent2);text-transform:uppercase;letter-spacing:.5px}
+.scene{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px 20px;margin:16px 0}
+.scene h3{margin-top:0}
+.scene .idx{display:inline-block;background:var(--panel2);color:var(--accent);padding:2px 8px;border-radius:4px;font-size:12px;margin-left:8px;border:1px solid var(--line)}
+img.svg{width:100%;height:auto;background:#fff;border-radius:6px;border:1px solid var(--line);padding:6px;display:block;margin:12px 0}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:10px 0}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--panel2);color:var(--accent);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+tr:nth-child(odd) td{background:#131720}
+.tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;margin-right:4px}
+.tag.prod{background:#1a3b1a;color:var(--good);border:1px solid #2c5b2c}
+.tag.build{background:#1a2a3b;color:var(--accent);border:1px solid #2c456b}
+.tag.train{background:#3b2f1a;color:var(--accent2);border:1px solid #5b4a2c}
+.tag.stale{background:#f0f0f0;color:#666;border:1px solid #999}
+code,kbd{background:var(--code);padding:2px 6px;border-radius:4px;font-size:12.5px;color:#f0c674;border:1px solid var(--line)}
+pre{background:var(--code);border:1px solid var(--line);padding:12px 14px;border-radius:6px;overflow:auto;font-size:12.5px;line-height:1.45}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin:16px 0}
+.card{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+.card h4{margin:0 0 6px;font-size:15px;color:var(--accent)}
+.card p{margin:0;font-size:13px;color:var(--muted)}
+footer{margin-top:48px;padding:20px 32px;color:var(--muted);font-size:12px;border-top:1px solid var(--line);text-align:center}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>PoSumo - Scenes Layout</h1>
+  <p>Every scene in the project, what managers it holds, what each manager does, and how the tournament routes the player between them.</p>
+</header>
+
+<nav>
+  <a href="index.html">&larr; Documentation Index</a>
+  <a href="creatures_dashboard.html">Dashboard</a>
+  <a href="onnx_summary.md">ONNX / Rig Inventory</a>
+</nav>
+
+<main>
+
+<section>
+  <h2>Build Settings</h2>
+  <p>There are exactly two scenes in the project's Build Profiles. The game always boots into <code>SCN_TOURNAMENT</code> (build index 0), which loads <code>SCN_SUMO</code> (build index 1) for every bout and gets the winner back via <code>Systems_TournamentReporter</code>.</p>
+  <img class="svg" src="assets/scenes-layout.svg" alt="Scenes layout" />
+
+  <h3>Scene inventory</h3>
+  <table>
+    <thead><tr><th>Scene</th><th>Path</th><th>Build index</th><th>Loaded by</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td><code>SCN_TOURNAMENT</code></td><td><code>Assets/Scenes/</code></td><td>0</td><td>Editor on boot / standalone launch</td><td><span class="tag build">Build</span></td></tr>
+      <tr><td><code>SCN_SUMO</code></td><td><code>Assets/Scenes/</code></td><td>1</td><td><code>Systems_TournamentBracket</code> per match</td><td><span class="tag build">Build</span></td></tr>
+      <tr><td><code>SCN_TRAIN_MATT</code></td><td><code>Assets/Scenes/Training/</code></td><td>none</td><td><code>BuildTrainingEnv</code> -&gt; <code>Builds/MattEnv/MattEnv.exe</code></td><td><span class="tag train">Training</span></td></tr>
+      <tr><td><code>SCN_TRAIN_STANDARD</code></td><td><code>Assets/Scenes/Training/</code></td><td>none</td><td><code>BuildTrainingEnv</code> -&gt; <code>Builds/StandardEnv/StandardEnv.exe</code></td><td><span class="tag train">Training</span></td></tr>
+      <tr><td><code>SCN_TRAIN_NICK</code></td><td><code>Assets/Scenes/Training/</code></td><td>none</td><td><code>BuildTrainingEnv</code> -&gt; <code>Builds/NickEnv/NickEnv.exe</code></td><td><span class="tag train">Training</span></td></tr>
+      <tr><td><code>SCN_TRAIN_KIM</code></td><td><code>Assets/Scenes/Training/</code></td><td>none</td><td><code>BuildTrainingEnv</code> -&gt; <code>Builds/KimEnv/KimEnv.exe</code></td><td><span class="tag train">Training</span></td></tr>
+      <tr><td><code>SCN_BOT</code></td><td><code>Assets/Scenes/</code></td><td>none</td><td>nothing (deliberately brainless Bot_v01 companion)</td><td><span class="tag stale">Tracked, not loaded</span></td></tr>
+    </tbody>
+  </table>
+  <p><b>Always play from <code>SCN_TOURNAMENT</code>.</b> Entering Play mode inside <code>SCN_SUMO</code> directly runs a standalone exhibition - no bracket, no <code>Systems_TournamentState</code>, no <code>Systems_TournamentReporter</code> spawned, no title awarded. Nothing bracket-, career- or banzuke-shaped can be observed from there.</p>
+</section>
+
+<section>
+  <h2>SCN_TOURNAMENT <span class="idx">Build index 0</span></h2>
+  <p>The bracket screen. Eight elastic chips per round, three rounds (Quarterfinals / Semifinals / Final), a roster palette, and a status line. Built entirely in C# at runtime via UI Toolkit - no UXML, no USS.</p>
+
+  <div class="scene">
+    <h3>Manager objects in this scene</h3>
+    <table>
+      <thead><tr><th>Object</th><th>Component</th><th>Responsibility</th></tr></thead>
+      <tbody>
+        <tr><td><code>Bracket</code></td><td><code>Systems_TournamentBracket</code></td><td>Seeds the 8-slot bracket, runs matches in order, advances winners, handles the drag-to-rearrange UI, optionally auto-plays. Holds the <code>const string ARENA_SCENE = "SCN_SUMO"</code> as the single source for which scene to load for each bout.</td></tr>
+        <tr><td><code>Career</code></td><td><code>Systems_CareerScreen</code></td><td>The banzuke overlay (10-rung rank table: JONOKUCHI -> YOKOZUNA). Lives inside the bracket's <code>UIDocument</code>, not a second one - one career UI, not two.</td></tr>
+        <tr><td><code>MatchTuning</code></td><td><code>Systems_GameTuning</code></td><td>The ScriptableObject the bracket reads to state the correct best-of on the status line, so the displayed value cannot drift from the rule matches actually run.</td></tr>
+        <tr><td><code>Camera</code></td><td><code>Camera</code> + <code>AudioListener</code> (added at runtime by <code>Systems_TournamentBracket.EnsureAudioListener()</code>)</td><td>Renders the UI Toolkit bracket panel. The bracket scene ships without an AudioListener on purpose - only the arena scene has one - and the runtime-added listener is deliberately NOT persistent: <code>LoadScene(ARENA_SCENE)</code> is Single mode, so it dies with the scene and never fights the arena's own listener.</td></tr>
+        <tr><td><code>UIDocument</code></td><td>UI Toolkit <code>UIDocument</code></td><td>The single <code>UIDocument</code> the bracket and the career overlay draw through. Three components used to add their own at equal sorting order, which has no defined draw or pick order; the unified document is the fix.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Bracket layout</h3>
+    <p>Elastic chips (<code>flexGrow 1</code>, <code>flexBasis 0</code>, <code>SLOT_SIZE 150</code> as a floor). Each round's chips sit in a <code>Systems_UiKit.Surface</code> card under a centred header; the roster palette is a 2-up grid of 50%-wide cells (each cell itself a <code>Systems_UiKit.Row()</code>, so a chip built for a row never collapses inside a default column cell).</p>
+    <p><code>_winnerSlots</code> holds one entry <b>per chip</b>, not per match, because match 0 is both the QF-0 winner chip and the semifinal's left entrant chip. Keying by match index silently orphans the duplicate chips and they never repaint.</p>
+
+    <h3>Where the AudioListener goes</h3>
+    <pre><code>// Systems_TournamentBracket.EnsureAudioListener() - called in Start()
+if (FindAnyObjectByType&lt;AudioListener&gt;() != null) return;
+Camera target = Camera.main;
+if (target != null) { target.gameObject.AddComponent&lt;AudioListener&gt;(); return; }
+new GameObject("AudioListener").AddComponent&lt;AudioListener&gt;();</code></pre>
+  </div>
+</section>
+
+<section>
+  <h2>SCN_SUMO <span class="idx">Build index 1</span></h2>
+  <p>The arena. Built once, baked into the scene (an editor pass ran <code>Systems_SumoArena.Build()</code> and saved the children), so <code>Awake()</code> only rebinds references. Holds managers and two fighters; everything else (lighting, audio, presentation, damage) is <code>new GameObject(...)</code> at runtime by the match manager.</p>
+
+  <div class="scene">
+    <h3>Manager objects in this scene</h3>
+    <table>
+      <thead><tr><th>Object</th><th>Component</th><th>Responsibility</th></tr></thead>
+      <tbody>
+        <tr><td><code>Arena</code></td><td><code>Systems_SumoArena</code></td><td>The raised dohyo, tawara bales, shikiri-sen, lower arena floor, seated crowd, hanging tsuriyane roof. Owns <code>SetPlatformHalfWidth(half)</code> for the shrinking-ring effect and per-round randomisation.</td></tr>
+        <tr><td><code>GameReferee</code></td><td><code>Systems_GameMatchManager</code></td><td>Round state machine <code>Fighting -> RoundEnded -> Grace -> Fighting</code>, scoring to <code>pointsToWin</code> / <code>tournamentPointsToWin</code>, countdown freeze, timeout tiebreak on position. <b>Spawns every runtime companion</b> (lighting, audio, presentation, damage) gated by the <code>enable*</code> bools on <code>GameTuning.asset</code>. The events every companion subscribes to (<code>RoundStarted</code>, <code>RoundEnded</code>, <code>MatchEnded</code>, <code>MatchReset</code>) live here.</td></tr>
+        <tr><td><code>TrainingReferee</code></td><td><code>Systems_SumoMatchManager</code></td><td>The training referee (present so this scene doubles as a standalone test bed). Loss = a foot below <code>footOffMatY</code> or torso below <code>fallY</code>; timeout -&gt; <code>EpisodeInterrupted</code> (draw). Per-round domain randomisation of platform width and friction, plus curriculum dials read from <code>Academy.Instance.EnvironmentParameters</code>.</td></tr>
+        <tr><td><code>Roster</code></td><td><code>Systems_MatchRoster</code></td><td><code>[DefaultExecutionOrder(-500)]</code> - must run before the agents' <code>Awake</code>. Assigns the two characters for this scene, or defers to <code>Systems_TournamentState</code> when a bracket is active.</td></tr>
+        <tr><td><code>Reporter</code></td><td><code>Systems_TournamentReporter</code> (only during a bracket match)</td><td>Reports the bout winner back to the bracket so the next match loads with the right entrants. <b>Not present in standalone exhibition</b> - the bracket spawns it.</td></tr>
+        <tr><td><code>Tuning</code></td><td><code>Systems_GameTuning</code></td><td>The ScriptableObject the referees copy from in <code>Start</code>. The asset is the source of truth; the scene's serialized values are the fallback for when no asset is assigned and <b>will</b> mislead anyone grepping the <code>.unity</code> file.</td></tr>
+        <tr><td><code>WrestlerA</code></td><td><code>Agent_Biped</code> + <code>Agent_BipedBody</code></td><td>First fighter. <code>Awake</code> builds the 14-part ragdoll from <code>PART_DEFS</code> / <code>JOINT_DEFS</code>. Configures its own <code>BehaviorParameters</code> and <code>DecisionRequester</code> - nothing to wire in the Inspector.</td></tr>
+        <tr><td><code>WrestlerB</code></td><td><code>Agent_Biped</code> + <code>Agent_BipedBody</code></td><td>Second fighter. Same contract as A; mirror direction handled by <code>facingSign</code>.</td></tr>
+        <tr><td><code>Camera</code></td><td><code>Camera</code> + <code>AudioListener</code></td><td>The fight camera. <code>Systems_CameraFollow</code> takes over in <code>Start</code> with orthographic framing, min <code>minOrtho = 2.8</code>, max <code>maxOrtho = 9.1</code>, <code>feetDrop = 0.95</code>, <code>smoothing = 4</code>.</td></tr>
+        <tr><td><code>HudRoot</code></td><td><code>Systems_HudRoot</code></td><td>The single <code>UIDocument</code> the match screen draws through. Carries the live strip (two damage mannequins + DOMINANCE tug-of-war bar) and the detail card (TERRITORY, KNOCKDOWNS DEALT, PUSH IN CONTACT) shown on <code>RoundEnded</code> / <code>MatchEnded</code>.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Runtime companions spawned by <code>GameReferee.Start()</code></h3>
+    <p>Each is a <code>new GameObject(...)</code> gated by an <code>enable*</code> bool on <code>GameTuning.asset</code>. None of these are placed in the scene - "turn the feature off" is a tick on the asset rather than an edit in three scenes.</p>
+    <table>
+      <thead><tr><th>Companion</th><th>Responsibility</th></tr></thead>
+      <tbody>
+        <tr><td><code>Systems_MatchPresentation</code></td><td>Slow-mo finish, camera punch-in, salt throw.</td></tr>
+        <tr><td><code>Systems_MatchAudio</code> + <code>Systems_FighterVoice</code> + <code>Systems_VoiceGains</code></td><td>Impact + crowd + ceremony audio; per-fighter spoken lines.</td></tr>
+        <tr><td><code>Systems_MusicDirector</code></td><td>Adaptive layered score (four <code>MUS_*.wav</code> stems, identical length).</td></tr>
+        <tr><td><code>Systems_ArenaLighting</code> + <code>Systems_ArenaAtmosphere</code></td><td>2D light rig + post volume; backdrop parallax, haze, crowd sway, light shafts.</td></tr>
+        <tr><td><code>Systems_BodySurface</code></td><td>Writes <code>_Sweat</code> and <code>_Dirt</code> into one fighter's <code>PoSumo/BodyLit</code> material. Disables itself when <code>LightingEffects</code> is off.</td></tr>
+        <tr><td><code>Systems_ImpactFx</code> + <code>Systems_DustPuff</code> + <code>Systems_SoftBodyJiggle</code> + <code>Systems_BlobShadow</code></td><td>Hit bursts, dust, flesh wobble, contact shadows.</td></tr>
+        <tr><td><code>Systems_BodyDamage</code> + <code>Systems_RingBlood</code></td><td>Bruise decals, limb loss, decapitation, bloody head KO, blood on the mat. <b>Owns the <code>Knockout</code> static event the referee's 2-KO rule reads</b>.</td></tr>
+        <tr><td><code>Systems_FaceMood</code></td><td>Expression driven by dominance.</td></tr>
+        <tr><td><code>Systems_CareerRecorder</code></td><td>The only writer into <code>Systems_CareerStats</code>. Samples rank before and after each match so a promotion is announced exactly once.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>SCN_TRAIN_* <span class="idx">One per fighter</span></h2>
+  <p>Each training scene carries two populations under one behavior name: 4 sumo agents on two self-play arenas, and 6 walk agents on a lane 60 m below in <code>Mode.Walk</code> with no opponent. The walk lane lives in each fighter's own scene because a gait must be learned on the physique that runs it.</p>
+
+  <div class="scene">
+    <h3>Manager objects in this scene</h3>
+    <table>
+      <thead><tr><th>Object</th><th>Component</th><th>Responsibility</th></tr></thead>
+      <tbody>
+        <tr><td><code>Arena</code></td><td><code>Systems_SumoArena</code></td><td>Same as <code>SCN_SUMO</code>. Carries its own copy of <code>ringHalfWidth</code>, <code>groundWidth</code>, <code>surfaceFriction</code> - serialised values that <code>Systems_SumoMatchManager</code> overwrites in <code>Start</code>.</td></tr>
+        <tr><td><code>Referee</code></td><td><code>Systems_SumoMatchManager</code></td><td>Loss = foot below <code>footOffMatY</code> or torso below <code>fallY</code>; timeout -&gt; <code>EpisodeInterrupted</code>. Per-round randomisation of platform width and friction; curriculum dials read from <code>Academy.Instance.EnvironmentParameters</code> (<code>spawn_gap_half</code>, <code>shove_impulse</code>, <code>platform_difficulty</code>, <code>shove_chance</code>).</td></tr>
+        <tr><td><code>SumoAgents</code> x 4</td><td><code>Agent_Biped</code> + <code>Agent_BipedBody</code></td><td>Self-play sumo agents on two arenas. Team IDs split 0/1; teams freeze on a window-based schedule (one team becomes the ghost and its experience is discarded).</td></tr>
+        <tr><td><code>WalkAgents</code> x 6</td><td><code>Agent_Biped</code> + <code>Agent_BipedBody</code> (mode = Walk)</td><td>Walk lane 60 m below the arenas. <b>Over-provisioned 6-vs-4 on purpose:</b> walk agents sit on a team like everyone else, and an even split would silently halve the walk sample rate when one team is frozen.</td></tr>
+        <tr><td><code>WalkTarget</code></td><td>Empty Transform (virtual anchor)</td><td>The point walk agents walk toward. <b>A walk agent's <code>facingSign</code> must point AT its target</b> - both are measured in the facing-local frame, so a wrong sign reads the start line as past the finish, banks the hardcoded +3 graduation, and never learns a step of travel.</td></tr>
+        <tr><td><code>Camera</code></td><td>Fixed overhead <code>Camera</code></td><td>Overhead framing covering the sumo arenas and the walk lane. No follow logic - the trainer needs a stable view, not a cinematic one.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>The "no character assigned" trap</h3>
+    <p><code>SCN_TRAIN_STANDARD</code> currently contains <b>zero</b> references to <code>Standard_Character.asset</code> - eight fields sit at <code>character: {fileID: 0}</code>. The other three training scenes reference theirs correctly. Verified by GUID-grepping the saved <code>.unity</code> file. It is harmless <i>by coincidence</i> (Standard's sheet is byte-identical to <code>Agent_Biped</code>'s code defaults), but it becomes a real bug the moment anyone tunes the sheet.</p>
+    <pre><code># Verify a scene's character assignment by reading the saved .unity file
+grep -n 'character:' Assets/Scenes/Training/SCN_TRAIN_STANDARD.unity</code></pre>
+  </div>
+</section>
+
+<section>
+  <h2>SCN_BOT <span class="idx">Tracked but not in build settings</span></h2>
+  <p>The bot's home scene. Ships in no build (only build-settings scenes are included), belongs with the deliberately brainless <code>Bot_v01</code> roster entry. <b>Do not delete it as orphaned</b> - it looks exactly like a stray scene and is not one.</p>
+
+  <div class="scene">
+    <h3>Manager objects in this scene</h3>
+    <table>
+      <thead><tr><th>Object</th><th>Component</th><th>Responsibility</th></tr></thead>
+      <tbody>
+        <tr><td><code>Arena</code></td><td><code>Systems_SumoArena</code></td><td>Same dohyo as <code>SCN_SUMO</code>.</td></tr>
+        <tr><td><code>GameReferee</code></td><td><code>Systems_GameMatchManager</code></td><td>Same match state machine. Spawns the same companions.</td></tr>
+        <tr><td><code>BotWrestler</code></td><td><code>Agent_Biped</code> with <code>useBot = true</code></td><td>Drives <code>Agent_Bot</code> heuristic instead of a trained model. Logs <code>character 'Bot' has no inferenceModel</code> at Error level on every match.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Routing - how a bracket play session flows</h2>
+  <p>From boot to first match end:</p>
+  <ol>
+    <li><b>Boot</b> - Unity loads <code>SCN_TOURNAMENT</code> (build index 0).</li>
+    <li><code>Systems_TournamentBracket.Start()</code> calls <code>EnsureAudioListener()</code> (no listener in the scene by design), seeds the bracket from <code>_roster</code>, draws the UI Toolkit chip grid, starts <code>_autoTimer</code>.</li>
+    <li><code>Systems_TournamentState</code> (static) initialises the 8-slot single-elimination. <code>[RuntimeInitializeOnLoadMethod(SubsystemRegistration)]</code> cleared it earlier so domain reload being OFF does not leak it between Play sessions.</li>
+    <li><b>Auto-play kicks in</b> after <code>_autoPlay = true</code> + <code>_betweenMatchSeconds = 2.5</code> of inactivity. Bracket calls <code>SceneManager.LoadScene(ARENA_SCENE, LoadSceneMode.Single)</code> with the two assigned characters passed via <code>Systems_MatchRoster</code>.</li>
+    <li><b>In <code>SCN_SUMO</code></b>, <code>Systems_MatchRoster</code> (execution order -500) assigns the two characters; <code>Systems_GameMatchManager</code> copies its values from <code>GameTuning</code>, spawns every companion, runs the round state machine.</li>
+    <li><b>Bracket match only:</b> <code>Systems_TournamentReporter</code> is spawned into the arena. On <code>RoundEnded</code> it observes the winner and on <code>MatchEnded</code> it writes back to <code>Systems_TournamentState</code> and loads the bracket scene.</li>
+    <li><b>Bracket scene reloads.</b> The bracket repaints from the new state, advances to the next match, and the loop continues until a champion is crowned.</li>
+  </ol>
+</section>
+
+<footer>
+  <p>PoSumo - Unity 6000.5.8f1 - Last revision 2026-08-16.</p>
+</footer>
+
+</main>
+</body>
+</html>

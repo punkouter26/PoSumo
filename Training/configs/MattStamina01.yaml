@@ -92,7 +92,7 @@ behaviors:
         strength: 1.0
     keep_checkpoints: 20
     checkpoint_interval: 100000
-    max_steps: 9000000
+    max_steps: 15000000
     time_horizon: 1000
     summary_freq: 20000
     threaded: true

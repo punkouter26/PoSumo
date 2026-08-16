@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>PoSumo Documentation Index</title>
+<style>
+:root{
+  --bg:#0f1115; --panel:#161a22; --panel2:#1d2230; --line:#262b36; --text:#e6e9ef; --muted:#9aa3b2;
+  --accent:#6aa3ff; --accent2:#ffb86a; --good:#7ee787; --bad:#ff7c7c; --code:#0b0e14;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font:15px/1.55 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+header{padding:24px 32px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#161a22,#0f1115)}
+header h1{margin:0;font-size:26px;letter-spacing:.3px}
+header p{margin:6px 0 0;color:var(--muted);font-size:14px}
+nav{padding:12px 32px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:5}
+nav a{color:var(--accent);text-decoration:none;margin-right:18px;font-size:14px}
+nav a:hover{text-decoration:underline}
+main{max-width:1200px;margin:0 auto;padding:24px 32px}
+section{margin:32px 0}
+h2{font-size:22px;margin:0 0 6px;border-bottom:1px solid var(--line);padding-bottom:6px}
+h3{font-size:18px;margin:24px 0 8px;color:var(--accent)}
+h4{font-size:16px;margin:20px 0 6px;color:var(--accent2)}
+.tier{margin:18px 0;padding:18px 20px;background:var(--panel);border:1px solid var(--line);border-radius:8px}
+.tier h3{margin-top:0}
+.tier.tier1{border-left:4px solid var(--good)}
+.tier.tier2{border-left:4px solid var(--accent)}
+.tier.tier3{border-left:4px solid var(--accent2)}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin:16px 0}
+.card{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+.card h4{margin:0 0 6px;font-size:15px}
+.card p{margin:0;color:var(--muted);font-size:13px}
+.card a{color:var(--accent);text-decoration:none;font-size:13px}
+.card a:hover{text-decoration:underline}
+img.svg{width:100%;height:auto;background:#fff;border-radius:6px;border:1px solid var(--line);padding:6px;display:block;margin:12px 0}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}
+th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+th{background:var(--panel2);color:var(--accent)}
+tr:nth-child(odd) td{background:#131720}
+code,kbd{background:var(--code);padding:2px 6px;border-radius:4px;font-size:12.5px;color:#f0c674;border:1px solid var(--line)}
+pre{background:var(--code);border:1px solid var(--line);padding:12px 14px;border-radius:6px;overflow:auto;font-size:12.5px;line-height:1.45}
+.kpi{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0}
+.kpi .b{background:var(--panel2);border:1px solid var(--line);padding:8px 12px;border-radius:6px;font-size:13px}
+.kpi .b b{display:block;color:var(--accent2);font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+.tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;margin-right:4px}
+.tag.prod{background:#1a3b1a;color:var(--good);border:1px solid #2c5b2c}
+.tag.stage{background:#3b2f1a;color:var(--accent2);border:1px solid #5b4a2c}
+.tag.deprecated{background:#3b1a1a;color:var(--bad);border:1px solid #5b2c2c}
+footer{margin-top:48px;padding:20px 32px;color:var(--muted);font-size:12px;border-top:1px solid var(--line);text-align:center}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>PoSumo - ML-Agents + Sentis Documentation</h1>
+  <p>Unity 6000.5.8f1 (2D URP). Physics-ragdoll bipeds trained with PPO self-play, inferenced with the Unity InferenceEngine (Sentis) runtime. This index is the entry point for every report and diagram in this folder.</p>
+</header>
+
+<nav>
+  <a href="#tier1">Tier 1 - Executive</a>
+  <a href="#tier2">Tier 2 - Basic</a>
+  <a href="#tier3">Tier 3 - Complete</a>
+  <a href="creatures_dashboard.html">Dashboard</a>
+  <a href="onnx_summary.md">ONNX / Rig Inventory</a>
+  <a href="scenes.html">Scene Layout</a>
+</nav>
+
+<main>
+
+<section id="toc">
+  <h2>What's here</h2>
+  <div class="cards">
+    <div class="card"><h4>Architecture diagrams</h4><p>Eight SVG diagrams (Mermaid sources in <code>diagrams/</code>) covering lifecycle, tensors, reward tree, hyperparameter matrix, scene layout.</p></div>
+    <div class="card"><h4>creatures_dashboard.html</h4><p>Interactive dashboard with a view toggle: Executive mode (status, progress bars, behaviour evolution) vs. Technical mode (ONNX graphs, joint physics, obs vector breakdown).</p><a href="creatures_dashboard.html">Open dashboard -&gt;</a></div>
+    <div class="card"><h4>onnx_summary.md</h4><p>Matrix A (deployed ONNX models), Matrix B (per-fighter rig and actuator specification), with promotion status.</p><a href="onnx_summary.md">Read -&gt;</a></div>
+    <div class="card"><h4>scenes.html</h4><p>Build-settings scene layout and a tour of every manager object the scenes hold and what it does.</p><a href="scenes.html">Read -&gt;</a></div>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<section id="tier1">
+  <h2>Tier 1 - Executive Summary</h2>
+  <div class="tier tier1">
+    <h3>What PoSumo is, in 30 seconds</h3>
+    <p>PoSumo is a <b>physics-ragdoll sumo game</b> where each wrestler is a <b>14-part 2D biped</b> (pelvis, 4-segment torso, 2 legs x 3 segments, 2 arms x 2 segments) controlled end-to-end by a <b>neural network policy</b>. Four fighters are shipped (<b>Matt, Standard, Nick, Kim</b>) plus a deliberately brainless <b>Bot</b>. Brains are trained with <b>PPO self-play</b> via the ML-Agents Python trainer (<code>mlagents-learn</code>) and inferred at runtime through <b>Unity InferenceEngine (Sentis)</b>.</p>
+
+    <h4>Game flow</h4>
+    <p>The game always boots into the <b>tournament bracket scene</b> (<code>SCN_TOURNAMENT</code>). The bracket seeds each character twice into an 8-slot single-elimination, loads <code>SCN_SUMO</code> for each bout, the referee scores a winner, then the bracket advances. Each match is a best-of-(<code>tournamentPointsToWin = 2</code>) of rounds; each round is a refereed bout on a raised dohyo.</p>
+
+    <h4>Single round flow</h4>
+    <p>Intro countdown (4 s) -&gt; ceremonial walk-in (12 s cap) -&gt; "HAKKEYOI!" / "FIGHT!" -&gt; referee-driven fight (20 s cap, shrinking mat after 8 s) -&gt; round win/loss -&gt; 2.5 s grace -&gt; next round.</p>
+
+    <h4>Why this matters</h4>
+    <p>The policies solve a real control problem: balance under self-applied disturbance, exploit stance geometry, push without overcommitting. The match layer is presentation, not training. Self-play ELO is the metric; mean reward is only a shaping mix.</p>
+
+    <div class="kpi">
+      <div class="b"><b>Fighters shipped</b>4 + 1 bot</div>
+      <div class="b"><b>Observation dim</b>45 floats</div>
+      <div class="b"><b>Action dim</b>13 continuous</div>
+      <div class="b"><b>Powered joints</b>13 motors</div>
+      <div class="b"><b>Body mass</b>69.6 kg</div>
+      <div class="b"><b>Ring half-width</b>3.5 m (7 m dohyo)</div>
+      <div class="b"><b>Round timeout</b>20 s</div>
+      <div class="b"><b>Standing height</b>1.76 m</div>
+    </div>
+
+    <p><b>Quick start:</b> the game boots into <code>SCN_TOURNAMENT</code>. To inspect a brain: enter Play mode in <code>SCN_SUMO</code>. To train: <code>Training\Start-Training.ps1</code>. Verification: <code>MatchTestHarness.Run(n)</code> via MCP <code>script-execute</code>.</p>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<section id="tier2">
+  <h2>Tier 2 - High-level Overview</h2>
+
+  <div class="tier tier2">
+    <h3>Unified architecture</h3>
+    <p>Four script folders, three assemblies, four shipped brains, two referees. The diagram below traces the pipeline from a YAML config through mlagents-learn to an ONNX file to inference at runtime.</p>
+    <img class="svg" src="assets/architecture-simple.svg" alt="Architecture overview" />
+    <p><b>What each layer does.</b> Editor (<code>Assets/Editor/</code>) ships the menu tools that build envs, deploy brains, and run the harness. The training side (<code>Training/</code>) wraps <code>mlagents-learn</code> with TensorBoard and an explicit <code>--base-port</code>. The runtime side is <b>four</b> folders: <code>Agent/</code>, <code>Sensor/</code>, <code>Reward/</code>, <code>Systems/</code>. Everything that ships lives in <code>PoSumo.Runtime</code>; menu tools in <code>PoSumo.Editor</code>; tests in <code>PoSumo.Tests.EditMode</code>.</p>
+
+    <h3>Dynamic lifecycle &amp; execution loop</h3>
+    <p>Each 20 ms physics tick (<code>fixedDeltaTime = 0.02</code>) walks a fixed sequence: collect observations, normalize, infer, slew, apply Hill+activation+fatigue, drive the joints, step PhysX 2D, sample sensors, evaluate reward, check terminals.</p>
+    <img class="svg" src="assets/lifecycle-simple.svg" alt="Lifecycle overview" />
+    <p>The <b>Sentis</b> runtime is what runs every <code>.onnx</code> file: a 3-layer dense trunk (512x3) takes a 45-float observation vector and returns 13 continuous actions. <b>PhysX 2D</b> integrates 14 rigid bodies per fighter at 50 Hz. <b>Reward providers</b> are plain C# objects that hold per-character coefficients and return floats; they cannot end an episode.</p>
+
+    <h3>Tensor blueprint &amp; actuator map</h3>
+    <p>Observation vector (45 floats): body state (5) + 13 joint angles + 13 joint speeds + 4 foot contacts + 1 task flag (sumo or walk) + 4 opponent/target slots + 2 edge distances. Output: 13 joint drives, each mapped to a single motor.</p>
+    <img class="svg" src="assets/tensor-blueprint.svg" alt="Tensor blueprint" />
+
+    <h3>Reward tree</h3>
+    <p>Three reward trees: <b>Sumo</b> (upright, closing, lunge, impact, knee bend, hips low, stance, cadence), <b>Walk</b> (forward velocity, tall gate, bend reward, fall terminal -1, graduation +3), and <b>Shared</b> (energy penalty, jerk penalty, effort, step cadence). Terminals live only in <code>Agent_Biped</code>.</p>
+    <img class="svg" src="assets/reward-tree.svg" alt="Reward tree" />
+
+    <h3>Hyperparameter matrix</h3>
+    <p>Trainer: <b>PPO</b>, batch 2048, buffer 20480, learning rate 3.0e-4 (linear schedule), beta 5e-3, epsilon 0.2, GAE lambda 0.95, 3 epochs. Network: 3x dense 512 with input normalization. Self-play: window 25, swap/save 50k, team change 250k.</p>
+    <img class="svg" src="assets/hyperparameters.svg" alt="Hyperparameter matrix" />
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<section id="tier3">
+  <h2>Tier 3 - Granular Specifications &amp; Telemetry</h2>
+
+  <div class="tier tier3">
+    <h3>Detailed lifecycle and tensor flow</h3>
+    <p>Per-step tensor and memory flow with the Sentis inference engine, Hill force-velocity, fatigue integrator, motor slew limiter, and PhysX 2D island solver.</p>
+    <img class="svg" src="assets/lifecycle-detailed.svg" alt="Lifecycle detailed" />
+
+    <h3>Detailed architecture (memory + tensor path)</h3>
+    <p>Editor builds, trainer ingests, Sentis runs at inference, PhysX integrates, the two referees drive terminals, and the static state clears on <code>SubsystemRegistration</code>. <code>Systems_Log</code> is <code>[Conditional]</code>; <code>Systems_Telemetry</code> opens a raw <code>TcpListener</code> on :8787+ and never touches a Unity API off the main thread.</p>
+    <img class="svg" src="assets/architecture-detailed.svg" alt="Architecture detailed" />
+
+    <h3>Observation vector layout (45)</h3>
+    <table>
+      <thead><tr><th>Range</th><th>Count</th><th>Field</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>0..4</td><td>5</td><td>Body state</td><td>torsoVel.x/y, upright vs up-vector, torsoY, rootMass</td></tr>
+        <tr><td>5..17</td><td>13</td><td>Joint angles</td><td>parent-local signed degrees, facing-mirrored</td></tr>
+        <tr><td>18..30</td><td>13</td><td>Joint speeds</td><td>deg/s, slew-limited</td></tr>
+        <tr><td>31..34</td><td>4</td><td>Foot contacts</td><td>near/far x foot</td></tr>
+        <tr><td>35</td><td>1</td><td>Task flag</td><td>1 = sumo, 0 = walk (walk target in slots 36..39)</td></tr>
+        <tr><td>36..39</td><td>4</td><td>Opponent OR walk target</td><td>relX, relY, velX, velY</td></tr>
+        <tr><td>40..41</td><td>2</td><td>Edge distances</td><td>nearX, farX relative to <code>ringHalfWidth</code></td></tr>
+        <tr><td>42..44</td><td>3</td><td>Extended (opt-in)</td><td>opponent uprightness, down flag, edge distance (only if <code>extendedObservations</code>)</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Joint drive map (13 actions)</h3>
+    <table>
+      <thead><tr><th>#</th><th>Joint</th><th>Range (deg)</th><th>Torque cap (N m)</th><th>Speed cap (deg/s)</th><th>Mirror</th></tr></thead>
+      <tbody>
+        <tr><td>0 / 3</td><td>Hip near / far</td><td>-120 .. 30</td><td>300</td><td>260</td><td>yes</td></tr>
+        <tr><td>1 / 4</td><td>Knee near / far</td><td>0 .. 150</td><td>250</td><td>320</td><td>yes</td></tr>
+        <tr><td>2 / 5</td><td>Ankle near / far</td><td>-35 .. 35</td><td>160</td><td>220</td><td>yes</td></tr>
+        <tr><td>6 / 7 / 8</td><td>Spine 1 / 2 / 3</td><td>-20 .. 20</td><td>180</td><td>160</td><td>no</td></tr>
+        <tr><td>9 / 11</td><td>Shoulder near / far</td><td>-120 .. 120</td><td>80</td><td>320</td><td>yes</td></tr>
+        <tr><td>10 / 12</td><td>Elbow near / far</td><td>-150 .. 0</td><td>60</td><td>320</td><td>yes</td></tr>
+      </tbody>
+    </table>
+    <p>Two <b>unpowered</b> MTP (toe) hinges complete the 16-joint body without touching the 13-action / 45-obs contract.</p>
+
+    <h3>Sensor stack</h3>
+    <ul>
+      <li><b>BodyPartContact</b> - per-foot ground contact (used by <code>IsDown</code> via <code>NonFootGroundContacts</code>).</li>
+      <li><b>Impact</b> - impulse captured at first heavy collision in a contact pair, scaled by squared closing speed, capped at <code>impactCap</code>.</li>
+      <li><b>RayPerception</b> - off by default; an opt-in sensor for edge / wall sensing.</li>
+    </ul>
+
+    <h3>Terminal handling</h3>
+    <p>Only <code>Agent_Biped</code> ends an episode. The training referee (<code>Systems_SumoMatchManager</code>) calls <code>AddReward(+1)</code> on the winner and <code>AddReward(-1)</code> on the loser. The game referee (<code>Systems_GameMatchManager</code>) calls the same pair but with the round state machine wrapping it. <b>Falling is not a loss</b> in either referee; <code>downOutSeconds = 3 s</code> retires a non-getting-up fighter.</p>
+
+    <h3>Telemetry</h3>
+    <ul>
+      <li><b>TensorBoard</b> (port 6006) - ELO, mean reward, episode length, value loss, policy loss, entropy, per-fighter stamina.</li>
+      <li><b>HTTP :8787+</b> (env builds after 2026-08-07) - JSON snapshot of every fighter's position, velocity, edge distance, stamina, current round state. Raw <code>TcpListener</code>, 12-port walk, main-thread string assembly on a 2 Hz timer.</li>
+      <li><b>Console</b> - <code>[MATCH]</code>, <code>[ROUND]</code>, <code>HARNESS RESULT:</code>, <code>BUILD RESULT:</code>, <code>DEPLOY RESULT:</code> are the markers <code>MatchTestHarness</code> and the verification flow read back.</li>
+    </ul>
+
+    <h3>Static state and domain-reload handling</h3>
+    <p>Enter Play Mode domain reload is OFF. Every static that holds game state registers a <code>[RuntimeInitializeOnLoadMethod(SubsystemRegistration)]</code>:</p>
+    <table>
+      <thead><tr><th>Class</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td><code>Systems_TournamentState</code></td><td>clears the 8-slot bracket</td></tr>
+        <tr><td><code>Systems_CareerStats</code></td><td>reloads <code>career.json</code> from <code>Application.persistentDataPath</code></td></tr>
+        <tr><td><code>Systems_AcademyLifecycle</code></td><td><code>runInBackground = true</code>, gravity re-assert, solver iterations, Academy disposal</td></tr>
+        <tr><td><code>Systems_CareerRecorder</code></td><td>consume-once promotion flag cleared</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Telemetry verification commands</h3>
+    <pre><code># Live training env metrics
+curl http://127.0.0.1:8787/metrics
+
+# Headless editor automation
+python Tools/unity.py ping
+python Tools/unity.py scene SCN_TOURNAMENT
+python Tools/unity.py play | stop
+python Tools/unity.py errors --warnings
+
+# Capture match screenshots
+python Tools/unity.py shot Temp/match.png
+
+# Run EditMode tests (pass assemblyNames, not testFilter)
+python Tools/unity.py raw run_tests '{"mode":"EditMode","assemblyNames":["PoSumo.Tests.EditMode"]}'</code></pre>
+  </div>
+</section>
+
+<footer>
+  <p>PoSumo - Unity 6000.5.8f1 - ML-Agents 4.1.0 - InferenceEngine 2.6.1 - Last revision 2026-08-16.</p>
+</footer>
+
+</main>
+</body>
+</html>
