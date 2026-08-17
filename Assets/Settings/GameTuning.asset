@@ -26,10 +26,10 @@ MonoBehaviour:
   shrinkStartSeconds: 8
   shrinkToHalfWidth: 1.8
   enableWalkIn: 1
-  walkInHalfWidth: 8
-  walkInStartGapHalf: 1.8
+  walkInHalfWidth: 3.5
+  walkInStartGapHalf: 2.5
   walkInTouchGap: 0.6
-  walkInTimeout: 7
+  walkInTimeout: 9
   pointsToWin: 3
   tournamentPointsToWin: 2
   roundTimeoutSeconds: 20

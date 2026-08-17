@@ -183,8 +183,35 @@ namespace PoSumo
             base.Awake();
         }
 
+        /// Cost of falling in Mode.Walk, as a POSITIVE magnitude. 1 is the historical
+        /// value and stays the default, so a run with no curriculum trains exactly
+        /// what it always did.
+        ///
+        /// Curriculum-controlled via `walk_fall_penalty` because it is the one lever
+        /// CLAUDE.md names as untried against the crawling gait, and four runs proved
+        /// the alternative does not work. The arithmetic: a fall is -1 plus the
+        /// forgone +3 graduation, about -4, against a measured tall-vs-crawl shaping
+        /// advantage of 0.0063 per step. No reward coefficient can cross that gap —
+        /// runs tall01..tall04 all tried and all failed — so the gap has to be closed
+        /// from the OTHER side, by making falling cheap enough early on that the
+        /// policy can afford to experiment with standing upright, then ramping the
+        /// penalty back to 1 once it has a tall gait to protect.
+        ///
+        /// Note this only softens the explicit penalty. A fall still ENDS the episode
+        /// and still forfeits the +3, so falling is never free even at 0 — which is
+        /// deliberate: an agent that could fall for nothing would simply stop walking.
+        private float _walkFallPenalty = 1f;
+
         public override void OnEpisodeBegin()
         {
+            // Read per episode, not per step: this is a lesson dial, and re-reading it
+            // mid-episode would change the terms of an episode already under way.
+            if (Academy.IsInitialized)
+            {
+                _walkFallPenalty = Mathf.Max(0f,
+                    Academy.Instance.EnvironmentParameters.GetWithDefault("walk_fall_penalty", 1f));
+            }
+
             _b.ResetPose();
             if (_contactSensors == null) _contactSensors = GetComponentsInChildren<Sensor_BodyPartContact>();
             for (int sensorIndex = 0; sensorIndex < _contactSensors.Length; sensorIndex++)
@@ -412,7 +439,7 @@ namespace PoSumo
                 // this step's shaping outright — a fall is worth exactly -1 no matter
                 // what was earned on the way down — so the order of these two lines
                 // against the Evaluate above is load-bearing.
-                if (IsDown) { SetReward(-1f); EndEpisode(); return; }
+                if (IsDown) { SetReward(-_walkFallPenalty); EndEpisode(); return; }
                 if (xLocal > -0.3f) { AddReward(3f); EndEpisode(); }
             }
             else // Sumo

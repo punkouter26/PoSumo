@@ -88,8 +88,9 @@ re-run training locally to recreate that directory.
 | Package | com.unity.ml-agents | **4.1.0** | LOCAL `file:` package with patches. Upgraded from 4.0.0 (release_23) on 2026-08-06 — re-fetching is now a documented procedure, not a prohibition, but it still LOSES the patches below |
 | Package | com.unity.ai.inference | 2.6.1 | auto-dependency of ML-Agents (`Unity.InferenceEngine.ModelAsset`). Was 2.2.1 |
 | Package | URP | 17.5.0 | project template |
-| MCP | unity-mcp-cli (npm) | **0.87.0** | keep in step with the Unity package below |
-| MCP | com.ivanmurzak.unity.mcp | **0.87.0** | + gamedev-mcp-server 9.2.0. Upgrading it reverts the plugin `.meta` platform flags — re-run *PoSumo → Fix Plugin Platforms* |
+| MCP | unity-mcp-cli (npm) | **not installed** | `npm ls -g` is empty and there is no global bin. Every `unity-mcp-cli` invocation in the `.claude/skills/*/SKILL.md` files therefore fails — use `Tools/unity.py` instead |
+| MCP | com.ivanmurzak.unity.mcp | **0.88.0** | + gamedev-mcp-server 9.2.0. Upgrading it reverts the plugin `.meta` platform flags — re-run *PoSumo → Fix Plugin Platforms* |
+| MCP | com.ivanmurzak.unity.mcp.particlesystem | **REMOVED 2026-08-16** | 1.2.30 did not match core 0.88.0 — it referenced a namespace `AIGD` that does not exist, and **the whole project failed to compile**, which blocks Play mode entirely. The `.cinemachine` add-on had already been dropped for the same reason. See the warning below |
 | MCP | com.coplaydev.unity-mcp | 10.1.0 | |
 | MCP | com.besty.unity-skills | 2.2.1 | HTTP server port 8090 |
 | Python | Python | **3.10.11** | hard range: >=3.10.1, <=3.10.12 |
@@ -127,6 +128,24 @@ editor-only `Google.Protobuf_Packed.dll` collided with ML-Agents' copy — the c
 that local patch 2 below exists to work around. A minor-version move is exactly when that
 patch could stop holding. If inference ever goes silently wrong (a fighter that stands
 still or twitches rather than erroring), suspect this before suspecting the brain.
+
+> **An MCP add-on package can break the entire project, and the symptom does not point at
+> it.** On 2026-08-16 `com.ivanmurzak.unity.mcp.particlesystem` 1.2.30 was resolved against
+> core 0.88.0, referenced a namespace (`AIGD`) that version does not ship, and left
+> `EditorUtility.scriptCompilationFailed` **true**. Nothing in `Assets/` was wrong — zero
+> errors in project code — but **Play mode is blocked while that flag is set**, so the game
+> could not be run at all. These add-ons version independently of the core package and
+> nothing verifies the pair.
+>
+> Fixed by deleting the line from `Packages/manifest.json`. Two follow-ons worth knowing:
+> the removal left a stale `CS2001: Source file ... UnityTokenRefresher.cs could not be
+> found` that `CompilationPipeline.RequestScriptCompilation(CleanBuildCache)` did NOT
+> clear — only an **Editor restart** did; and `EditorApplication.OpenProject(cwd)` is a
+> clean way to restart it from the bridge.
+>
+> First diagnostic when anything refuses to run: `scriptCompilationFailed`, then group the
+> console errors by package. If they all come from `Library/PackageCache/`, it is not your
+> code.
 
 Re-measure rather than trusting this table when something behaves oddly; a version drifting
 under a "required set" heading is how a project ends up debugging the wrong layer.
@@ -415,7 +434,7 @@ was preserved deliberately, because these are small floats accumulated at 50 Hz.
   a walk-in that brushes the other fighter banks that momentum for the first sumo step
   after `EndWalkIn`.
 
-#### The fighters crawl during the walk-in, and FOUR retrains failed to fix it (2026-08-08)
+#### The fighters crawl during the walk-in, and FIVE retrains failed to fix it (2026-08-17)
 
 Do not spend a fifth run on this without reading all of it. The measured gait height (torso
 above the mat, standing pose is 1.06 m) went:
@@ -427,6 +446,35 @@ above the mat, standing pose is 1.06 m) went:
 | `tall02` warm 2M, additive 0.0015 | 0.56-0.74 | yes | no change |
 | `tall03` warm 2.5M, height GATE, ramp 0.65-0.95 | 0.54-0.71 | yes | no change |
 | `tall04` warm 2.5M, height gate, ramp 0.45-1.00 | 0.59-0.74 | yes | no change |
+| `gait01` warm **16M**, fall-penalty curriculum 0.05→1.0 | **0.16-0.20** | yes | **WORSE — dragging flat** |
+
+> **`gait01` (2026-08-17) attacked the TERMINAL rather than the shaping, which is the one
+> lever this section used to recommend, and it made the gait dramatically worse.** The
+> fall penalty was made a curriculum parameter (`walk_fall_penalty`, read by
+> `Agent_Biped.OnEpisodeBegin`) and ramped 0.05 → 0.25 → 0.6 → 1.0 across 16M steps, warm
+> started from the 15M `*_stamina01` trunks. All four fighters completed the full ramp.
+>
+> Measured result: torso height **0.16-0.20 m** against the 0.55-0.76 m it was trying to
+> raise, and a 1.06 m standing pose. They stopped crawling and started **dragging flat**.
+>
+> **Why, and this is the part worth keeping:** cheap falls do not buy exploration, because
+> **a body already on the ground cannot fall**. Once the policy found the floor there was
+> no gradient left pointing up — the fall terminal simply stopped firing. Ramping the
+> penalty back to 1.0 over the final 4M steps did not recover it; by then dragging was a
+> deep local optimum and the terminal it would have been punished by was unreachable.
+>
+> So the recommendation this section used to make is now itself disproven. **Do not spend a
+> sixth run inside the reward function — shaping and terminal have both been tried.** What
+> is left is genuinely different in kind: a stability aid the policy cannot opt out of (a
+> torso-height constraint enforced in physics rather than paid for in reward), a separate
+> walk-only trunk that does not share capacity with self-play sumo, or accepting the gait
+> and solving the ceremony in presentation. The last of those is nearly free and was
+> already partly done — see `walkInTouchGap`.
+>
+> **The fight was unharmed**, exactly as in all four earlier runs: 6 rounds, 83% ring-outs,
+> no regression. Every walk experiment on this shared trunk improves or preserves the
+> FIGHT and leaves the WALK alone, which is itself evidence that the trunk spends its
+> capacity where the reward is.
 
 The **diagnosis of the cause was right**: `walkGate` multiplied the dominant forward-speed
 term by `KneeBend`, so at a 0.15 floor straight legs earned 15% of it and a deep crouch
@@ -740,6 +788,7 @@ a tick on one asset rather than an edit in three scenes.
 | `Systems_ArenaLighting` / `Systems_ArenaAtmosphere` | 2D light rig + post volume; backdrop parallax, haze, crowd sway, light shafts |
 | `Systems_BodySurface` | writes `_Sweat` and `_Dirt` into one fighter's `PoSumo/BodyLit` material — sheen from exertion, clay from arena contact. Rides `enableLighting`; disables itself unless `Systems_ArenaLighting.BodyShadingActive`, so it is **currently inert** |
 | `Systems_ImpactFx` / `Systems_DustPuff` / `Systems_SoftBodyJiggle` / `Systems_BlobShadow` | hit bursts, dust, flesh wobble, contact shadows |
+| `Systems_StrikeImpulse` | **punches and kicks deliver real momentum** — a clean body shot launches a man. The one companion that is ALSO spawned by `Systems_SumoMatchManager`, so it is in training too. Not presentation: it changes who wins rounds |
 | `Systems_BodyDamage` / `Systems_RingBlood` | bruise decals, **limb loss and decapitation**, the bloody head KO, and blood left on the mat. **Owns the `Knockout` static event the referee's 3-KO rule reads**, so it is the one "presentation" system with a rules consequence |
 | `Systems_FaceMood` | expression driven by dominance |
 | `Systems_CareerRecorder` | the only writer into career stats |
@@ -989,6 +1038,40 @@ After any change to the walk lane, assert every walker spawns at `xLocal < -0.3`
 > 1-3M steps at a reduced learning rate — but note that `Training/results/` is gitignored
 > and absent from a fresh clone, so there may be no checkpoint to warm-start from and the
 > pass becomes a cold retrain. Turn on `staminaObservation` in the same run.
+
+> ## **DO NOT USE THE UNITY EDITOR WHILE A RUN IS TRAINING.** Measured twice on
+> 2026-08-16 and it is the single most expensive mistake available here.
+>
+> Entering Play mode alongside 8 env players took one run from **4.2M steps/hour to 69
+> steps in 80 minutes** — it looked alive the whole time, with trainers and env players
+> in the process list. A second run's env players died 2 minutes after launch, during a
+> brain deploy plus Play mode. Neither errored. **Both look identical to a healthy run
+> until you diff the step count**, which is why the check below is worth running before
+> believing any status.
+>
+> Deploying a brain, refreshing assets and building an env are all Editor work. Stop
+> training first, or accept the run.
+>
+>     powershell -Command "@(Get-Process mlagents-learn -EA SilentlyContinue).Count"
+>     # then compare the newest numbered .pt against itself 5 minutes later
+
+**Three wrappers, and which to use.** All three enforce an explicit `--base-port` (the
+trainer takes `--num-envs` consecutive ports, so two runs on the default 5005 collide and
+the second hangs on a handshake the first already answered) and start TensorBoard exactly
+once (a second bind on 6006 fails quietly enough that you notice an hour later with no
+graphs).
+
+| Script | Use it for |
+|---|---|
+| `Start-Training.ps1` | ONE run, foreground. The original; still correct for a single fighter |
+| `Start-StaminaExtension.ps1` | 2+ concurrent runs. `-Phase` picks the config generation, `-InitializeFromPhase` warm-starts a NEW run id from an existing trunk, `-Minutes` arms a graceful auto-stop |
+| `Run-GaitCampaign.ps1` | Unattended multi-hour work. Runs the roster in sequential batches, because the limit is MEMORY not cores — 4 fighters x 4 envs is ~17 GB against ~8-10 GB typically free, so 2 at a time is what fits |
+
+`Start-StaminaExtension.ps1` carries two guards that each cost a wasted launch to learn:
+a `--resume` into a config whose `max_steps` equals the checkpoint's step count **exits
+immediately having trained nothing and looks exactly like a successful short run**; and a
+warm start into an existing run id silently resumes that run instead of loading the trunk
+you asked for, so it refuses.
 
 `Training\Start-Training.ps1` is the wrapper: it starts TensorBoard *before* the trainer,
 always passes an explicit `--base-port`, bounds `--num-envs` to 4-8 and warns if that

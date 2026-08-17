@@ -56,7 +56,20 @@ param(
     [ValidateRange(0, 1440)][int]$Minutes = 60,
     [ValidateRange(1024, 65000)][int]$BasePort = 5005,
     [int]$MinFreeGB = 12,
-    [switch]$SkipMemoryCheck
+    [switch]$SkipMemoryCheck,
+
+    # Campaign selector. 'Stamina01' resumes the 15M extension; 'Gait01' starts the
+    # crawling-gait fine-tune, which is a NEW run id and therefore cannot resume —
+    # it warm-starts from the stamina trunk instead. Adding a campaign here is a
+    # PascalCase config stem plus its lowercase run suffix; nothing else changes.
+    [ValidateSet('Stamina01', 'Gait01')]
+    [string]$Phase = 'Stamina01',
+
+    # Source run for --initialize-from, e.g. 'stamina01'. Resolves BY BEHAVIOR NAME
+    # and RELATIVE TO --results-dir, so the source must sit in Training/results and
+    # carry a behavior of the same name. network_settings must match the source
+    # trunk exactly (512 x 3 here) or the load fails outright.
+    [string]$InitializeFromPhase
 )
 
 $ErrorActionPreference = 'Stop'
@@ -110,27 +123,26 @@ else {
 $launched = @()
 $port = $BasePort
 
+$phaseSuffix = $Phase.ToLowerInvariant()
+
 foreach ($fighter in $Fighters) {
-    $runId = "$($fighter.ToLowerInvariant())_stamina01"
-    $config = Join-Path $repoRoot "Training/configs/${fighter}Stamina01.yaml"
+    $runId = "$($fighter.ToLowerInvariant())_$phaseSuffix"
+    $config = Join-Path $repoRoot "Training/configs/${fighter}${Phase}.yaml"
     $envExe = Join-Path $repoRoot "Builds/${fighter}Env/${fighter}Env.exe"
     $runDir = Join-Path $repoRoot "Training/results/$runId"
 
-    foreach ($required in @($config, $envExe, $runDir)) {
+    foreach ($required in @($config, $envExe)) {
         if (-not (Test-Path $required)) { throw "missing for ${fighter}: $required" }
     }
 
-    # The guard described in the header: a resume that is already at max_steps
-    # trains nothing and exits clean.
     $maxSteps = [int]((Select-String -Path $config -Pattern '^\s+max_steps:\s*(\d+)').Matches[0].Groups[1].Value)
-    $reached = (Get-ChildItem (Join-Path $runDir $fighter) -Filter '*.pt' -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -match '-(\d+)\.pt$' } |
-        ForEach-Object { [int]($_.Name -replace '.*-(\d+)\.pt$', '$1') } |
-        Sort-Object -Descending | Select-Object -First 1)
-    if ($null -ne $reached -and $maxSteps -le $reached) {
-        throw "$runId is already at $reached steps and max_steps is $maxSteps — raise max_steps in $config or this resume trains nothing."
+    $reached = $null
+    if (Test-Path (Join-Path $runDir $fighter)) {
+        $reached = (Get-ChildItem (Join-Path $runDir $fighter) -Filter '*.pt' -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '-(\d+)\.pt$' } |
+            ForEach-Object { [int]($_.Name -replace '.*-(\d+)\.pt$', '$1') } |
+            Sort-Object -Descending | Select-Object -First 1)
     }
-    Write-Host "$runId : resuming from $reached toward $maxSteps"
 
     $learnArgs = @(
         $config,
@@ -139,9 +151,29 @@ foreach ($fighter in $Fighters) {
         "--env=Builds/${fighter}Env/${fighter}Env.exe",
         "--num-envs=$NumEnvs",
         "--base-port=$port",
-        '--no-graphics',
-        '--resume'
+        '--no-graphics'
     )
+
+    if ($InitializeFromPhase) {
+        # A fresh run id: --resume would be meaningless and --force would be a lie.
+        $source = "$($fighter.ToLowerInvariant())_$($InitializeFromPhase.ToLowerInvariant())"
+        $sourceDir = Join-Path $repoRoot "Training/results/$source"
+        if (-not (Test-Path $sourceDir)) { throw "InitializeFrom source not found: $sourceDir" }
+        if (Test-Path $runDir) {
+            throw "$runId already exists. A warm start must begin from an empty run id, or the trainer resumes it instead of loading $source. Delete it or pick a new phase."
+        }
+        $learnArgs += "--initialize-from=$source"
+        Write-Host "$runId : warm start from $source toward $maxSteps"
+    }
+    else {
+        # The guard that cost a wasted launch: a resume already AT max_steps trains
+        # nothing, exits clean, and looks exactly like a successful short run.
+        if ($null -ne $reached -and $maxSteps -le $reached) {
+            throw "$runId is already at $reached steps and max_steps is $maxSteps — raise max_steps in $config or this resume trains nothing."
+        }
+        $learnArgs += '--resume'
+        Write-Host "$runId : resuming from $reached toward $maxSteps"
+    }
     $proc = Start-Process -FilePath $learnExe -PassThru -ArgumentList $learnArgs -WorkingDirectory $repoRoot
     Write-Host "  trainer pid $($proc.Id) on ports $port..$($port + $NumEnvs - 1)"
 
