@@ -47,10 +47,28 @@ namespace PoSumo
         public bool enableWalkIn = true;
         [Tooltip("Platform half-width during the ceremonial walk-in. The mat contracts to ringHalfWidth before the bell.")]
         public float walkInHalfWidth = 8f;
-        [Tooltip("Half the gap the fighters start the walk-in from. They walk all the way to contact now, and the measured closing rate is only ~1 m/s for the PAIR, so this is 3 and not 6: from 6 m apart they meet in about 4 s. At 6 (12 m apart) the approach ran past 9 s and never finished.")]
-        public float walkInStartGapHalf = 3f;
-        [Tooltip("Surface gap in metres between the two fighters' colliders at which they count as having met — 0 is literal contact. This is the moment the policy flips from its walk task to its fight task. Measured body-to-body rather than torso-to-torso, because limb pose swings torso-separation-at-contact between about 0.9 m and 1.8 m.")]
-        public float walkInTouchGap = 0.05f;
+        [Tooltip("Half the gap the fighters start the walk-in from. Was 3 (6 m apart) and the walk-in then FAILED ON EVERY BOUT — see walkInTouchGap. 1.8 gives 3.6 m, which the measured gait closes comfortably.")]
+        // 3 -> 1.8 on 2026-08-16. The previous note here reasoned that 3 was already
+        // the cautious value because 6 had run past 9 s; it was still too far. Logged
+        // failures read `STALLED after 3.3s, surfaceGap=5.05, bestGap=4.87` and
+        // `timed out after 7.0s, surfaceGap=0.80, bestGap=0.69`.
+        public float walkInStartGapHalf = 1.8f;
+        [Tooltip("Surface gap in metres between the two fighters' colliders at which they count as having met — this is the moment the policy flips from its walk task to its fight task. Measured body-to-body rather than torso-to-torso, because limb pose swings torso-separation-at-contact between about 0.9 m and 1.8 m.")]
+        // 0.05 -> 0.6 on 2026-08-16, with the start gap above.
+        //
+        // 0.05 demanded literal contact and NO BOUT EVER ACHIEVED IT. Every match
+        // logged a stall or a timeout, and the referee fell back to parking the pair
+        // at the stand-off — so the ceremony this whole code path exists for was
+        // never once seen. The gait's measured floor is bestGap 0.69 m; a threshold
+        // an order of magnitude below what the walker can actually reach is not a
+        // strict setting, it is an unreachable one.
+        //
+        // 0.6 is a CEREMONY threshold, not a physics one. Nothing downstream needs
+        // the colliders to touch — it only decides when the task flag flips — and at
+        // 0.6 m of surface separation the two men read as having met in the middle.
+        // Fixing the gait itself is a training problem with four failed runs behind
+        // it (see CLAUDE.md); this makes the presentation work with the gait we have.
+        public float walkInTouchGap = 0.6f;
         [Tooltip("Hard cap on the walk-in, in seconds. Must cover the full approach: roughly walkInStartGapHalf metres each at the measured ~1.4 m/s, plus margin for a stumble. On timeout the fighters are parked at the stand-off and the round opens with the normal countdown instead.")]
         public float walkInTimeout = 12f;
 

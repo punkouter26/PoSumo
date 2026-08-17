@@ -21,32 +21,55 @@ namespace PoSumo.EditorTools
         // *_sumo0N and *_walk0N runs are retired and their checkpoints no longer
         // fit the 45-slot observation vector.
         //
-        // Matt is on 02: matt_unified01's walk lane was broken (every walker faced
-        // away from its target and banked the +3 graduation on its first decision),
-        // and because walk and fight share one network that free reward
-        // contaminated the whole policy, so it was restarted rather than resumed.
+        // RETARGETED 2026-08-16 to the *_stamina01 runs, which are what actually
+        // back the shipped ONNX files. These four entries had still pointed at
+        // *_unified01/02 — runs that no longer exist in Training/results at all, so
+        // every menu item failed with "no ONNX at Training/results/<run>/<X>.onnx"
+        // and the only way to ship a brain was to call Deploy() by hand.
+        //
+        // That is the failure mode to expect whenever the campaign moves on: the
+        // run ids live here as string literals and nothing checks them until a
+        // human clicks the menu. When you start a new campaign, change these in the
+        // same commit that retires the old run, or this rots again.
+        //
+        // stamina01 is the 46-observation generation: staminaObservation is ON in
+        // every character asset, so a pre-stamina checkpoint no longer fits the
+        // input layer and cannot be deployed here even if the folder survived.
         [MenuItem("PoSumo/Deploy Matt Brain")]
         public static void DeployMatt()
         {
-            Deploy("matt_unified02", "Matt", "Assets/Agents/Matt_v01");
+            Deploy("matt_stamina01", "Matt", "Assets/Agents/Matt_v01");
         }
 
         [MenuItem("PoSumo/Deploy Standard Brain")]
         public static void DeployStandard()
         {
-            Deploy("standard_unified01", "Standard", "Assets/Agents/Standard_v01");
+            Deploy("standard_stamina01", "Standard", "Assets/Agents/Standard_v01");
         }
 
         [MenuItem("PoSumo/Deploy Nick Brain")]
         public static void DeployNick()
         {
-            Deploy("nick_unified01", "Nick", "Assets/Agents/Nick_v01");
+            Deploy("nick_stamina01", "Nick", "Assets/Agents/Nick_v01");
         }
 
         [MenuItem("PoSumo/Deploy Kim Brain")]
         public static void DeployKim()
         {
-            Deploy("kim_unified01", "Kim", "Assets/Agents/Kim_v01");
+            Deploy("kim_stamina01", "Kim", "Assets/Agents/Kim_v01");
+        }
+
+        /// Ships all four in one click. Added because deploying the roster was four
+        /// menu trips, and a half-deployed roster (two fighters on a new generation,
+        /// two on the old) is silently wrong rather than broken — both ONNX files
+        /// load fine, they just came from different training runs.
+        [MenuItem("PoSumo/Deploy ALL Brains")]
+        public static void DeployAll()
+        {
+            DeployStandard();
+            DeployMatt();
+            DeployNick();
+            DeployKim();
         }
 
         /// Deploy the newest numbered checkpoint of a RUNNING training run, so a

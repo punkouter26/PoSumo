@@ -516,12 +516,38 @@ policies then never learn that a stray foot over the edge is fatal.
 Three rules used to be game-only. **Two of them were ported into the training referee on
 2026-08-15 and one cannot be**, so the asymmetry is now down to a single rule:
 
-- **`downOutSeconds`** (3 s lying down forfeits the round — `IsDown` can latch permanently
-  once a leg is under the body, and measured play had half of every round be two motionless
-  ragdolls waiting out the clock). **Now in both referees**, tiebreak included: both down
-  past the count awards it against whoever went down first. It had to move — measured play
-  had **57%** of rounds decided by this rule against 29% ring-outs, so a policy trained
-  without it was optimising against a referee it never meets.
+> **2026-08-16 — the two referees were brought fully back into step, and two new rules
+> exist. Read this before touching either.**
+>
+> - **The SHRINKING MAT is now in BOTH.** The mat closes from `ringHalfWidth` to
+>   `shrinkToHalfWidth` (3.5 → 1.8) between `shrinkStartSeconds` (8) and the bell. It had
+>   been game-only, so every brain trained on a mat that never closed. `Systems_SumoMatchManager`
+>   scales the target **proportionally** to that round's randomized start width — a fixed
+>   1.8 would be a no-op on any round that already started narrow. It detects nothing: it
+>   withdraws the floor and the existing ring-out path does the rest.
+> - **`Systems_StrikeImpulse` is now in BOTH.** Punches and kicks deliver real momentum, so
+>   a clean body shot launches a man. Spawned by `Systems_GameMatchManager` behind
+>   `enableStrikeImpulse`, and by `Systems_SumoMatchManager` directly — one instance per
+>   scene, because `Sensor_Impact.AnyImpact` is static and serves every body.
+> - `downOutSeconds` went to **0 in both** — see below.
+>
+> **Every brain before `*_stamina01` at 15M trained without all three.** Two traps this
+> cost, both recorded in `Systems_StrikeImpulse`: the impulse curve must be calibrated
+> against MEASURED strike speeds (3.9-5.3 m/s — a curve peaking at 11.9 m/s was inert, the
+> same "term outside the observed range" failure as the walk-tall runs), and its per-strike
+> log must stay OFF in training (it wrote 37 MB per env worker in 36 minutes and killed one
+> run's env logging outright with `Curl error 23`).
+
+- **`downOutSeconds` is now `0` in BOTH referees — the rule is RETIRED (2026-08-16).** It
+  read on screen as the game giving up, and the **shrinking mat below now does its job
+  better**: a fighter who stays down is squeezed off the edge and loses an honest ring-out.
+  Measured immediately after: 5 rounds, 5 ring-outs, no stalls and no draws, against the
+  29% ring-out baseline the rule was introduced to fix.
+  **Do not restore it without also removing the shrink, and do not remove the shrink
+  without restoring it** — either alone brings back the stall it was written for, two
+  motionless bodies on a mat that never closes. The history is worth keeping: it existed
+  because `IsDown` can latch permanently once a leg is under the body, and it once decided
+  **57%** of rounds.
 - **The low-friction `tawara` band** at the rim (`tawaraBandWidth` / `tawaraFriction`) that
   turns "almost out" into "out". **Now in both.** `Systems_SumoMatchManager` writes both
   values onto `Systems_SumoArena` in `Start`, *before* the first `ResetRound`, because the
