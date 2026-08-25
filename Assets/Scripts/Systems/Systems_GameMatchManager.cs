@@ -80,6 +80,7 @@ namespace PoSumo
         private bool enableStrikeImpulse = true;
         private bool enableKimarite = true;
         private bool enableCrowdMomentum = true;
+        private bool enablePerfHud = true;
         [Tooltip("Round-opening countdown length; physics and brains are held until it finishes.")]
         public int countdownSeconds = 3;
         [Tooltip("Camera ortho when the countdown punches in on a fighter's head.")]
@@ -371,6 +372,7 @@ namespace PoSumo
                 enableStrikeImpulse = tuning.enableStrikeImpulse;
                 enableKimarite = tuning.enableKimarite;
                 enableCrowdMomentum = tuning.enableCrowdMomentum;
+                enablePerfHud = tuning.enablePerfHud;
             }
 
             // NOT ANDed with Systems_ArenaLighting.LightingEffects, and that is
@@ -663,7 +665,7 @@ namespace PoSumo
         {
             Systems_Log.Info($"WALK-IN RESULT: contact after {(walkInTimeout - _walkInLeft):F2}s — fight brains engaged");
             EndWalkInPhase();      // both bodies back on their fight brain
-            ContractMat();
+            RestoreFightRing();
             if (_camFollow != null) _camFollow.ClearShots();
 
             _braceStarted = Time.time;
@@ -688,10 +690,29 @@ namespace PoSumo
             _countdown.schedule.Execute(HideCountdown).StartingIn(600);
         }
 
-        /// Hands both fighters back to their fight brains and shrinks the mat to
-        /// the real ring before the countdown starts.
-        /// Shrinks the intro mat back to the real fighting ring.
-        private void ContractMat()
+        /// Puts the mat back to the full fighting ring, whatever width it is
+        /// currently at, and resyncs the tawara and the shrink bookkeeping.
+        ///
+        /// Called from BOTH directions, which is why it is no longer named
+        /// `ContractMat`:
+        ///   - after the walk-in it CONTRACTS, from the wide ceremony mat down;
+        ///   - at the start of every later round it EXPANDS, from wherever the
+        ///     shrinking ring finished the previous round back out to full.
+        ///
+        /// **Must run BEFORE the fighters are repositioned.** `EndEpisode` ->
+        /// `OnEpisodeBegin` -> `ResetPose` puts them back on the stand-off marks at
+        /// +/-`spawnGapHalf` (2.5 m), and the shrunk ring closes to
+        /// `shrinkToHalfWidth` (1.8 m) — so a round that opened on last round's
+        /// finishing width would spawn both fighters a metre past the edge of the
+        /// mat and stand them on nothing through the whole countdown.
+        ///
+        /// This used to be reachable only through the walk-in, so the "every round
+        /// opens on a FULL mat" guarantee below held for round 1 and nothing else.
+        /// Rounds 2+ and rematches were relying on `TickShrinkingRing` noticing the
+        /// mismatch — which it does, but only on the first FixedUpdate of the
+        /// Fighting phase, i.e. after the countdown has already run and the fighters
+        /// have already been released.
+        private void RestoreFightRing()
         {
             if (_arena == null) return;
             _arena.SetPlatformHalfWidth(ringHalfWidth);
@@ -844,6 +865,7 @@ namespace PoSumo
             SpawnCompanion<Systems_StrikeImpulse>(enableStrikeImpulse, "StrikeImpulse");
             SpawnCompanion<Systems_KimariteCaller>(enableKimarite, "Kimarite");
             SpawnCompanion<Systems_CrowdMomentum>(enableCrowdMomentum, "CrowdMomentum");
+            SpawnCompanion<Systems_PerfHud>(enablePerfHud, "PerfHud");
             SpawnCompanion<Systems_ArenaLighting>(enableLighting, "ArenaLighting");
             SpawnCompanion<Systems_CareerRecorder>(recordCareerStats, "CareerRecorder");
             SpawnCompanion<Systems_ArenaAtmosphere>(enableAtmosphere, "Atmosphere");
@@ -1464,6 +1486,10 @@ namespace PoSumo
                     _phaseLeft -= Time.fixedDeltaTime;
                     if (_phaseLeft <= 0f)
                     {
+                        // BEFORE EndEpisode: ResetPose spawns them on the stand-off
+                        // marks, which are outside the shrunk ring this round just
+                        // finished on.
+                        RestoreFightRing();
                         wrestlerA.EndEpisode();   // resets poses via OnEpisodeBegin
                         wrestlerB.EndEpisode();
                         HoldUpright();
@@ -1561,7 +1587,7 @@ namespace PoSumo
                         // something the referee should paper over with more dead air.
                         HoldUpright();
                         EndWalkInPhase();
-                        ContractMat();
+                        RestoreFightRing();
                         // Drop the wide ceremony shot so the camera settles back
                         // onto the pair for the fight.
                         if (_camFollow != null) _camFollow.ClearShots();
@@ -1810,7 +1836,28 @@ namespace PoSumo
             // Clay dust where the loser went down / out.
             var loser = roundWinner == wrestlerA ? wrestlerB : roundWinner == wrestlerB ? wrestlerA : null;
             if (loser != null)
+            {
                 Systems_DustPuff.Burst(loser.Torso.position);
+
+                // A RING-OUT is the real sumo win and used to look identical to a
+                // knockdown: one puff where the body landed. It now also throws clay
+                // OUTWARD off the rim the fighter crossed, which is the read that
+                // tells you at a glance which of the two just happened.
+                if (outcome == RoundOutcome.RingOut)
+                {
+                    // `centre` is already in scope from the round log above.
+                    float side = Mathf.Sign(loser.TorsoX - centre);
+                    if (Mathf.Approximately(side, 0f)) side = 1f;
+                    // Torso is a Rigidbody2D, so its position has no z — take the
+                    // depth from the manager, which is what everything else uses.
+                    var rim = new Vector3(centre + side * ringHalfWidth,
+                                          transform.position.y, transform.position.z);
+                    // Outward and slightly up, so it reads as displaced clay rather
+                    // than as a second landing puff.
+                    Systems_DustPuff.SweatSpray(rim, new Vector2(side, 0.45f).normalized, 14);
+                    Systems_DustPuff.Burst(rim, 22);
+                }
+            }
 
             bool matchOver = _scoreA >= pointsToWin || _scoreB >= pointsToWin;
             if (matchOver)
@@ -2112,6 +2159,10 @@ namespace PoSumo
             _hud.HideModal();            // clears the result card and the backdrop
             _hud.HideCentre(_banner);
             if (_scoreBug != null) _scoreBug.style.display = DisplayStyle.Flex;
+            // A rematch is a new MATCH on the same manager, so the mat is still at
+            // whatever width the last round of the previous match finished on.
+            // Restore before the bodies are placed, same as the round path.
+            RestoreFightRing();
             wrestlerA.EndEpisode();
             wrestlerB.EndEpisode();
             HoldUpright();

@@ -5,17 +5,22 @@
   "modified_files": [
     "c:\\Users\\punko\\Downloads\\PoSumo\\.claude\\skills\\systems\\ml-agents\\SKILL.md",
     "c:\\Users\\punko\\Downloads\\PoSumo\\AGENTS.md",
+    "c:\\Users\\punko\\Downloads\\PoSumo\\Assets\\Scripts\\Systems\\Systems_CrowdMomentum.cs",
+    "c:\\Users\\punko\\Downloads\\PoSumo\\Assets\\Scripts\\Systems\\Systems_Kimarite.cs",
+    "c:\\Users\\punko\\Downloads\\PoSumo\\Assets\\Scripts\\Systems\\Systems_KimariteCaller.cs",
+    "c:\\Users\\punko\\Downloads\\PoSumo\\Assets\\Scripts\\Systems\\Systems_PromotionCeremony.cs",
+    "c:\\Users\\punko\\Downloads\\PoSumo\\Assets\\Tests\\EditMode\\KimariteTests.cs",
     "c:\\Users\\punko\\Downloads\\PoSumo\\CLAUDE.md"
   ],
   "recent_commits": [
+    "cce3954 Add kimarite calls, banzuke ceremony and crowd momentum",
     "46ce9cf Pin ProjectVersion to the installed Editor; drop dead URP fields",
-    "b92ef24 Merge origin/main; resolve MCP package conflict to core 0.90.0",
-    "d457162 .."
+    "b92ef24 Merge origin/main; resolve MCP package conflict to core 0.90.0"
   ],
-  "session_duration": "43m 11s",
+  "session_duration": "79m 41s",
   "tool_calls": 0,
-  "warnings_count": 0,
-  "saved_at": "2026-08-25T18:33:52Z",
+  "warnings_count": 2,
+  "saved_at": "2026-08-25T19:10:22Z",
   "plan": {},
   "verification": {},
   "agent_context": {}

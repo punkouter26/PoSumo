@@ -9,3 +9,5 @@ c:\Users\punko\Downloads\PoSumo\Assets\Scripts\Systems\Systems_KimariteCaller.cs
 c:\Users\punko\Downloads\PoSumo\Assets\Scripts\Systems\Systems_CrowdMomentum.cs
 c:\Users\punko\Downloads\PoSumo\Assets\Scripts\Systems\Systems_PromotionCeremony.cs
 c:\Users\punko\Downloads\PoSumo\Assets\Tests\EditMode\KimariteTests.cs
+c:\Users\punko\Downloads\PoSumo\Assets\Editor\GeneratePlaceholderVoices.cs
+c:\Users\punko\Downloads\PoSumo\Assets\Scripts\Systems\Systems_PerfHud.cs

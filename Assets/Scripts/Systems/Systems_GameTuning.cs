@@ -130,5 +130,8 @@ namespace PoSumo
 
         [Tooltip("The crowd backs whoever is losing, and sustained support grants a small torque boost. THIS CHANGES WHO WINS ROUNDS and the training referee has no equivalent, so no brain has trained against it — game-only, like knockoutsToLoseMatch.")]
         public bool enableCrowdMomentum = true;
+
+        [Tooltip("Real-time diagnostic overlay: frame time, FPS, GC delta, physics step and per-fighter stamina. Development aid — turn OFF for a release build.")]
+        public bool enablePerfHud = true;
     }
 }

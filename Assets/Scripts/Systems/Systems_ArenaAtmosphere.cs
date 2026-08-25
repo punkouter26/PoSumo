@@ -30,7 +30,12 @@ namespace PoSumo
         [Header("Atmospheric perspective")]
         [Tooltip("Far layers are tinted toward this and lose saturation, which is what puts air between them and the fighters.")]
         public Color hazeColor = new Color(0.42f, 0.44f, 0.55f);
-        [Range(0f, 1f)] public float maxHaze = 0.28f;
+        // Lowered 0.28 -> 0.12 when LightingEffects was re-enabled 2026-08-25. With
+        // the rig off the haze sat over a near-black backdrop and barely read; with
+        // the key light on it washes the upper backdrop into flat grey and eats the
+        // depth the rig exists to create. Measured against a live capture, not
+        // guessed — the two switches interact and the haze was tuned for the wrong one.
+        [Range(0f, 1f)] public float maxHaze = 0.06f;
 
         [Header("Crowd")]
         public bool swayCrowd = true;

@@ -48,14 +48,22 @@ namespace PoSumo
 
         [Header("Key light (above the dohyo) — 0 disables the spotlight look")]
         [Tooltip("The only shadow-casting light. Carries the exposure so its shadows have something to subtract from.")]
-        public float keyIntensity = 1.25f;
+        // Softened 1.25 -> 0.80 (2026-08-25). At 1.25 the key dominated the fill so
+        // hard that the backdrop wall blew out and the shaping read as a spotlight
+        // rather than as arena light. The global:key RATIO is what makes the rig
+        // read at all, so this is the knob to move for "subtler" — dropping the
+        // GLOBAL instead would darken the arena without softening anything.
+        public float keyIntensity = 0.80f;
         public Color keyColor = new Color(1f, 0.93f, 0.78f);
         public float keyHeight = 5.2f;
         public float keyOuterRadius = 7.5f;
 
         [Header("Rim lights (crowd side) — 0 keeps the edges as bright as the middle")]
         [Tooltip("Also unshadowed, and they sit at fighter height pointing inward, so they fill the key's shadows more per unit than the global does. Kept low for that reason.")]
-        public float rimIntensity = 0.2f;
+        // Softened with the key, to keep the rim:key relationship intact. The rims
+        // fill shadows harder per unit than the global does, because they sit at
+        // fighter height pointing inward.
+        public float rimIntensity = 0.14f;
         public Color rimColor = new Color(0.45f, 0.62f, 1f);
         public float rimSpread = 4.2f;
 
@@ -92,7 +100,9 @@ namespace PoSumo
 
         [Header("Post-processing")]
         public bool enablePost = true;
-        public float bloomIntensity = 0.85f;
+        // Lowered 0.85 -> 0.45 -> 0.22. Bloom over a lit backdrop compounds with the
+        // haze; at 0.85 the upper wall blew out to white and 0.45 still hazed it.
+        public float bloomIntensity = 0.22f;
         public float bloomThreshold = 0.82f;
         // Screen-space darkening at the edge of frame. It doubles the world-space
         // drop-off the point lights produce rather than replacing it, so it stays
@@ -127,7 +137,19 @@ namespace PoSumo
         /// Systems_GameMatchManager must therefore go on spawning this component
         /// when the switch is false — it is not dead weight, it carries the only
         /// light in the scene.
-        public static bool LightingEffects = false;
+        /// **Re-enabled 2026-08-25.** It was false, which zeroed a complete and
+        /// debugged rig: key light, rims, volumetrics, post-processing, the cylinder
+        /// normal map, and the rim/wrap/sweat/clay terms in `PoSumo_BodyLit`. It
+        /// also left `Systems_BodySurface` inert, since that reads
+        /// `BodyShadingActive` before writing sweat and clay.
+        ///
+        /// The warning above still stands and is why this is not a naive flip: the
+        /// trap is handing everything an unlit material, which renders at 1.0x where
+        /// the shaped rig delivers ~1.7x across the middle of the mat, and the arena
+        /// art is authored dark on that assumption. Exposure is balanced for shaded
+        /// bodies at `globalIntensity` 0.42 / `keyIntensity` 1.25; `flatGlobalIntensity`
+        /// 1.5 is the OFF-path value and must not be read as a target for this path.
+        public static bool LightingEffects = true;
 
         [Tooltip("Intensity of the single flat global light used when LightingEffects is off. Approximates what the old rig delivered across the middle of the mat (global 0.42 + key 1.25 + two rims), so turning the effects off changes the SHAPING without darkening the arena.")]
         public float flatGlobalIntensity = 1.5f;
@@ -148,6 +170,44 @@ namespace PoSumo
 
         public Light2D GlobalLight { get; private set; }
         public Light2D KeyLight { get; private set; }
+
+        // ---- key drift ------------------------------------------------------
+        //
+        // The rig was completely static, which is what made it read as a lighting
+        // SETUP rather than as a room. A slow wander over the mat gives the arena
+        // the sense of a live venue without ever calling attention to itself.
+        //
+        // Everything here is deliberately below the threshold of conscious notice:
+        // the period is long enough (20-30 s) that you cannot watch it move, and the
+        // amplitude is a fraction of the key radius so no part of the mat ever falls
+        // out of light. Two incommensurate periods (X and Y) keep it from looping
+        // visibly — a single sine reads as a pendulum within about a minute.
+
+        [Tooltip("Horizontal wander of the key light, in metres either side of centre. Keep well under keyOuterRadius or the mat edges fall dark.")]
+        public float keyDriftX = 1.15f;
+
+        [Tooltip("Vertical wander of the key light, in metres.")]
+        public float keyDriftY = 0.35f;
+
+        [Tooltip("Seconds for one full horizontal cycle. Long on purpose — fast enough to see is too fast.")]
+        public float keyDriftPeriodX = 23f;
+
+        [Tooltip("Seconds for one full vertical cycle. Deliberately not a multiple of the X period, so the pattern does not visibly repeat.")]
+        public float keyDriftPeriodY = 17f;
+
+        [Range(0f, 0.5f)]
+        [Tooltip("How much the key intensity breathes, as a fraction. A venue light is never perfectly steady.")]
+        public float keyBreathe = 0.08f;
+
+        [Tooltip("Seconds for one intensity breath.")]
+        public float keyBreathePeriod = 11f;
+
+        /// Where the key was BUILT. The drift is an offset from this, never an
+        /// accumulation onto the current position — accumulating would let rounding
+        /// walk the light off the arena over a long session.
+        private Vector3 _keyHome;
+        private float _keyBaseIntensity;
+        private bool _driftReady;
         public Volume PostVolume { get; private set; }
         public VolumeProfile PostProfile { get; private set; }
 
@@ -373,6 +433,13 @@ namespace PoSumo
             KeyLight = CreateLight("Light_Key", Light2D.LightType.Point, keyColor, keyIntensity,
                                    new Vector3(centerX, keyHeight, 0f), 1.5f, keyOuterRadius);
 
+            if (KeyLight != null)
+            {
+                _keyHome = KeyLight.transform.position;
+                _keyBaseIntensity = keyIntensity;
+                _driftReady = true;
+            }
+
             // Shadows come off the key light only. Two shadow-casting point lights
             // double the shadow pass for a second set of shadows nobody reads at
             // this camera distance.
@@ -412,6 +479,31 @@ namespace PoSumo
             DisableShadows(GlobalLight);
             DisableShadows(rimLeft);
             DisableShadows(rimRight);
+        }
+
+        /// Slow wander of the key light. Render clock, not physics: this is purely
+        /// visual and must not vary with `Time.timeScale` — the slow-motion finish
+        /// would otherwise put the arena lighting into slow motion with it, which
+        /// reads as a bug rather than as drama. Hence `unscaledTime`.
+        private void Update()
+        {
+            if (!_driftReady || !LightingEffects || KeyLight == null)
+            {
+                return;
+            }
+
+            float t = Time.unscaledTime;
+            // Offsets from HOME, never accumulated onto current position.
+            float dx = Mathf.Sin(t * (2f * Mathf.PI / Mathf.Max(0.01f, keyDriftPeriodX))) * keyDriftX;
+            float dy = Mathf.Sin(t * (2f * Mathf.PI / Mathf.Max(0.01f, keyDriftPeriodY))) * keyDriftY;
+            KeyLight.transform.position = _keyHome + new Vector3(dx, dy, 0f);
+
+            if (keyBreathe > 0f)
+            {
+                float breath = 1f + Mathf.Sin(t * (2f * Mathf.PI / Mathf.Max(0.01f, keyBreathePeriod)))
+                                    * keyBreathe;
+                KeyLight.intensity = _keyBaseIntensity * breath;
+            }
         }
 
         private static void DisableShadows(Light2D light)

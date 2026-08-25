@@ -14,6 +14,21 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Systems_VoiceGains
   _targetRmsDb: -35.88464
   _clipNames:
+  - Kim_Happy_1
+  - Kim_Happy_2
+  - Kim_Happy_3
+  - Kim_Happy_4
+  - Kim_Happy_5
+  - Kim_Insult_1
+  - Kim_Insult_2
+  - Kim_Insult_3
+  - Kim_Insult_4
+  - Kim_Insult_5
+  - Kim_Sad_1
+  - Kim_Sad_2
+  - Kim_Sad_3
+  - Kim_Sad_4
+  - Kim_Sad_5
   - Matt_Happy_1
   - Matt_Happy_2
   - Matt_Happy_3
@@ -44,7 +59,37 @@ MonoBehaviour:
   - Nick_Sad_3
   - Nick_Sad_4
   - Nick_Sad_5
+  - Standard_Happy_1
+  - Standard_Happy_2
+  - Standard_Happy_3
+  - Standard_Happy_4
+  - Standard_Happy_5
+  - Standard_Insult_1
+  - Standard_Insult_2
+  - Standard_Insult_3
+  - Standard_Insult_4
+  - Standard_Insult_5
+  - Standard_Sad_1
+  - Standard_Sad_2
+  - Standard_Sad_3
+  - Standard_Sad_4
+  - Standard_Sad_5
   _gains:
+  - 0.16966517
+  - 0.09134933
+  - 0.09012424
+  - 0.07629139
+  - 0.06782212
+  - 0.1441827
+  - 0.12412746
+  - 0.10337391
+  - 0.07885032
+  - 0.077771135
+  - 0.18497704
+  - 0.15111153
+  - 0.15851551
+  - 0.12738758
+  - 0.10685631
   - 0.29117182
   - 0.24755305
   - 0.12174878
@@ -75,3 +120,18 @@ MonoBehaviour:
   - 0.6229232
   - 0.29383418
   - 0.1545787
+  - 0.19953367
+  - 0.19533561
+  - 0.1600073
+  - 0.15146331
+  - 0.16154486
+  - 0.20048614
+  - 0.16331087
+  - 0.13223574
+  - 0.12811404
+  - 0.113621846
+  - 0.20571598
+  - 0.19950747
+  - 0.1782517
+  - 0.17974913
+  - 0.13938229

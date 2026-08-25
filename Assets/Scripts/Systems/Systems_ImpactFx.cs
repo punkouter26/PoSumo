@@ -58,6 +58,19 @@ namespace PoSumo
             Sensor_Impact.AnyImpact -= OnImpact;
         }
 
+        /// Cached in Start: OnImpact runs on every qualifying body-on-body contact
+        /// and a FindAnyObjectByType there would be a per-collision scene search.
+        private Systems_CameraFollow _camera;
+        /// Trauma delivered by a hit at full `strength`. Small on purpose — trauma
+        /// accumulates and the camera squares it, so this is the ceiling of ONE
+        /// blow, not of a flurry.
+        private const float SHAKE_PER_HIT = 0.55f;
+
+        private void EnsureCamera()
+        {
+            if (_camera == null) _camera = FindAnyObjectByType<Systems_CameraFollow>();
+        }
+
         private void OnImpact(Sensor_Impact reporter, Collision2D collision)
         {
             if (reporter == null || reporter.owner == null)
@@ -89,6 +102,17 @@ namespace PoSumo
             _meanSpeed = Mathf.Lerp(mean, speed, MEAN_BLEND);
 
             float strength = Mathf.Clamp01((speed - minSpeed) / Mathf.Max(0.01f, maxSpeed - minSpeed));
+
+            // Camera shake scales with the SAME strength the FX use, so what you
+            // feel and what you see come from one number. Fed on every qualifying
+            // contact rather than only on the "good hits" below: the cooldowns
+            // there govern whether a burst is DRAWN, and a camera that only shook
+            // for drawn bursts would go still during the fastest exchanges.
+            EnsureCamera();
+            if (_camera != null && strength > 0f)
+            {
+                _camera.AddTrauma(strength * SHAKE_PER_HIT);
+            }
 
             Vector3 point = collision.contactCount > 0
                 ? (Vector3)collision.GetContact(0).point

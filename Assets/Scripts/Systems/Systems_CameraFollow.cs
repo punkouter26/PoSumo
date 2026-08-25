@@ -50,6 +50,28 @@ namespace PoSumo
         public float feetDrop = 0.95f;
         public float horizontalMargin = 0.5f;
         public float smoothing = 4f;
+
+        // ---- impact shake ---------------------------------------------------
+        //
+        // Trauma-based rather than a fixed-duration wobble: impacts ADD trauma,
+        // trauma decays on its own, and the offset is trauma SQUARED. Squaring is
+        // what makes a big hit feel different in kind rather than merely bigger --
+        // small traumas produce almost nothing, so the ordinary noise of two
+        // ragdolls leaning on each other never shakes the camera.
+        //
+        // The offset is applied AFTER the follow lerp writes the position, so it
+        // never feeds back into the smoothing and cannot accumulate drift.
+
+        /// Peak positional offset in metres at full trauma.
+        private const float SHAKE_MAX_OFFSET = 0.22f;
+        /// Trauma lost per second. ~0.9 gives a hit a visible but short life.
+        private const float TRAUMA_DECAY = 1.7f;
+        /// Frequency of the noise walk. High enough to read as an impact, low
+        /// enough not to alias into a buzz at 60 FPS.
+        private const float SHAKE_FREQUENCY = 26f;
+
+        private float _trauma;
+        private float _shakeSeed;
         [Tooltip("Keep the dohyo in frame: the follow target is clamped to the ring plus this margin, so a fighter flung off the edge cannot drag the camera off the mat.")]
         public bool clampToRing = true;
         public float ringMargin = 0.9f;
@@ -150,6 +172,7 @@ namespace PoSumo
 
         private void Awake()
         {
+            _shakeSeed = Random.value * 100f;
             _cam = GetComponent<Camera>();
             if (tuning != null)
             {
@@ -160,6 +183,36 @@ namespace PoSumo
                 smoothing = tuning.smoothing;
                 wideOrtho = tuning.wideOrtho;
             }
+        }
+
+        /// Adds impact shake. `amount01` is clamped and ACCUMULATES, so a flurry
+        /// shakes harder than one blow, but the squared falloff keeps it bounded.
+        ///
+        /// Public because `Systems_ImpactFx` and `Systems_BodyDamage` both call it;
+        /// they are companions and may not reach each other, but the camera is a
+        /// scene service rather than a companion.
+        public void AddTrauma(float amount01)
+        {
+            _trauma = Mathf.Clamp01(_trauma + Mathf.Clamp01(amount01));
+        }
+
+        /// Current shake offset, decayed on the render clock. Returns Vector2.zero
+        /// when there is no trauma, which is the overwhelmingly common case.
+        private Vector2 ShakeOffset()
+        {
+            if (_trauma <= 0.0001f) return Vector2.zero;
+
+            _trauma = Mathf.Max(0f, _trauma - TRAUMA_DECAY * Time.unscaledDeltaTime);
+
+            // Squared: see the note on the constants above.
+            float magnitude = SHAKE_MAX_OFFSET * _trauma * _trauma;
+            float t = Time.unscaledTime * SHAKE_FREQUENCY;
+
+            // Perlin rather than Random: a random offset per frame is a buzz, a
+            // coherent noise walk is a shake. Two decorrelated lookups via the seed.
+            float x = (Mathf.PerlinNoise(_shakeSeed, t) - 0.5f) * 2f;
+            float y = (Mathf.PerlinNoise(_shakeSeed + 37.7f, t) - 0.5f) * 2f;
+            return new Vector2(x, y) * magnitude;
         }
 
         private void LateUpdate()
@@ -230,7 +283,11 @@ namespace PoSumo
             }
 
             var p = transform.position;
-            transform.position = new Vector3(Mathf.Lerp(p.x, mid, t), Mathf.Lerp(p.y, midY, t), p.z);
+            // Shake is added AFTER the lerp so it never feeds back into smoothing.
+            Vector2 shake = ShakeOffset();
+            transform.position = new Vector3(Mathf.Lerp(p.x, mid, t) + shake.x,
+                                             Mathf.Lerp(p.y, midY, t) + shake.y,
+                                             p.z);
         }
 
         /// The zoom cap, floored at whatever it actually takes to hold two fighters

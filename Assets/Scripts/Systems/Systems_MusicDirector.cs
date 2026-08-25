@@ -142,6 +142,45 @@ namespace PoSumo
             _roundLive = false;
         }
 
+        /// Cached, not looked up per frame. Same cross-companion read that
+        /// `Systems_FaceMood` and `Systems_FighterVoice` already do for dominance —
+        /// reusing the one crowd signal on screen rather than computing a second
+        /// that could disagree with the meter the player is watching.
+        private Systems_CrowdMomentum _crowd;
+        private bool _crowdSearched;
+
+        private float CrowdSupport01()
+        {
+            if (!_crowdSearched)
+            {
+                _crowdSearched = true;
+                _crowd = FindAnyObjectByType<Systems_CrowdMomentum>();
+            }
+            // Null whenever enableCrowdMomentum is off — the layer simply loses one
+            // of its three reasons rather than erroring.
+            return _crowd != null ? _crowd.Support01 : 0f;
+        }
+
+        /// How close the NEARER-to-out fighter is to the rim, 0 at the centre and 1
+        /// at the edge. Reads the manager's live `ringHalfWidth`, which shrinks
+        /// through the round, so the music tightens as the mat closes.
+        private float EdgeDanger01()
+        {
+            if (_manager == null || _manager.ringHalfWidth <= 0.01f) return 0f;
+
+            float centre = _manager.transform.position.x;
+            float half = _manager.ringHalfWidth;
+            float worst = 0f;
+            if (_manager.wrestlerA != null)
+                worst = Mathf.Max(worst, Mathf.Abs(_manager.wrestlerA.TorsoX - centre) / half);
+            if (_manager.wrestlerB != null)
+                worst = Mathf.Max(worst, Mathf.Abs(_manager.wrestlerB.TorsoX - centre) / half);
+
+            // Dead zone: the opening stand-off is already ~0.6 of the half-width, so
+            // an ungated reading would start the round half-tense every time.
+            return Mathf.Clamp01((worst - 0.65f) / 0.35f);
+        }
+
         private void Update()
         {
             // A script recompile DURING play mode reloads the domain and nulls
@@ -180,7 +219,20 @@ namespace PoSumo
                 _bed.target = 1f;
                 _pulse.target = 1f;
                 _drums.target = 1f;
-                _tension.target = matchPoint ? 1f : 0f;
+                // Tension used to be BINARY on match point, so most of most matches
+                // played the same three layers flat. It is now continuous and takes
+                // the loudest of three independent reasons to be tense:
+                //
+                //   match point   - the round can end the match
+                //   edge danger   - someone is close to being pushed out
+                //   crowd support - the underdog is being roared back in
+                //
+                // Max rather than sum: these overlap constantly (a cornered fighter
+                // is usually also the one the crowd is behind) and adding them would
+                // peg the layer for most of a bout, which is the same flatness in a
+                // new costume.
+                _tension.target = Mathf.Max(matchPoint ? 1f : 0f,
+                                            Mathf.Max(EdgeDanger01(), CrowdSupport01()));
             }
             else
             {
