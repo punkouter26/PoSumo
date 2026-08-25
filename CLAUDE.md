@@ -519,6 +519,69 @@ during a walk curriculum so the policy can afford to experiment with standing up
 `walkHeightReward` (additive, small) and the height gate both remain in place: they cost
 nothing and are the right shape. They are simply not sufficient.
 
+### Observation 0 was world-absolute for the whole life of the unified brain
+
+**Fixed 2026-08-25.** `Agent_Biped.CollectObservations` fed `Torso.position.y / 2f`
+— a WORLD coordinate — as observation 0, while the walk lane in every `SCN_TRAIN_*`
+scene sits at **y = -60**. Measured live in `SCN_TRAIN_MATT` (10 agents: 6 walk,
+4 sumo):
+
+| population | world Y | obs 0 before | obs 0 after |
+|---|---|---|---|
+| walk (6) | -59.0 | **-29.50** | **+0.514** |
+| sumo (4) | 0.2 | +0.095 | +0.095 |
+
+One policy, one input slot, two disjoint ranges. It had been that way since the
+walk+fight merge.
+
+**This is the identical bug `Reward_StepCadence` documents and was fixed for** —
+"against absolute world Y this test was meaningless for the walk lane". The REWARD
+side was corrected then and the OBSERVATION side was missed, which is the likeliest
+reason five successive gait retrains (`tall01`-`tall04`, `gait01`) all failed: every
+one of them tuned what the policy was PAID while what it could PERCEIVE stayed
+broken. Do not read those five runs as evidence about reward shaping until a run
+exists on the corrected vector.
+
+The fix is `San((tp.y - arenaGroundY) / 2f)`. `arenaGroundY` is written by both
+referees, so it is live in game and training alike. Every other height-ish
+observation was already relative (the foot slots are measured against the torso), so
+this was the only absolute one in the vector.
+
+`Reward_SumoObjective.HipsLowFactor` had the same shape — raw world `TorsoPosition.y`
+while `StanceFactor` ten lines below already subtracted `ArenaGroundY`. That one was
+**not** an active bug (sumo referees sit at y = 0, and the walk population uses the
+other provider) but it is corrected too, because the no-op holds only while nobody
+offsets a sumo arena, and the walk lane proves this project does exactly that.
+
+**`Agent_CharacterDefinition.driveReward` is 0 on every fighter**, so the drive term
+in `Reward_SumoObjective` has never contributed to any brain. Left at 0 deliberately:
+enabling it belongs in its own experiment, not bundled into a run that changes the
+observation vector.
+
+#### The corrective run is STAGED, and the staging is the point
+
+`<Name>Obs01.yaml` (created 2026-08-25) warm-starts from `<name>_tall04` at
+`learning_rate 0.0001` for 3M steps and changes **only** the obs-0 fix. The vector
+stays at **45**.
+
+`contactObservations` (+4) and `staminaObservation` (+1) are both wanted and both
+deliberately NOT in that run, because either one takes the vector to **50** and
+`--initialize-from` requires a matching observation space — adding them makes it a
+COLD retrain against trunks worth 12-45M steps AND confounds three changes, so a
+moved ELO would say nothing about which one moved it. Turning those two on is
+`Sense01`, cold, and only if `Obs01` shows the fix helps.
+
+> **Warm-start caveat worth knowing:** `normalize: true`, so the checkpoint carries
+> running mean/std fitted to the OLD obs-0 distribution — a mixture of -29.5 and
+> +0.53, i.e. enormous variance on that one input. After the fix the input collapses
+> to a narrow band and the normalizer must re-converge. That is why `Obs01` is 3M
+> steps at a reduced learning rate rather than the usual 1M corrective.
+
+**`Training/results/` currently holds no `*_stamina01` or `*_gait01`** — those runs
+were pruned. The newest trunk present for all four fighters is `*_tall04`, which
+already includes the fatigue model but predates the shrinking mat and
+`Systems_StrikeImpulse`, so `Obs01` adapts to those as well.
+
 ### Two referees, deliberately kept in sync
 - `Systems_SumoMatchManager` — **training** referee. Loss = a foot below `footOffMatY`
   (−0.06) or torso below `fallY`; timeout ⇒ `EpisodeInterrupted` (draw). Per-round domain

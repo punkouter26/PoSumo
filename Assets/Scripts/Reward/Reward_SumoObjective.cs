@@ -123,6 +123,16 @@ namespace PoSumo
                 if (drive > 0f)
                 {
                     float grip = Mathf.Min(body.FootLoadNear, body.FootLoadFar);
+                    // INERT ON EVERY SHIPPED FIGHTER. `driveReward` defaults to 0 on
+                    // Agent_CharacterDefinition and no character asset overrides it,
+                    // so this line has never contributed to any brain.
+                    //
+                    // Deliberately left at 0 rather than enabled here: switching it
+                    // on would add an untested shaping term to the same run that
+                    // changes the observation vector, and a run that moves two things
+                    // at once cannot tell you which one moved the ELO. If it is
+                    // wanted, it is its own experiment against an otherwise
+                    // unchanged trunk.
                     total += drive * grip * _rDrive;
                 }
             }
@@ -149,8 +159,22 @@ namespace PoSumo
             return total;
         }
 
+        /// ARENA-RELATIVE, matching the planted-feet terms below.
+        ///
+        /// This read raw world `TorsoPosition.y` while `StanceFactor` ten lines down
+        /// already subtracted `ArenaGroundY` — two height tests in one provider, in
+        /// two different frames. It was not an active bug, because the sumo referees
+        /// sit at y = 0 in every scene and the walk population uses the other
+        /// provider entirely, so the subtraction was a no-op everywhere it ran.
+        ///
+        /// It is corrected anyway: `Systems_SumoMatchManager` writes `arenaGroundY`
+        /// from its own transform, so the no-op holds only as long as nobody offsets
+        /// a sumo arena — and the walk lane in these very scenes proves offsetting is
+        /// something this project does. Silent, total (Clamp01 pins it at 1) and
+        /// invisible in a log is the worst failure shape available here.
         private static float HipsLowFactor(in Reward_Context ctx) =>
-            Mathf.Clamp01((HIPS_HIGH_Y - Reward_Context.San(ctx.TorsoPosition.y)) / HIPS_SPAN);
+            Mathf.Clamp01((HIPS_HIGH_Y - (Reward_Context.San(ctx.TorsoPosition.y) - ctx.ArenaGroundY))
+                          / HIPS_SPAN);
 
         /// How much this looks like a sumo stance, 0..1: both feet planted, and
         /// planted APART. Multiplied by knee bend so it cannot be farmed by standing

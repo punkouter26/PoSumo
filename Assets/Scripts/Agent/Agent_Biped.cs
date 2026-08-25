@@ -274,7 +274,25 @@ namespace PoSumo
             Vector2 tp = Torso.position;
             Vector2 tv = Torso.linearVelocity;
 
-            sensor.AddObservation(San(tp.y / 2f));                                // 1
+            // ARENA-RELATIVE, not world. `tp.y` is a world coordinate and the walk
+            // lane in every SCN_TRAIN_* scene sits at y = -60, so this slot fed
+            // ~+0.53 for the four sumo agents and ~-29.5 for the six walk agents --
+            // the same input, on the same policy, in two disjoint ranges. It had
+            // been that way since the walk+fight merge.
+            //
+            // This is the identical bug `Reward_StepCadence` documents and was fixed
+            // for ("against absolute world Y this test was meaningless for the walk
+            // lane"). The REWARD side was corrected then; the OBSERVATION side was
+            // missed, which is why it survived five gait retrains -- every one of
+            // them tuned what the policy was PAID while leaving what it could
+            // PERCEIVE broken.
+            //
+            // `arenaGroundY` is written by both referees (Systems_GameMatchManager
+            // ~L394, Systems_SumoMatchManager ~L145), so it is live in game and
+            // training alike. Note the other height-ish observations below are
+            // already relative -- the foot slots are measured against `tp` -- so
+            // this was the only absolute one in the vector.
+            sensor.AddObservation(San((tp.y - arenaGroundY) / 2f));               // 1
             sensor.AddObservation(San(tv.x * Fs / 5f));                           // 1
             sensor.AddObservation(San(tv.y / 5f));                                // 1
             float lean = Vector2.SignedAngle(Vector2.up, _b.Chest.transform.up);
