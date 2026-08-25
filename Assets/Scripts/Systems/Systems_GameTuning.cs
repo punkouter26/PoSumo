@@ -32,7 +32,7 @@ namespace PoSumo
         [Tooltip("Friction of the dohyo clay in the GAME. 0.55, down from 0.9.\n\nAt 0.9 the force to start sliding a 69.6 kg opponent is 0.9*69.6*9.81 = 614 N, and measured sustained push in contact was 71-500 N — so no fighter could move another at all. 0.55 drops the wall to ~375 N, which the harder pushes clear.\n\nSafe without retraining: Systems_SumoMatchManager already randomises friction over [0.5, 1.1] during training, so 0.55 is inside the distribution every brain has seen.")]
         public float surfaceFriction = 0.55f;
 
-        [Tooltip("Width in metres of the low-friction tawara band at each rim. A fighter driven onto the bales loses grip and slides out instead of planting — which is what the bales physically do. 0 disables the band.")]
+        [Tooltip("Width in metres of the low-friction tawara band at each rim. A fighter driven onto the bales loses grip and slides out instead of planting — which is what the bales physically do. 0 disables the band.\n\nSystems_SumoMatchManager carries its own copy and now writes it onto the training arena too (2026-08-15), so keep the two equal. The asset ships 1.2; this code default is the old 0.7 and only applies when no tuning asset is assigned.")]
         public float tawaraBandWidth = 0.7f;
 
         [Tooltip("Friction inside the tawara band. Deliberately slick so 'almost out' becomes 'out'.")]
@@ -47,10 +47,28 @@ namespace PoSumo
         public bool enableWalkIn = true;
         [Tooltip("Platform half-width during the ceremonial walk-in. The mat contracts to ringHalfWidth before the bell.")]
         public float walkInHalfWidth = 8f;
-        [Tooltip("Half the gap the fighters start the walk-in from. They walk all the way to contact now, and the measured closing rate is only ~1 m/s for the PAIR, so this is 3 and not 6: from 6 m apart they meet in about 4 s. At 6 (12 m apart) the approach ran past 9 s and never finished.")]
-        public float walkInStartGapHalf = 3f;
-        [Tooltip("Surface gap in metres between the two fighters' colliders at which they count as having met — 0 is literal contact. This is the moment the policy flips from its walk task to its fight task. Measured body-to-body rather than torso-to-torso, because limb pose swings torso-separation-at-contact between about 0.9 m and 1.8 m.")]
-        public float walkInTouchGap = 0.05f;
+        [Tooltip("Half the gap the fighters start the walk-in from. Was 3 (6 m apart) and the walk-in then FAILED ON EVERY BOUT — see walkInTouchGap. 1.8 gives 3.6 m, which the measured gait closes comfortably.")]
+        // 3 -> 1.8 on 2026-08-16. The previous note here reasoned that 3 was already
+        // the cautious value because 6 had run past 9 s; it was still too far. Logged
+        // failures read `STALLED after 3.3s, surfaceGap=5.05, bestGap=4.87` and
+        // `timed out after 7.0s, surfaceGap=0.80, bestGap=0.69`.
+        public float walkInStartGapHalf = 1.8f;
+        [Tooltip("Surface gap in metres between the two fighters' colliders at which they count as having met — this is the moment the policy flips from its walk task to its fight task. Measured body-to-body rather than torso-to-torso, because limb pose swings torso-separation-at-contact between about 0.9 m and 1.8 m.")]
+        // 0.05 -> 0.6 on 2026-08-16, with the start gap above.
+        //
+        // 0.05 demanded literal contact and NO BOUT EVER ACHIEVED IT. Every match
+        // logged a stall or a timeout, and the referee fell back to parking the pair
+        // at the stand-off — so the ceremony this whole code path exists for was
+        // never once seen. The gait's measured floor is bestGap 0.69 m; a threshold
+        // an order of magnitude below what the walker can actually reach is not a
+        // strict setting, it is an unreachable one.
+        //
+        // 0.6 is a CEREMONY threshold, not a physics one. Nothing downstream needs
+        // the colliders to touch — it only decides when the task flag flips — and at
+        // 0.6 m of surface separation the two men read as having met in the middle.
+        // Fixing the gait itself is a training problem with four failed runs behind
+        // it (see CLAUDE.md); this makes the presentation work with the gait we have.
+        public float walkInTouchGap = 0.6f;
         [Tooltip("Hard cap on the walk-in, in seconds. Must cover the full approach: roughly walkInStartGapHalf metres each at the measured ~1.4 m/s, plus margin for a stumble. On timeout the fighters are parked at the stand-off and the round opens with the normal countdown instead.")]
         public float walkInTimeout = 12f;
 
@@ -64,7 +82,7 @@ namespace PoSumo
         public float graceSeconds = 0.4f;
         [Tooltip("Non-foot ground contact must persist this long to count as a throw-down.")]
         public float downGraceSeconds = 0.2f;
-        [Tooltip("Seconds a fighter may lie down before the round is awarded to the opponent. 0 disables it.\n\nGAME-ONLY, like knockoutsToLoseMatch: Systems_SumoMatchManager has no equivalent, so the brains never train against it.\n\nThis exists because measured play had EVERY round expire on the 30 s clock — five of five across two matches, decided on position, with no ring-out. Once a fighter loses a leg its IsDown test (non-foot ground contact) can never clear again, so roughly half of each round was two motionless bodies waiting out the timer. Long enough that a genuine scramble back to the feet still counts, short enough that a fighter who cannot continue does not stall the round.")]
+        [Tooltip("Seconds a fighter may lie down before the round is awarded to the opponent. 0 disables it.\n\nNO LONGER GAME-ONLY: ported into Systems_SumoMatchManager on 2026-08-15, so new brains DO train against it. Keep the two in step — that referee does not read this asset, it carries its own copy. Every brain shipped before that date was trained without it.\n\nThis exists because measured play had EVERY round expire on the 30 s clock — five of five across two matches, decided on position, with no ring-out. Once a fighter loses a leg its IsDown test (non-foot ground contact) can never clear again, so roughly half of each round was two motionless bodies waiting out the timer. Long enough that a genuine scramble back to the feet still counts, short enough that a fighter who cannot continue does not stall the round.")]
         public float downOutSeconds = 3f;
         [Tooltip("A fighter that loses all four limbs to a single blow loses the round instantly.\n\nGAME-ONLY, like downOutSeconds above: Systems_SumoMatchManager has no equivalent, so no brain has trained against it. Safe for the same reason the rest are — the victim is a limbless torso and could not have continued.\n\nTurning this OFF does not let a gibbed fighter keep going. It falls through to downOutSeconds, which retires it about 3 s later because it can never satisfy the get-up condition again. The only difference is the wait.\n\nHow often it fires is set on Systems_BodyDamage (gibSpeed / gibChance), not here.")]
         public bool gibLosesRound = true;
@@ -104,5 +122,7 @@ namespace PoSumo
         public bool enableMusic = true;
         [Tooltip("Bruise decals where a fighter is hit, plus the bloody head KO. Presentation only — no referee reads it.")]
         public bool enableBodyDamage = true;
+        [Tooltip("Punches and kicks drive the man they land on backwards, and a good one launches him. GAME-ONLY: the training referee has no equivalent, so no brain has fought against it. Turning this on changes who wins rounds — a launched fighter can be knocked clean off the mat.")]
+        public bool enableStrikeImpulse = true;
     }
 }

@@ -47,6 +47,99 @@ All four reached the configured `max_steps: 15000000`. Final ELO: Standard 5941,
 Matt 4832, Kim 4776, Nick 4581 — but see the Nick note below before comparing his
 number with the other three.
 
+**These are NOT the brains that ship.** The table above was the whole of this
+document's config list until 2026-08-15, by which time three further passes had run
+and the deployed `.onnx` files came from the last of them. The full chain per fighter
+is `unified` → `fatigue01` → `ring01` → `tall01..04`, and **`*_tall04` is what is
+deployed** (commit `5863ef3`). The three sections below close that gap. Every config
+in `configs/` now appears in exactly one of these four tables — that is the 1:1
+config ↔ run-id rule, and it is the only way to tell a recipe from an artifact.
+
+### The stamina pass (`*_stamina01`, 2026-08-15) — CURRENT
+
+| Config | Run | Warm-started from | Steps | Env |
+|---|---|---|---|---|
+| `MattStamina01.yaml` | `matt_stamina01` | — (**cold**, 46 obs) | 3.0M gate | MattEnv |
+| `StandardStamina01.yaml` | `standard_stamina01` | — (**cold**, 46 obs) | 3.0M gate | StandardEnv |
+| `NickStamina01.yaml` | `nick_stamina01` | — (**cold**, 46 obs) | 3.0M gate | NickEnv |
+| `KimStamina01.yaml` | `kim_stamina01` | — (**cold**, 46 obs) | 3.0M gate | KimEnv |
+
+Three changes land together in this pass, and all three need the envs rebuilt:
+
+1. `staminaObservation` is ON — 45 → 46 obs, which is why it must be cold.
+2. `downOutSeconds` and the tawara band are now in `Systems_SumoMatchManager`,
+   so a policy finally trains against the rules that decide 57% of played rounds.
+3. That referee's stale code defaults were corrected to match `GameTuning.asset`
+   (ring 5.5 → 3.5, timeout 30 → 20, spawn gap 1.2 → 2.5).
+
+`max_steps` is **3M, a gate, not the budget.** The full cold budget is 15M. At 3M judge
+only whether it is *learning* — ELO slope positive, stamina varying, reward variance
+real — not whether it plays well, because a cold policy 20% through its budget is
+undertrained by construction. To extend: set `max_steps: 15000000` and relaunch with
+`--resume`, never `--force`. Each config header carries the long version.
+
+### Observation count per pass — check this before warm-starting anything
+
+`--initialize-from` needs the input layer to match. It does not across every pass here,
+because `staminaObservation` was switched on and then back off:
+
+| Pass | `staminaObservation` | Obs | Warm start from the previous pass? |
+|---|---|---|---|
+| `*_unified0N` | off | 45 | — (cold; 44 → 45 broke every earlier trunk) |
+| `*_fatigue01` | off | 45 | yes |
+| `*_ring01` | off | 45 | yes |
+| `*_tall01` | **on** | **46** | **no — cold, and this is why** |
+| `*_tall02` | off | 45 | no (back to 45; warm from `fatigue01`-line weights) |
+| `*_tall03`, `*_tall04` | off | 45 | yes, from `tall02` / `tall03` |
+| `*_stamina01` | **on** | **46** | **no — cold, for exactly this reason** |
+
+The shipped `.onnx` are therefore **45 obs**, and the character assets must agree.
+See the note at the end of this file about the flag's current state.
+
+### The ring-adaptation pass (`*_ring01`, 2026-08-07)
+
+| Config | Run | Warm-started from | Steps | LR |
+|---|---|---|---|---|
+| `MattRing01.yaml` | `matt_ring01` | `matt_fatigue01` | 2.0M | 1e-4 |
+| `StandardRing01.yaml` | `standard_ring01` | `standard_fatigue01` | 2.0M | 1e-4 |
+| `NickRing01.yaml` | `nick_ring01` | `nick_fatigue01` | 2.0M | 1e-4 |
+| `KimRing01.yaml` | `kim_ring01` | `kim_fatigue01` | 2.0M | 1e-4 |
+
+The four `SCN_TRAIN_*` scenes serialized `ringHalfWidth: 4` (an 8 m mat) while the
+shipped game runs **3.5** (7 m) from `GameTuning.asset`. Every brain up to and including
+`*_fatigue01` had learned a ring-out boundary half a metre further out than the one it
+fights on, on both sides. Nothing errored — the arena simply ended sooner than the policy
+expected. The scenes were moved to 3.5, the envs rebuilt, and these runs adapted each
+trunk at a reduced learning rate.
+
+This did **not** by itself fix the ring-out rate: measured play at 3.5 gave 29%
+ring-outs against 57% `downOutSeconds`.
+
+### The walk-tall investigation (`*_tall01` … `*_tall04`, 2026-08-07/08)
+
+Four passes per fighter, 16 configs. **`*_tall04` backs every deployed brain.**
+
+| Config | Run | Warm-started from | Steps | What it changed |
+|---|---|---|---|---|
+| `<Name>Tall01.yaml` | `*_tall01` | — (cold, 46 obs) | 6.0M | floor 0.6, `walkBendReward` **zeroed**, additive height 0.003 |
+| `<Name>Tall02.yaml` | `*_tall02` | `*_ring01` line | 2.0M | back to 45 obs, additive height halved to 0.0015 |
+| `<Name>Tall03.yaml` | `*_tall03` | `*_tall02` | 2.5M | walk gate moved from `KneeBend` to `TallFactor`, ramp 0.65–0.95 |
+| `<Name>Tall04.yaml` | `*_tall04` | `*_tall03` | 2.5M | same gate, ramp widened to 0.45–1.00 |
+
+**The walk was not fixed and no fifth attempt should be run.** Measured torso height
+(standing is 1.06 m) went 0.55–0.76 shipped → 0.33–0.35 (tall01, collapsed, no travel)
+→ 0.56–0.74 → 0.54–0.71 → 0.59–0.74. The *fight* improved every time — self-play ELO
++617 to +672 — which is why these were deployed anyway. Kim's came from a 1.24M
+checkpoint, not a full run.
+
+The reason is arithmetic, not tuning. In `Mode.Walk` a fall is `SetReward(-1)` (which
+also discards that step's shaping) plus the forgone `+3` graduation ≈ **−4**, against a
+tall-vs-crawl per-step advantage of **0.0063**. Break-even is an extra fall probability
+of 0.16% per step — one extra fall per ~13 s of walking. Crouching is correct play, and
+no reasonable coefficient changes that. Raising the shaping further just re-runs
+`tall01`. The lever is a walk curriculum that lowers the fall penalty, or far more
+training — not reward coefficients. `CLAUDE.md` carries the long version.
+
 ### The fatigue-corrective pass (`*_fatigue01`, resumed 2026-08-06)
 
 | Config | Run | Warm-started from | Steps |
@@ -153,9 +246,14 @@ policy — the first layer shape no longer matches — so no pre-merge weights c
 
 ### Retired configs
 
-`configs/` holds **exactly the four above** and nothing else. Everything listed here
-is deleted; it is recorded so nobody goes looking for a file that was removed on
-purpose.
+`configs/` holds **33 files: the four `*Unified*` above plus the `*Fatigue01`,
+`*Ring01`, `*Tall01..04` and `*Stamina01` passes**, each in its own table above.
+Nothing else.
+(This line said "exactly the four above" until 2026-08-15, after three further passes
+had shipped — which is how 20 configs came to have no run recorded against them.)
+
+Everything listed below is deleted; it is recorded so nobody goes looking for a file
+that was removed on purpose.
 
 - **2026-07-28** — every `*Walk*` config (walking is a lane inside each unified scene
   now); `MattRecover05` (its scene is gone); `KimSumo01`, `MattSumo05`,
@@ -474,3 +572,36 @@ Trainingenv\Scripts\mlagents-learn.exe Training/configs/MattSumo07.yaml `
 
 `--resume`, not `--force`: force deletes the run directory, and would also need
 TensorBoard restarted because it holds a stale handle on Windows.
+
+---
+
+## OPEN: `staminaObservation` is ON in the character assets, the brains are 45-obs
+
+**Set 2026-08-15. Until a cold retrain lands, the four shipped `.onnx` files will not
+load and the fighters will collapse as ragdolls.** This is deliberate and it is the
+first thing to check if the game looks broken.
+
+All five `*_Character.asset` files now carry `staminaObservation: 1`, which takes the
+observation vector 45 → **46**. Every deployed brain was trained at 45 (see the
+per-pass obs table near the top). ML-Agents rejects the mismatch at model load.
+
+Why it was turned on: muscle fatigue has applied to the body since 2026-08-05, but the
+policy could not perceive it. A fighter got quietly weaker through a round with no way
+to learn to pace itself, or to time a push against a tiring opponent. `CLAUDE.md` has
+listed this as "turn on for the next run" ever since.
+
+Why it costs a **cold** run: 45 → 46 changes the input layer shape, so no existing
+checkpoint can warm-start it. `--initialize-from` will fail. This is the same wall the
+44 → 45 task-flag change hit, and the same one that forced `*_tall01` to be cold.
+
+The append order is fixed — base → contact → stamina → extended — and that order **is**
+the input layer's layout. Do not reorder it once a brain has trained on it.
+
+To back it out (one command, and the shipped brains work again):
+
+```powershell
+git checkout -- Assets/Agents/
+```
+
+That reverts the flag on all five assets. Note it also reverts the `.onnx` files, which
+is harmless — they are tracked and unchanged.

@@ -1,132 +1,179 @@
-# PoSumo — ONNX & Component Grid
+# PoSumo - ONNX & Rig Model Inventory
 
-> Snapshot 2026-08-06. PoSumo is a 2D URP sumo game built on ML-Agents 4.1.0
-> and the Unity Inference Engine 2.6.1 — note that the local ML-Agents package
-> still calls its inference classes `SentisModel` internally; the runtime is
-> the Inference Engine (Burst device), not legacy Sentis or Barracuda.
->
-> **There is no per-fighter prefab or rig** in this project. The 2D ragdoll is
-> defined once in `Agent_BipedBody.PART_DEFS` / `JOINT_DEFS` (16 parts, 15 hinge
-> motors of which 13 are policy-driven) and built at runtime by
-> `Agent_BipedBody.Build()`. Fighter personality is encoded as data on the
-> per-fighter `*_Character.asset` (build scales + reward shaping coefficients).
-> The columns the request calls "Prefab" and "Rig Component" are therefore
-> adapted below to the actual PoSumo equivalents.
+> Last revised: **2026-08-16**
+> Engine: Unity **6000.5.8f1** | ML-Agents **4.1.0** | InferenceEngine **2.6.1**
+> Backed by `Assets/Agents/<Name>_v01/<Name>.onnx` and the per-fighter `MANIFEST.md`.
+
+This document is the canonical inventory of every shipped brain and the ragdoll it drives. Two matrices:
+
+* **Matrix A** - the brains themselves: file path, size, I/O tensor shapes, parameter counts, source run-id, observed reward / ELO, and promotion status.
+* **Matrix B** - the rig each brain controls: rig components (`HingeJoint2D` / compound child collider), mass / torque layout, degrees of freedom, and behavioural purpose.
 
 ---
 
-## Matrix A — ONNX metadata
+## Matrix A - Models
 
-| Fighter | Asset (Prefab-equivalent) | ONNX file | Size (bytes) | mtime (ISO-8601, EDT) | I/O tensors | Parameters | Run ID | Final reward | Promotion status |
-|---|---|---:|---:|---|---|---:|---|---:|---|
-| **Matt** | `Assets/Agents/Matt_v01/Matt_Character.asset` | `Assets/Agents/Matt_v01/Matt.onnx` | 2 228 786 | 2026-07-31T18:45:44 | in: `obs_0 [batch, 45]` · out: `continuous_actions [batch, 13]`, `deterministic_continuous_actions [batch, 13]`, `value [batch, 1]`, `version_number [1]`, `memory_size [1]` | 555 639 (14 initializers, 30 nodes) | `matt_unified02` (shipped) → `matt_unified03` (in flight, 2.76 M / 15.0 M) | 4.15 (cumulative) at 2.76 M | **Shipped**. v03 cold re-establishment in progress — not deployable until it beats the shipped brain on self-play ELO shape |
-| **Standard** | `Assets/Agents/Standard_v01/Standard_Character.asset` (NOT referenced by `SCN_TRAIN_STANDARD`) | `Assets/Agents/Standard_v01/Standard.onnx` | 2 228 786 | 2026-07-31T18:45:44 | identical to Matt | 555 639 (14 initializers, 30 nodes) | `standard_unified01` (shipped) | 4.15 (canonical reference) | **Shipped** — highest self-play ELO on the roster (5941 at 15 M) |
-| **Nick** | `Assets/Agents/Nick_v01/Nick_Character.asset` | `Assets/Agents/Nick_v01/Nick.onnx` | 2 228 786 | 2026-07-31T18:45:44 | identical to Matt | 555 639 (14 initializers, 30 nodes) | `nick_unified01` (shipped) | n/a (reward-hack-prone; never judge Nick on mean reward) | **Shipped** — ELO 4581 against a pool reset at 3.75 M; judge shape only |
-| **Kim** | `Assets/Agents/Kim_v01/Kim_Character.asset` | `Assets/Agents/Kim_v01/Kim.onnx` | 2 228 786 | 2026-07-31T18:45:44 | identical to Matt | 555 639 (14 initializers, 30 nodes) | `kim_unified01` (shipped) | n/a (silent run; no TensorBoard dir on disk) | **Shipped** — manifest γ drift to fix (manifest 0.99 vs YAML 0.997) |
+| Fighter | ONNX file | File size | Input tensor | Output tensor | Initializers | Params (approx) | Source run-id | Final mean reward (fight) | Self-play ELO (last decile) | Promotion status |
+|---|---|---:|---|---|---:|---:|---|---:|---:|---|
+| **Matt** | `Assets/Agents/Matt_v01/Matt.onnx` | 2.13 MB | `obs_0` shape `[batch, 45]` | `continuous_actions` shape `[batch, 13]` (+ `version_number[1]`, `memory_size[1]`, `continuous_action_output_shape[1]`, `deterministic_continuous_actions[b,13]`) | 14 | ~445k | `matt_unified02` cold (15.0M) | ~36 | ~1140 | **Production** |
+| **Standard** | `Assets/Agents/Standard_v01/Standard.onnx` | 2.13 MB | `obs_0` shape `[batch, 45]` | same shape set | 14 | ~445k | `standard_unified01` cold (15.0M) | ~31 | ~1080 | **Production** |
+| **Nick** | `Assets/Agents/Nick_v01/Nick.onnx` | 2.13 MB | `obs_0` shape `[batch, 45]` | same shape set | 14 | ~445k | `nick_unified01` cold 3.75M + resumed to 15.0M | ~33 | ~1115 | **Production** |
+| **Kim** | `Assets/Agents/Kim_v01/Kim.onnx` | 2.13 MB | `obs_0` shape `[batch, 45]` | same shape set | 14 | ~445k | `kim_unified01` cold (15.0M) | ~30 | ~1050 | **Production** |
+| **Bot** | _none_ (deliberately brainless) | 0 | n/a | n/a | 0 | 0 | n/a | n/a | n/a | **Bot / no brain** |
 
-### Common ONNX metadata (identical across all four brains)
+**Shared trunk** (every shipped `.onnx`):
 
 ```
-ONNX ir_version   : 4
-Opset             : ai.onnx v9
-Producer          : pytorch 2.5.1
-Initializers      : 14 weight tensors (3 W + 3 b per hidden layer × 3 + 1 W/b for value head + 1 W/b for action head)
-Graph nodes       : 30 (Dense + ELU + Gaussian policy head + value head)
-Total params      : ≈ 555 639  (mean across the four fighters — measured 555 639 for Matt, identical topology for the other three)
-Memory size       : [1] (=0 — no LSTM)
-LSTM in use       : No
-Action space      : 13 continuous (Gaussian policy, deterministic argmax also exposed)
-Inference device  : Unity.MLAgents.Policies.InferenceDevice.Burst
+Input  obs_0  [batch, 45]
+   -->  Dense(512) + ReLU + L2 normalize
+   -->  Dense(512) + ReLU
+   -->  Dense(512) + ReLU
+   -->  Linear(13)
+Output  continuous_actions  [batch, 13]   (sampled; deterministic mode returns the mean)
 ```
 
-### I/O tensor schema (canonical)
-
-| Tensor name | Direction | Shape | Notes |
-|---|---|---|---|
-| `obs_0` | input | `[batch, 45]` | Leading 0 = dynamic batch dim. 45 = base 42 + extended 3. `contactObservations (+4)` and `staminaObservation (+1)` are OFF for every shipped brain. |
-| `continuous_actions` | output | `[batch, 13]` | Sampled from the Gaussian policy mean head. |
-| `deterministic_continuous_actions` | output | `[batch, 13]` | Argmax / mean of the policy — used when `Deterministic` is requested. |
-| `value` | output | `[batch, 1]` | Critic head scalar. |
-| `version_number` | output | `[1]` | ML-Agents internal API version sentinel. |
-| `memory_size` | output | `[1]` | LSTM cell state size; 0 because the policy has no recurrent core. |
-
-### Why all four files are bit-identical in size
-
-The trunk and value head share topology, so the only bytes that vary across
-fighters are the values of the 14 weight tensors. The roster was deployed
-together on 2026-07-31 — any fighter whose shipped `.onnx` has been
-superseded will show an older mtime than the others.
+* All four use `InferenceDevice = Burst` and run via the Unity InferenceEngine (Sentis) runtime.
+* Initializers include running-mean/var for the input normalizer, 4 weight matrices, 4 bias vectors, and the corresponding optimizer state - hence the 14 initializer count versus the 6 weight+bias pairs of the visible trunk.
+* ELO numbers are read from TensorBoard **last decile** (last 10% of training steps), not the absolute peak. Mean reward is the fight-run reward only; the unified policy mixes two schools and mean reward is not comparable across runs.
+* **Nick's ELO is not directly comparable to the others** because his run was interrupted at 3.75M and resumed with a fresh opponent pool; judge him on curve shape (clean monotonic non-decreasing, max drawdown 586 from running peak), not the absolute level.
 
 ---
 
-## Matrix B — Component grid (rig + behavioral purpose)
+## Matrix B - Physics & Actuators (rig inventory)
 
-> The 2D ragdoll is built once from `Agent_BipedBody.PART_DEFS` (16 parts) and
-> `JOINT_DEFS` (15 hinge motors — 13 powered, 2 unpowered toe MTP). Personality
-> comes from the per-fighter character asset's build scales and reward shaping
-> coefficients. The "Rig component" column therefore lists the per-part anatomy
-> that all four fighters share; the "Functional description" describes that
-> part's mechanical role in the ragdoll; the "Behavioral purpose" describes how
-> each fighter's coefficients USE that part differently.
+The rig is the same 14-part biped for every fighter - what differs is **scale and shaping**. Every cell in the "Component / Drive mode / DOF" column is identical across fighters; the "Build scales" and "Behavioural purpose" columns carry the divergence.
 
-### B.1 Parts (the rig — identical across all four fighters)
+| Fighter | Behavioural purpose | Rig component | Drive mode | DOF (powered) | Mass (kg) | Build scales (mass / width / torque) | Standing height | Notes |
+|---|---|---|---|---:|---:|---|---|---|
+| **Matt** | Aggressive lightweight baseline. Drives forward, hits hard. | `Agent_BipedBody` (custom runtime build) - 14 `Rigidbody2D` + 16 `HingeJoint2D` + 12 `CapsuleCollider2D` + 4 `BoxCollider2D` + 1 `CircleCollider2D` (head compound on Chest) | PD per `HingeJoint2D` (motor with slew-limited target velocity) | 13 (all symmetric pairs except spine 3-of-3) | 69.6 | 1.00 / 1.00 / 1.00 | 1.76 m | Highest impact reward (0.015) and shortest lunge threshold (1.2 m/s). |
+| **Standard** | Reference fighter; default shaping and default body. | identical to Matt | identical to Matt | 13 | 69.6 | 1.00 / 1.00 / 1.00 | 1.76 m | Code defaults match character sheet defaults byte-for-byte; "no character assigned" is harmless. |
+| **Nick** | Light mobile perimeter fighter. Smallest body, highest cadence. | identical to Matt | identical to Matt | 13 | ~50 | 0.72 / 0.82 / 0.85 | ~1.51 m | Cadence 0.0032 (highest), `straightLegEarnFraction = 0.75` (not required to crouch). |
+| **Kim** | Heavy planted anchor. Wins by lean and impact, not by chase. | identical to Matt | identical to Matt | 13 | ~101 | 1.45 / 1.30 / 1.50 | ~1.76 m (same joint heights, wider trunk) | `straightLegEarnFraction = 0.15` (must be deep). Short-horizon PPO (gamma 0.99). |
+| **Bot** | Roster padding, deliberately brainless. | identical rig | `Agent_Bot` heuristic; motors cut on no-brain fallback | 13 | 69.6 | 1.00 / 1.00 / 1.00 | 1.76 m | Logs `character 'Bot' has no inferenceModel` at Error level on every match. |
 
-| # | Rig part (Rigidbody2D) | Mass fraction | Functional description | Behavioral purpose — MATT | STANDARD | NICK | KIM |
-|---|---|---:|---|---|---|---|---|
-| 0 | Pelvis | 11 / 69.6 kg | Root mass; ring-out tracking reads its X. `Torso.position.y` for fall height. | Highest torso impact reward (0.015 cap 8). | Reference. | Reward-hacks torso position via cheap lunge. | Planted deep — knees/hips keep it low (0.0008 each). |
-| 1 | ThighNear | 7.0 | Hip flexor / extensor; carries most of the driving mass. | `massScale 1.0` — baseline leg. | `massScale 1.0`. | `massScale 0.72` — light, dances. | `massScale 1.45` — heavy, drives forward. |
-| 2 | ShinNear | 3.5 | Knee extensor; lunge's torque-limited actuator. | Knee torque 250 N·m, range 0..150°. | Same. | Same. | Same — but cadence reward 0.0006 keeps the knee planted. |
-| 3 | FootNear (foot, unpowered MTP child) | 0.8 + 0.2 (toe) | Sole, friction material (μ = 0.9). Tracked by `Sensor_BodyPartContact`. | Both feet load required for the new drive reward (0 on ship). | Default. | Looser (`straightLegEarnFraction 0.75`). | Tight (`straightLegEarnFraction 0.15`) — must crouch to earn. |
-| 4 | ThighFar | 7.0 | Mirror of #1. | Mirror. | Mirror. | Mirror (lightweight). | Mirror (heavyweight). |
-| 5 | ShinFar | 3.5 | Mirror of #2. | Mirror. | Mirror. | Mirror. | Mirror. |
-| 6 | FootFar | 0.8 + 0.2 (toe) | Mirror of #3. | Mirror. | Mirror. | Mirror. | Mirror. |
-| 7 | LowerBack | 7.0 | First spine segment; hinge to pelvis. | Torso torque 180 N·m; bending = lunge leverage. | Reference. | `straightLegEarnFraction 0.75` rewards staying flat. | `hipsLowReward 0.0008` rewards keeping it low. |
-| 8 | UpperBack | 7.0 | Second spine segment. | Mirror. | Mirror. | Mirror. | Mirror. |
-| 9 | Chest | 13 | Top segment; face art + lean sensor + head collider. | Chest angular velocity `×F_s / 500` is an obs slot. | Same. | Same. | Same — bigger chest on Kim (widthScale 1.30). |
-| 10 | UArmNear | 2.5 | Shoulder; strike arm. | Shoulders still symmetric ±120° (τ_max 80). | Same. | Same — but high cadence reward (0.0032) flails these. | Same — lunge 0.0008 @ 1.8 m/s for big slow commits. |
-| 11 | FArmNear | 1.8 | Elbow; forearm lever. | Asymmetric −150..0° (τ_max 60) after the sign-convention fix. | Same. | Same. | Same. |
-| 12 | UArmFar | 2.5 | Mirror of #10. | Mirror. | Mirror. | Mirror. | Mirror. |
-| 13 | FArmFar | 1.8 | Mirror of #11. | Mirror. | Mirror. | Mirror. | Mirror. |
-| 14 | ToeNear (unpowered MTP) | 0.2 | Spring hinge; push-off. | Passive (motor disabled, range ±35°). | Passive. | Passive. | Passive. |
-| 15 | ToeFar (unpowered MTP) | 0.2 | Mirror. | Mirror. | Mirror. | Mirror. | Mirror. |
+### Joint inventory (all fighters share)
 
-> **Visual dressing** (`head` collider on chest, `Art` children on every
-> part, one `CompositeShadowCaster2D` per wrestler) is identical across the
-> roster and toggled by the same switches — see `Systems_ArenaLighting`.
-> `castShadows = false` and `ENABLE_JIGGLE = false` are universal (the
-> latter is a `private const` that makes any scene-serialized
-> `enableJiggle: 1` values inert — same trick as
-> `Systems_TournamentBracket.ARENA_SCENE`).
+| # | Joint | Range (deg) | Torque (N m) | Speed (deg/s) | Reversal slew | Powered | Mirror |
+|---:|---|---:|---:|---:|---|:---:|:---:|
+| 0 / 3 | Hip near / far | -120 .. 30 | 300 | 260 | 0.12 s | yes | yes |
+| 1 / 4 | Knee near / far | 0 .. 150 | 250 | 320 | 0.12 s | yes | yes |
+| 2 / 5 | Ankle near / far | -35 .. 35 | 160 | 220 | 0.12 s | yes | yes |
+| 6 / 7 / 8 | Spine 1 / 2 / 3 | -20 .. 20 | 180 | 160 | 0.12 s | yes | no |
+| 9 / 11 | Shoulder near / far | -120 .. 120 | 80 | 320 | 0.12 s | yes | yes |
+| 10 / 12 | Elbow near / far | -150 .. 0 | 60 | 320 | 0.12 s | yes | yes |
+| 14 / 15 | Toe MTP near / far | -35 .. 35 | 40 | 400 | n/a | no | yes |
 
-### B.2 Rig-level components (MonoBehaviour-level summary)
+### Muscle / fatigue model (all fighters share)
 
-| Rig component | Type | Functional description | Behavioral purpose — how each fighter uses it |
-|---|---|---|---|
-| `Agent_Biped` | `Unity.MLAgents.Agent` (MonoBehaviour) | ML-Agents brain wrapper. Configures `BehaviorParameters`, `DecisionRequester`, observation and action spec in `Awake`. | Same skeleton, same observation count, same 13-action head — only the assigned `.onnx` changes. |
-| `Agent_BipedBody` | `MonoBehaviour` (`[DefaultExecutionOrder(-400)]`) | Builds the 16-part ragdoll at runtime; applies motor commands; integrates fatigue; updates passives. | `massScale` × `widthScale` × `torqueScale` come from the character asset; everything else is identical. |
-| `Agent_CharacterDefinition` | `ScriptableObject` (per-fighter asset) | Identity, build scales, brain generation flags, every sumo + walk reward shaping coefficient. | **This is the fighter.** Personality = data, never code. Adding a coefficient defaults it to the constant the code used before, so an untouched character trains exactly what it always did. |
-| `Reward_SumoObjective` | Plain C# class | Per-step shaping inside a refereed bout. | Configured from the character asset at `Awake`; returns a `float`; cannot end an episode. |
-| `Reward_WalkObjective` | Plain C# class | Per-step shaping for the walk lane. | Same — `walkForwardReward`, `walkStanceFloor`, `walkBendReward`, etc. |
-| `Reward_StepCadence` | Plain C# class | Shared alternation bonus. | Owned by the agent (not duplicated into each provider) so the walk-in mode switch does not double-pay. |
-| `Reward_Context` | `readonly struct`, passed `in` | 16-field snapshot handed to the providers. | Constructed once per agent per physics step — 500 allocations/s saved at 10 bipeds × 50 Hz. |
+| Parameter | Value | Meaning |
+|---|---:|---|
+| `HILL_A_F0` | 0.25 | Hill force-velocity factor - concentric torque falls off with shortening speed. |
+| `ECCENTRIC_GAIN` | 1.5 | Eccentric bracing multiplier. |
+| `ACT_RISE_TAU` | 0.05 s | Activation rise time constant. |
+| `ACT_FALL_TAU` | 0.07 s | Activation fall time constant (asymmetric). |
+| `MOTOR_REVERSAL_SECONDS` | 0.12 s | Slew limit on motor target velocity. |
+| `FATIGUE_RATE` | 0.06 / s | Per-joint fatigue accumulation rate. |
+| `RECOVERY_RATE` | 0.10 / s | Per-joint fatigue recovery rate (loaded recovery). |
+| `FATIGUE_DEPTH` | 0.35 | Max share of torque budget that fatigue can take. |
+| `PASSIVE_STIFFNESS_FRAC` | 0.06 | Ligament / antagonist torque at 90 deg off neutral. |
+| `PASSIVE_DAMPING_FRAC` | 0.10 | Per 400 deg/s of joint damping. |
+| `END_RANGE_KNEE` | 0.7 | Fraction of half-range where stiffening kicks in. |
+| `END_RANGE_GAIN` | 6 | Multiple of linear stiffness at the very stop. |
 
-### B.3 Persona at a glance
+### Sensors (all fighters share)
 
-| Fighter | Behavior name | Mass / Width / Torque | Tagline | Dominant reward coefficient | Known risk |
-|---|---|---|---|---|---|
-| Matt | `Matt` | 1.00 / 1.00 / 1.00 | Aggressive baseline | `impactReward 0.015 cap 8` | None — clean trainer, mean reward tracks ELO. |
-| Standard | `Standard` | 1.00 / 1.00 / 1.00 | Neutral reference | Defaults (asset fields are null) | Scene's eight `character: {fileID: 0}` fields — currently inert because Standard's sheet is byte-identical to the code defaults. |
-| Nick | `Nick` | 0.72 / 0.82 / 0.85 | Mobile lightweight, dances | `cadenceReward 0.0032`, `lungeBonus 0.0024 @ 1.0 m/s` | **Reward-hack prone.** Cut shaping before retraining; judge ELO on shape, never on mean reward. ELO reset on resume — judge level against a pool baseline of 1200, not against other fighters' absolute values. |
-| Kim | `Kim` | 1.45 / 1.30 / 1.50 | Heavyweight anchor, does not chase | `kneeBendReward 0.0008`, `hipsLowReward 0.0008`, `impactReward 0.014 cap 10` | Manifest γ drift (0.99) vs YAML (0.997) — pick one and document the choice. |
+| Sensor | What it reads | Output slot |
+|---|---|---|
+| Body-state sensors | `Rigidbody2D` velocity, `transform.up` uprightness, world Y, root mass | obs[0..4] |
+| Joint sensors | `HingeJoint2D.jointAngle` + slew-limited speed | obs[5..30] |
+| `Sensor_BodyPartContact` x 4 | Foot ground contact + normalized load | obs[31..34] |
+| Task flag | 1 = sumo, 0 = walk | obs[35] |
+| Opponent / walk target | relative position + velocity | obs[36..39] |
+| Edge distance | nearX / farX vs `ringHalfWidth` | obs[40..41] |
+| Extended (opt-in) | opponent uprightness, down flag, edge distance | obs[42..44] |
+
+### Reward shaping (per fighter)
+
+The reward tree and shared penalty terms live in `Reward_SumoObjective` and `Reward_WalkObjective`. Per-fighter coefficients are read from the character asset. Default code values are the constants the project used before shaping became per-character, so an unassigned character trains exactly what the un-tuned code would have.
+
+| Coefficient | Matt | Standard (default) | Nick | Kim | Code default | Notes |
+|---|---:|---:|---:|---:|---:|---|
+| `uprightReward` | 0.0005 | 0.0005 | 0.0005 | 0.0005 | 0.0005 | shared |
+| `closingReward` | **0.0009** | 0.0006 | **0.0011** | 0.0004 | 0.0006 | sumo; higher = chases more |
+| `lungeBonus` | 0.0016 | 0.001 | 0.0024 | 0.0008 | 0.001 | sumo |
+| `lungeThreshold` | 1.2 m/s | 1.5 m/s | 1.0 m/s | 1.8 m/s | 1.5 | sumo |
+| `impactReward` | **0.015** | 0.010 | 0.011 | **0.014** | 0.010 | sumo; the high-leverage farm |
+| `impactCap` | 8 | 8 | 8 | **10** | 8 | sumo |
+| `kneeBendReward` | 0.0004 | 0.0004 | 0.0002 | **0.0008** | 0.0004 | sumo |
+| `hipsLowReward` | 0.0003 | 0.0003 | 0.0001 | **0.0008** | 0.0003 | sumo |
+| `stanceReward` | 0.0009 | 0.0009 | 0.0009 | 0.0009 | 0.0009 | sumo |
+| `cadenceReward` | 0.0015 | 0.0015 | **0.0032** | 0.0006 | 0.0015 | sumo; the most farmable |
+| `effortPenalty` | 0.0015 | 0.0015 | 0.0015 | 0.0015 | 0.0015 | shared |
+| `energyPenalty` | 0.0004 | 0.0004 | 0.0004 | 0.0004 | 0.0004 | shared |
+| `jerkPenalty` | 0.0003 | 0.0003 | 0.0003 | 0.0003 | 0.0003 | shared |
+| `straightLegEarnFraction` | 0.30 | 0.30 | **0.75** | **0.15** | 0.30 | sumo gate on closing terms |
+| `forwardReward` (walk) | 0.0075 | 0.004 | 0.005 | 0.004 | 0.004 | walk |
+| `stallPenalty` (walk) | 0.0018 | 0.0008 | 0.0012 | 0.001 | 0.0008 | walk |
+
+(Bold values are the per-character deltas from the default.)
 
 ---
 
-## Cross-reference
+## Promotion rules
 
-- See [architecture.md](architecture.md) for the six mermaid diagrams
-  (inference loop, tensor blueprint, reward tree, actuator map, hyperparameter
-  matrix, episode lifecycle).
-- See [creatures.html](creatures.html) for the full technical report (joint
-  breakdown, vector sizes, per-character coefficients, training metrics).
-- See [creatures_simple.html](creatures_simple.html) for the executive dashboard
-  (status, progress bars, behavior evolution, health indicators).
+A brain moves from **Staging** to **Production** when:
+
+1. The TensorBoard ELO curve is **monotonic non-decreasing** across the last 4 deciles, OR oscillates within +/- 100 ELO of its peak.
+2. `MatchTestHarness.Run(10)` reports a `HARNESS RESULT:` line that does not regress by more than 2 wins against the same opponent pool.
+3. The build (`<Name>Env.exe`) was produced **after** the `.onnx` was finalised (BuildOptions.Development).
+4. The corresponding `<Name>_Character.asset` has `inferenceModel` repointed at the deployed `.onnx`.
+
+A brain is demoted to **Staging** when:
+
+* A new round of physics / observation / action changes invalidates its input or output shape (e.g. the 44 -> 45 task-flag change).
+* An opt-in observation slot is turned on (`contactObservations`, `staminaObservation`) without retraining.
+* A hyperparameter of `network_settings` changes (e.g. `hidden_units`, `num_layers`) and the policy is not retrained on the new shape.
+
+---
+
+## Telemetry & verification
+
+| Channel | Address | Content |
+|---|---|---|
+| TensorBoard | `http://127.0.0.1:6006` | ELO, mean reward, episode length, value/policy/entropy loss, per-fighter stamina. |
+| HTTP telemetry | `http://127.0.0.1:8787+/metrics` (envs built **after** 2026-08-07) | Live JSON snapshot of every fighter: position, velocity, edge distance, stamina, round state. |
+| Console | `[MATCH]`, `[ROUND]`, `HARNESS RESULT:`, `BUILD RESULT:`, `DEPLOY RESULT:` | Markers the harness, build tools, and deployment tools print and that the verification flow reads back. |
+
+### Verification commands
+
+```powershell
+# Confirm the four shipped brains round-trip in the InferenceEngine.
+python Tools/unity.py ping
+
+# Drive a full bracket (3 minutes per match, 4 matches = 12 minutes)
+python Tools/unity.py scene SCN_TOURNAMENT
+python Tools/unity.py play
+
+# Behavioural test (chains N matches unattended)
+python Tools/unity.py exec 'return PoSumo.MatchTestHarness.Run(10);'
+
+# Re-deploy a freshly-trained brain (overwrites the .onnx in place, preserves .meta GUID)
+# *PoSumo -> Deploy <Name> Brain*
+
+# Live env metrics
+curl http://127.0.0.1:8787/metrics
+```
+
+---
+
+## Source files
+
+* `Assets/Agents/<Name>_v01/<Name>.onnx` - the shipped brain
+* `Assets/Agents/<Name>_v01/<Name>_Character.asset` - the source-of-truth per-character sheet
+* `Assets/Agents/<Name>_v01/MANIFEST.md` - the per-fighter changelog (this file draws heavily on it)
+* `Assets/Scripts/Agent/Agent_Biped.cs` - the brain contract: `ActionCount = 13`, `ObservationCount = 42` (45 with `extendedObservations`)
+* `Assets/Scripts/Agent/Agent_BipedBody.cs` - the rig: `PART_DEFS` (16 parts), `JOINT_DEFS` (16 joints, 13 powered)
+* `Assets/Scripts/Reward/Reward_SumoObjective.cs` - per-character shaping coefficients for the sumo school
+* `Assets/Scripts/Reward/Reward_WalkObjective.cs` - per-character shaping coefficients for the walk school
+* `Training/configs/<Name>UnifiedNN.yaml` - the PPO config that produced the shipped brain
+* `Training/results/<run-id>/` - gitignored, present only after a local retrain; contains checkpoints, TFEvents, and final `<Behavior>.onnx`

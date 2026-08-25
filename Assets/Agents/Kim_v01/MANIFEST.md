@@ -14,7 +14,7 @@ chasing. She does not come to you.
 | Training scene / env | `SCN_TRAIN_KIM` → `Builds/KimEnv` (spars against Standard) |
 | Config | `Training/configs/KimUnified01.yaml` |
 | Faces | `Assets/Resources/Faces/Kim_*.png`, named on the character asset |
-| Voice | none — `Systems_FighterVoice` disables itself, so she is silent by design |
+| Voice | **Happy only** (2026-08-15): `Resources/Audio/Voice/Kim_Happy_1..5.wav`. No Sad or Insult set, so she is silent when losing or taunting — that is a complete absence (`found == 0`), which the loader returns as null without warning, not a partial set |
 | Colour | purple, `teamColor` (0.62, 0.32, 0.62) |
 | Inference | `InferenceDevice = Burst` |
 
@@ -32,6 +32,16 @@ Style (from the character asset): kneeBend + hipsLow both 0.0008 (deep planted
 stance), impact 0.014 cap 10 (wins with force), closing 0.0004 (does not chase),
 lunge 0.0008 @ 1.8 m/s (rare, big commits), cadence 0.0006 (plants rather than
 dances), straightLegEarnFraction 0.15 (must be deep to earn anything).
+
+**The happy set is ordered by LENGTH, and that ordering is load-bearing.** Slot 1 is
+the mildest read and slot 5 fires on the match win, so the clips were mapped
+0.95 / 1.55 / 2.62 / 3.11 / **7.96** s onto slots 1-5 rather than by their delivered
+filenames (`KimSing_1..5`, which were not in intensity order). The 7.96 s clip is far
+longer than anything else in the project's voice bank — `Systems_FighterVoice` sets
+`_nextAllowedTime = clip.length * 0.6`, so playing it mutes Kim for ~4.8 s afterwards.
+On the match win that lockout costs nothing, because the bout is already over. Anywhere
+else it would swallow the next three lines. If these are ever re-cut, keep the longest
+clip at slot 5.
 
 Her hyperparameters differ from the others deliberately — short credit horizon
 (gamma 0.99), low exploration (beta 3e-3), narrow self-play window drilling the

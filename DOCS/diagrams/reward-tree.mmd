@@ -1,0 +1,64 @@
+flowchart TD
+    %% PoSumo - Sensor Perception & Multi-Objective Reward Tree
+
+    subgraph Sensors["Sensor stack"]
+        direction LR
+        S1["Body state<br/>torso velocity, orientation,<br/>uprightness vs up-vector"]:::sens
+        S2["Foot contacts<br/>Sensor_BodyPartContact x 4 feet"]:::sens
+        S3["Impact impulse<br/>Sensor_Impact Raycast on collision"]:::sens
+        S4["Edge distance<br/>ringHalfWidth - |x - arenaCenterX|"]:::sens
+    end
+
+    subgraph Sumo["Sumo school  (mode = Sumo)"]
+        direction TB
+        R1[Upright  rUpright ~0.0005]:::sumo
+        R2[Closing  bendGate * closing]:::sumo
+        R3["Lunge    bonus above 1.5 m/s"]:::sumo
+        R4[Impact   0.01 * capped impulse]:::sumo
+        R5[Knee bend 0..0.0004]:::sumo
+        R6[Hips low 0..0.0003]:::sumo
+        R7[Stance width 0..0.0009]:::sumo
+        R8["Cadence / drive"]:::sumo
+    end
+
+    subgraph Walk["Walk school  (mode = Walk)"]
+        direction TB
+        W1[Forward velocity  facing-local]:::walk
+        W2[Tall gate  TallFactor height ratio]:::walk
+        W3[Bend reward  KneeBendFactor 0..1]:::walk
+        W4["Energy / jerk penalty"]:::walk
+        W5["Graduation terminal +3<br/>if xLocal > -0.3"]:::walk
+        W6["Fall terminal -1<br/>if non-foot ground contact"]:::walk
+    end
+
+    subgraph Shared["Shared signals"]
+        direction TB
+        Sh1[Energy penalty  -0.0004]:::shared
+        Sh2[Jerk penalty   -0.0003]:::shared
+        Sh3[Effort penalty -0.0015]:::shared
+        Sh4[Step cadence  alternation reward]:::shared
+    end
+
+    subgraph Terminals["Terminals  (Agent_Biped only)"]
+        T1["+1 round win  referee -> Agent.AddReward"]:::term
+        T2[-1 round loss]:::term
+        T3[EpisodeInterrupted  timeout]:::term
+        T4[Fall -1  SetReward discards step]:::term
+    end
+
+    S1 --> Sumo
+    S1 --> Walk
+    S2 --> Walk
+    S2 --> Terminals
+    S3 --> Sumo
+    S4 --> Sumo
+    Sumo --> Shared
+    Walk --> Shared
+    Sumo --> Terminals
+    Walk --> Terminals
+
+    classDef sens fill:#eef6ff,stroke:#3a78c2,color:#0e2a4d
+    classDef sumo fill:#fdeeee,stroke:#c93b3b,color:#4a0e0e
+    classDef walk fill:#e8f7e8,stroke:#3a9a3a,color:#103d10
+    classDef shared fill:#fff4e5,stroke:#d9923a,color:#4a2e08
+    classDef term fill:#fde2f3,stroke:#c43b8d,color:#4a0d2c

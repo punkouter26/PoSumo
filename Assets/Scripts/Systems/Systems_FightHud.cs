@@ -690,6 +690,21 @@ namespace PoSumo
             // (2–3 on the left, 3–2 on the right) and read as four separate stats.
             SetCompare(_knockdowns, _aggA.kdDealt.ToString(), _aggB.kdDealt.ToString());
 
+            // The Max(1, ...) guard turns "the fighters never got within TOUCH_DIST"
+            // into a printed "0 N", which is indistinguishable from "they clinched
+            // the whole round and neither generated any push". A live match showed
+            // 0 N on BOTH sides while TERRITORY and KNOCKDOWNS populated normally,
+            // and there was no way to tell from the card which of the two it was —
+            // territory and knockdowns are sampled unconditionally, push only while
+            // touching, so an empty contact sample is the obvious suspect and the
+            // card actively hid it. An em dash says "never measured"; 0 N now only
+            // ever means a real, measured zero.
+            bool anyContact = _aggA.touchSamples > 0 || _aggB.touchSamples > 0;
+            if (!anyContact)
+            {
+                SetBar(_push, 0f, 0f, AVG_PUSH_MAX, "—");
+                return;
+            }
             float pushA = Mathf.Clamp(_aggA.sumPush / Mathf.Max(1, _aggA.touchSamples), 0f, AVG_PUSH_MAX);
             float pushB = Mathf.Clamp(_aggB.sumPush / Mathf.Max(1, _aggB.touchSamples), 0f, AVG_PUSH_MAX);
             SetBar(_push, pushA, pushB, AVG_PUSH_MAX, "{0:F0} N");

@@ -24,9 +24,13 @@ round expire on the clock and be settled on position — no ring-out at all. The
 `Systems_SumoMatchManager` does **not** read `GameTuning` — it carries its own copy of the
 ring, spawn gap and timeout in every training scene, so a change here must be written into
 those scenes too or the brains train on an arena the game does not have. Its **code
-defaults were never updated** and still read 5.5 / `startHalfRange (1.7, 5.5)` /
-`spawnGapHalf 1.2`; the four training scenes serialize 4 / `(1.7, 4)` / 2.5.
-Grep the `.unity` files, not the `.cs`, to learn what an env actually trains against.
+defaults were finally corrected on 2026-08-15** and now read 3.5 / `startHalfRange
+(1.7, 3.5)` / `spawnGapHalf 2.5` / `roundTimeoutSeconds 20`, matching both
+`GameTuning.asset` and what the four training scenes serialize. They had read
+5.5 / `(1.7, 5.5)` / 1.2 / 30 — the code and the scenes disagreed by 2 m of mat for
+months, and only a new scene would ever have been bitten by it.
+Grep the `.unity` files, not the `.cs`, to learn what an existing env trains against;
+the `.cs` is what a NEW scene inherits, so both have to be right.
 
 > **That warning fired for real on 2026-08-07, and the fix is the template for next time.**
 > `GameTuning.asset` held `ringHalfWidth: 3.5` (a **7 m** mat) while all four training
@@ -79,13 +83,16 @@ re-run training locally to recreate that directory.
 
 | Layer | Tool | Version | Notes |
 |---|---|---|---|
-| Engine | Unity Editor | **6000.5.6f1** (Unity 6.2) | changeset 0e0577a1a2ac. Was 6000.5.4f1 (d550df8bd089) — see the drift note below |
+| Engine | Unity Editor | **DISPUTED — see below** | `ProjectVersion.txt` says 6000.5.8f1 (changeset 5cb7df797b7d); the only editor INSTALLED and the one actually running is **6000.5.6f1** (measured live 2026-08-25). Drifted 6000.5.4f1 → 6000.5.6f1 → 6000.5.8f1 → back to 6000.5.6f1, each time WITHOUT this table moving. Re-read `ProjectSettings/ProjectVersion.txt` **and** `ls "C:/Program Files/Unity/Hub/Editor/"` — this row is not authoritative and neither source alone is sufficient |
 | Engine | Unity Hub | 3.x | headless CLI broken — install modules via UI |
 | Package | com.unity.ml-agents | **4.1.0** | LOCAL `file:` package with patches. Upgraded from 4.0.0 (release_23) on 2026-08-06 — re-fetching is now a documented procedure, not a prohibition, but it still LOSES the patches below |
 | Package | com.unity.ai.inference | 2.6.1 | auto-dependency of ML-Agents (`Unity.InferenceEngine.ModelAsset`). Was 2.2.1 |
 | Package | URP | 17.5.0 | project template |
-| MCP | unity-mcp-cli (npm) | **0.87.0** | keep in step with the Unity package below |
-| MCP | com.ivanmurzak.unity.mcp | **0.87.0** | + gamedev-mcp-server 9.2.0. Upgrading it reverts the plugin `.meta` platform flags — re-run *PoSumo → Fix Plugin Platforms* |
+| MCP | unity-mcp-cli (npm) | **not installed** | `npm ls -g` is empty and there is no global bin. Every `unity-mcp-cli` invocation in the `.claude/skills/*/SKILL.md` files therefore fails — use `Tools/unity.py` instead |
+| MCP | com.ivanmurzak.unity.mcp | **0.90.0** | measured live 2026-08-25; was 0.88.0. Ships NuGet `McpPlugin` / `McpPlugin.Common` **8.3.0** under `Assets/Plugins/NuGet/` — those move WITH the package, so `.nuget-installed.json` and the two DLLs are part of the same version decision. Upgrading it reverts the plugin `.meta` platform flags — re-run *PoSumo → Fix Plugin Platforms* |
+| MCP | com.ivanmurzak.unity.mcp.animation | 1.2.28 | add-on, resolved against core 0.90.0 |
+| MCP | com.ivanmurzak.unity.mcp.particlesystem | **1.2.30 — BACK, and compiling** | removed 2026-08-16 because 1.2.30 did not match core **0.88.0** (it referenced a namespace `AIGD` that version did not ship) and **the whole project failed to compile**, which blocks Play mode entirely. Under core **0.90.0** the same 1.2.30 resolves as a matched dependency and the console is clean — verified live 2026-08-25. The add-on was never the defect; the *pairing* was |
+| MCP | com.ivanmurzak.unity.mcp.cinemachine | 1.0.14 | likewise back and compiling under 0.90.0, having been dropped for the same mismatch |
 | MCP | com.coplaydev.unity-mcp | 10.1.0 | |
 | MCP | com.besty.unity-skills | 2.2.1 | HTTP server port 8090 |
 | Python | Python | **3.10.11** | hard range: >=3.10.1, <=3.10.12 |
@@ -97,7 +104,7 @@ re-run training locally to recreate that directory.
 | Python | numpy | 1.23.5 | pinned by mlagents |
 | Python | onnx | 1.15.0 | |
 | Python | tensorboard | 2.20.0 | always run during training |
-| Android | Build Support module | 6000.5.6f1 | must match the editor version |
+| Android | Build Support module | **6000.5.6f1** | must match the editor version — so it moves every time the row above does. The 2026-08-15 note here ("only `6000.5.8f1` is installed") is **stale and was measured false on 2026-08-25**: only `6000.5.6f1` is present under `C:/Program Files/Unity/Hub/Editor/`. The installed module therefore matches the RUNNING editor but not the version `ProjectVersion.txt` names — resolve that before trusting an Android build |
 | Android | OpenJDK | 17.0.18+8 | embedded in AndroidPlayer |
 | Android | NDK | r27c | |
 | Android | SDK build-tools | 36.0.0 | |
@@ -123,6 +130,31 @@ editor-only `Google.Protobuf_Packed.dll` collided with ML-Agents' copy — the c
 that local patch 2 below exists to work around. A minor-version move is exactly when that
 patch could stop holding. If inference ever goes silently wrong (a fighter that stands
 still or twitches rather than erroring), suspect this before suspecting the brain.
+
+> **An MCP add-on package can break the entire project, and the symptom does not point at
+> it.** On 2026-08-16 `com.ivanmurzak.unity.mcp.particlesystem` 1.2.30 was resolved against
+> core 0.88.0, referenced a namespace (`AIGD`) that version does not ship, and left
+> `EditorUtility.scriptCompilationFailed` **true**. Nothing in `Assets/` was wrong — zero
+> errors in project code — but **Play mode is blocked while that flag is set**, so the game
+> could not be run at all. These add-ons version independently of the core package and
+> nothing verifies the pair.
+>
+> Fixed at the time by deleting the line from `Packages/manifest.json`. Two follow-ons
+> worth knowing: the removal left a stale `CS2001: Source file ... UnityTokenRefresher.cs
+> could not be found` that `CompilationPipeline.RequestScriptCompilation(CleanBuildCache)`
+> did NOT clear — only an **Editor restart** did; and `EditorApplication.OpenProject(cwd)`
+> is a clean way to restart it from the bridge.
+>
+> **Superseded 2026-08-25, and the correction is the lesson.** Core moved to **0.90.0** and
+> `particlesystem` **1.2.30 — the very same version — now resolves clean**, alongside
+> `cinemachine` 1.0.14 and `animation` 1.2.28, with `scriptCompilationFailed` false and an
+> empty console. The add-on was never the defect; the **pairing** was. So the rule is not
+> "never install the add-ons" — it is **never assume an add-on version and a core version
+> go together, in either direction**. Re-check the pair after any move on either side.
+>
+> First diagnostic when anything refuses to run: `scriptCompilationFailed`, then group the
+> console errors by package. If they all come from `Library/PackageCache/`, it is not your
+> code.
 
 Re-measure rather than trusting this table when something behaves oddly; a version drifting
 under a "required set" heading is how a project ends up debugging the wrong layer.
@@ -411,7 +443,7 @@ was preserved deliberately, because these are small floats accumulated at 50 Hz.
   a walk-in that brushes the other fighter banks that momentum for the first sumo step
   after `EndWalkIn`.
 
-#### The fighters crawl during the walk-in, and FOUR retrains failed to fix it (2026-08-08)
+#### The fighters crawl during the walk-in, and FIVE retrains failed to fix it (2026-08-17)
 
 Do not spend a fifth run on this without reading all of it. The measured gait height (torso
 above the mat, standing pose is 1.06 m) went:
@@ -423,6 +455,35 @@ above the mat, standing pose is 1.06 m) went:
 | `tall02` warm 2M, additive 0.0015 | 0.56-0.74 | yes | no change |
 | `tall03` warm 2.5M, height GATE, ramp 0.65-0.95 | 0.54-0.71 | yes | no change |
 | `tall04` warm 2.5M, height gate, ramp 0.45-1.00 | 0.59-0.74 | yes | no change |
+| `gait01` warm **16M**, fall-penalty curriculum 0.05→1.0 | **0.16-0.20** | yes | **WORSE — dragging flat** |
+
+> **`gait01` (2026-08-17) attacked the TERMINAL rather than the shaping, which is the one
+> lever this section used to recommend, and it made the gait dramatically worse.** The
+> fall penalty was made a curriculum parameter (`walk_fall_penalty`, read by
+> `Agent_Biped.OnEpisodeBegin`) and ramped 0.05 → 0.25 → 0.6 → 1.0 across 16M steps, warm
+> started from the 15M `*_stamina01` trunks. All four fighters completed the full ramp.
+>
+> Measured result: torso height **0.16-0.20 m** against the 0.55-0.76 m it was trying to
+> raise, and a 1.06 m standing pose. They stopped crawling and started **dragging flat**.
+>
+> **Why, and this is the part worth keeping:** cheap falls do not buy exploration, because
+> **a body already on the ground cannot fall**. Once the policy found the floor there was
+> no gradient left pointing up — the fall terminal simply stopped firing. Ramping the
+> penalty back to 1.0 over the final 4M steps did not recover it; by then dragging was a
+> deep local optimum and the terminal it would have been punished by was unreachable.
+>
+> So the recommendation this section used to make is now itself disproven. **Do not spend a
+> sixth run inside the reward function — shaping and terminal have both been tried.** What
+> is left is genuinely different in kind: a stability aid the policy cannot opt out of (a
+> torso-height constraint enforced in physics rather than paid for in reward), a separate
+> walk-only trunk that does not share capacity with self-play sumo, or accepting the gait
+> and solving the ceremony in presentation. The last of those is nearly free and was
+> already partly done — see `walkInTouchGap`.
+>
+> **The fight was unharmed**, exactly as in all four earlier runs: 6 rounds, 83% ring-outs,
+> no regression. Every walk experiment on this shared trunk improves or preserves the
+> FIGHT and leaves the WALK alone, which is itself evidence that the trunk spends its
+> capacity where the reward is.
 
 The **diagnosis of the cause was right**: `walkGate` multiplied the dominant forward-speed
 term by `KneeBend`, so at a 0.15 floor straight legs earned 15% of it and a deep crouch
@@ -509,15 +570,57 @@ Falling is **not** a loss in either referee (`knockdownLoses` is off). If you ch
 losing condition, change it in **both** — they have silently diverged before, and
 policies then never learn that a stray foot over the edge is fatal.
 
-**Three game-only rules exist that the brains never train against**, and that asymmetry is
-deliberate — they are spectacle layered on the sumo rules, not sumo rules:
-`downOutSeconds` (3 s lying down forfeits the round — `IsDown` can latch permanently once
-a leg is under the body, and measured play had half of every round be two motionless
-ragdolls waiting out the clock), `knockoutsToLoseMatch` (head KOs lose the match
-outright, via `Systems_BodyDamage.Knockout` — **2** in `GameTuning.asset`, which is what
-runs; this line said 3, which is only the code fallback), and the low-friction `tawara` band at the
-rim (`tawaraBandWidth` / `tawaraFriction`) that turns "almost out" into "out".
-`Systems_SumoMatchManager` has no equivalent of any of them.
+Three rules used to be game-only. **Two of them were ported into the training referee on
+2026-08-15 and one cannot be**, so the asymmetry is now down to a single rule:
+
+> **2026-08-16 — the two referees were brought fully back into step, and two new rules
+> exist. Read this before touching either.**
+>
+> - **The SHRINKING MAT is now in BOTH.** The mat closes from `ringHalfWidth` to
+>   `shrinkToHalfWidth` (3.5 → 1.8) between `shrinkStartSeconds` (8) and the bell. It had
+>   been game-only, so every brain trained on a mat that never closed. `Systems_SumoMatchManager`
+>   scales the target **proportionally** to that round's randomized start width — a fixed
+>   1.8 would be a no-op on any round that already started narrow. It detects nothing: it
+>   withdraws the floor and the existing ring-out path does the rest.
+> - **`Systems_StrikeImpulse` is now in BOTH.** Punches and kicks deliver real momentum, so
+>   a clean body shot launches a man. Spawned by `Systems_GameMatchManager` behind
+>   `enableStrikeImpulse`, and by `Systems_SumoMatchManager` directly — one instance per
+>   scene, because `Sensor_Impact.AnyImpact` is static and serves every body.
+> - `downOutSeconds` went to **0 in both** — see below.
+>
+> **Every brain before `*_stamina01` at 15M trained without all three.** Two traps this
+> cost, both recorded in `Systems_StrikeImpulse`: the impulse curve must be calibrated
+> against MEASURED strike speeds (3.9-5.3 m/s — a curve peaking at 11.9 m/s was inert, the
+> same "term outside the observed range" failure as the walk-tall runs), and its per-strike
+> log must stay OFF in training (it wrote 37 MB per env worker in 36 minutes and killed one
+> run's env logging outright with `Curl error 23`).
+
+- **`downOutSeconds` is now `0` in BOTH referees — the rule is RETIRED (2026-08-16).** It
+  read on screen as the game giving up, and the **shrinking mat below now does its job
+  better**: a fighter who stays down is squeezed off the edge and loses an honest ring-out.
+  Measured immediately after: 5 rounds, 5 ring-outs, no stalls and no draws, against the
+  29% ring-out baseline the rule was introduced to fix.
+  **Do not restore it without also removing the shrink, and do not remove the shrink
+  without restoring it** — either alone brings back the stall it was written for, two
+  motionless bodies on a mat that never closes. The history is worth keeping: it existed
+  because `IsDown` can latch permanently once a leg is under the body, and it once decided
+  **57%** of rounds.
+- **The low-friction `tawara` band** at the rim (`tawaraBandWidth` / `tawaraFriction`) that
+  turns "almost out" into "out". **Now in both.** `Systems_SumoMatchManager` writes both
+  values onto `Systems_SumoArena` in `Start`, *before* the first `ResetRound`, because the
+  band is rebuilt inside `SetPlatformHalfWidth` → `EnsureTawaraBands`. The training scenes
+  serialize 0.7 on the arena against the game's 1.2; the referee now overwrites it at
+  runtime, exactly as it already did for `ringHalfWidth`.
+- **`knockoutsToLoseMatch`** (head KOs lose the match outright, via
+  `Systems_BodyDamage.Knockout` — **2** in `GameTuning.asset`, which is what runs; this
+  line said 3, which is only the code fallback). **Still game-only, and deliberately so.**
+  `Systems_BodyDamage` is a presentation companion that only `Systems_GameMatchManager`
+  spawns, so a training env has no damage model and no event to subscribe to. Adding one
+  is not a referee change — it puts dismemberment and its mass changes into the training
+  physics, invalidating every brain, for a rule that fires once or twice a match.
+
+None of this is retroactive: **every currently shipped brain was trained before the port**
+and has never seen either rule. They take effect on the next training run.
 
 Shared numbers live in `Assets/Settings/GameTuning.asset` (`Systems_GameTuning`); scene
 components copy from it in `Start`, so tune the asset, not serialized scene values — the
@@ -694,6 +797,7 @@ a tick on one asset rather than an edit in three scenes.
 | `Systems_ArenaLighting` / `Systems_ArenaAtmosphere` | 2D light rig + post volume; backdrop parallax, haze, crowd sway, light shafts |
 | `Systems_BodySurface` | writes `_Sweat` and `_Dirt` into one fighter's `PoSumo/BodyLit` material — sheen from exertion, clay from arena contact. Rides `enableLighting`; disables itself unless `Systems_ArenaLighting.BodyShadingActive`, so it is **currently inert** |
 | `Systems_ImpactFx` / `Systems_DustPuff` / `Systems_SoftBodyJiggle` / `Systems_BlobShadow` | hit bursts, dust, flesh wobble, contact shadows |
+| `Systems_StrikeImpulse` | **punches and kicks deliver real momentum** — a clean body shot launches a man. The one companion that is ALSO spawned by `Systems_SumoMatchManager`, so it is in training too. Not presentation: it changes who wins rounds |
 | `Systems_BodyDamage` / `Systems_RingBlood` | bruise decals, **limb loss and decapitation**, the bloody head KO, and blood left on the mat. **Owns the `Knockout` static event the referee's 3-KO rule reads**, so it is the one "presentation" system with a rules consequence |
 | `Systems_FaceMood` | expression driven by dominance |
 | `Systems_CareerRecorder` | the only writer into career stats |
@@ -944,6 +1048,40 @@ After any change to the walk lane, assert every walker spawns at `xLocal < -0.3`
 > and absent from a fresh clone, so there may be no checkpoint to warm-start from and the
 > pass becomes a cold retrain. Turn on `staminaObservation` in the same run.
 
+> ## **DO NOT USE THE UNITY EDITOR WHILE A RUN IS TRAINING.** Measured twice on
+> 2026-08-16 and it is the single most expensive mistake available here.
+>
+> Entering Play mode alongside 8 env players took one run from **4.2M steps/hour to 69
+> steps in 80 minutes** — it looked alive the whole time, with trainers and env players
+> in the process list. A second run's env players died 2 minutes after launch, during a
+> brain deploy plus Play mode. Neither errored. **Both look identical to a healthy run
+> until you diff the step count**, which is why the check below is worth running before
+> believing any status.
+>
+> Deploying a brain, refreshing assets and building an env are all Editor work. Stop
+> training first, or accept the run.
+>
+>     powershell -Command "@(Get-Process mlagents-learn -EA SilentlyContinue).Count"
+>     # then compare the newest numbered .pt against itself 5 minutes later
+
+**Three wrappers, and which to use.** All three enforce an explicit `--base-port` (the
+trainer takes `--num-envs` consecutive ports, so two runs on the default 5005 collide and
+the second hangs on a handshake the first already answered) and start TensorBoard exactly
+once (a second bind on 6006 fails quietly enough that you notice an hour later with no
+graphs).
+
+| Script | Use it for |
+|---|---|
+| `Start-Training.ps1` | ONE run, foreground. The original; still correct for a single fighter |
+| `Start-StaminaExtension.ps1` | 2+ concurrent runs. `-Phase` picks the config generation, `-InitializeFromPhase` warm-starts a NEW run id from an existing trunk, `-Minutes` arms a graceful auto-stop |
+| `Run-GaitCampaign.ps1` | Unattended multi-hour work. Runs the roster in sequential batches, because the limit is MEMORY not cores — 4 fighters x 4 envs is ~17 GB against ~8-10 GB typically free, so 2 at a time is what fits |
+
+`Start-StaminaExtension.ps1` carries two guards that each cost a wasted launch to learn:
+a `--resume` into a config whose `max_steps` equals the checkpoint's step count **exits
+immediately having trained nothing and looks exactly like a successful short run**; and a
+warm start into an existing run id silently resumes that run instead of loading the trunk
+you asked for, so it refuses.
+
 `Training\Start-Training.ps1` is the wrapper: it starts TensorBoard *before* the trainer,
 always passes an explicit `--base-port`, bounds `--num-envs` to 4-8 and warns if that
 leaves under 4 cores for the trainer's torch threads, and records the session (run id,
@@ -1072,10 +1210,26 @@ generator does nothing until the menu item is re-run, and nothing in the game wa
   no-op. `NormalizeVoice` rebases so max gain is exactly 1.0; the asset had never been
   regenerated after that fix.
 
-Audio content is uneven and this is not a bug: only **Matt and Nick have voice clips**, and
-only **Kim, Matt and Nick have face art** — Standard has neither. `Systems_FighterVoice` and
-`Systems_FaceMood` both disable themselves rather than warn, so a silent, faceless fighter
-looks intentional. The bracket seeds all four twice.
+Audio content is uneven and this is not a bug. **Matt and Nick have all three voice sets**
+(Happy / Sad / Insult, 5 levels each); **Kim has Happy only** as of 2026-08-15, so she
+cheers a win and is silent when losing or taunting; **Standard has none**. Only
+**Kim, Matt and Nick have face art** — Standard has neither art nor voice.
+`Systems_FighterVoice` and `Systems_FaceMood` both disable themselves rather than warn, so
+a silent, faceless fighter looks intentional. The bracket seeds all four twice.
+
+**A missing set and an incomplete set behave differently, and only one of them is quiet.**
+`LoadSet` returns null when it finds *zero* clips — no log line, which is why Standard and
+Kim's Sad/Insult are silent rather than noisy. Find 1-4 of 5 and it `Debug.LogWarning`s on
+every match. So a partially-delivered set is worse than none: fill all five levels or
+leave the set empty, never in between. Naming is exact —
+`Resources/Audio/Voice/<Behavior>_<Happy|Sad|Insult>_<1-5>.wav`, where the behavior name
+is the one on the character asset. There is no second accepted spelling any more.
+
+Level 1 is the mildest read and **level 5 fires on the match win**, so order a set by
+intensity, not by whatever the source files were called. Clip LENGTH matters at level 5
+specifically: `_nextAllowedTime` is `clip.length * 0.6`, so a long line mutes that fighter
+for a proportional stretch afterwards — free on a match win, costly anywhere else. Kim's
+level 5 is 7.96 s for exactly this reason.
 
 `SCN_TOURNAMENT` has **no AudioListener in the scene** — the game boots into it (build index
 0), so `Systems_TournamentBracket.EnsureAudioListener()` adds one in `Start`. It is

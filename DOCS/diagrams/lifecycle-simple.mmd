@@ -1,0 +1,29 @@
+flowchart TD
+    %% PoSumo - Dynamic Lifecycle & Execution Loop (SIMPLE)
+    %% Conceptual overview of one decision tick at 50 Hz
+
+    Env["Unity Scene: SCN_SUMO / SCN_TRAIN_*"]:::env
+    Body["Agent_BipedBody<br/>14-part ragdoll"]:::body
+    Agent["Agent_Biped<br/>Brain contract"]:::agent
+    Brain["(.onnx Sentis Model<br/>45 obs -> 13 actions)"]:::brain
+    Ref["Referee<br/>SumoMatchManager / GameMatchManager"]:::ref
+    Tnt["Tournament State<br/>Static 8-slot bracket"]:::tnt
+    UI["UI Toolkit HUD<br/>+ Bracket / Career"]:::ui
+
+    Env -->|Physics tick 50 Hz| Body
+    Body -->|Sensors: contact, raycast, velocity| Agent
+    Agent -->|CollectObservations 45-float vector| Brain
+    Brain -->|13 continuous actions| Agent
+    Agent -->|motor torques, actionScale| Body
+    Body -->|collisions / ring-out| Ref
+    Ref -->|terminal +1 / -1| Agent
+    Ref -->|RoundStarted / Ended / MatchEnded events| UI
+    Tnt -->|entrant roster| Ref
+
+    classDef env fill:#eef6ff,stroke:#3a78c2,color:#0e2a4d
+    classDef body fill:#fff4e5,stroke:#d9923a,color:#4a2e08
+    classDef agent fill:#e8f7e8,stroke:#3a9a3a,color:#103d10
+    classDef brain fill:#fde2f3,stroke:#c43b8d,color:#4a0d2c
+    classDef ref fill:#fdeeee,stroke:#c93b3b,color:#4a0e0e
+    classDef tnt fill:#eee9fb,stroke:#6a3fc9,color:#1f0e4a
+    classDef ui fill:#f0f0f0,stroke:#666,color:#222

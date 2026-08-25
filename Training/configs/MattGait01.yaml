@@ -1,0 +1,131 @@
+# Matt GAIT 01 — created 2026-08-16. WARM start from matt_stamina01 (15M).
+#
+# WHY THIS RUN EXISTS
+# The fighters crawl. Measured torso height during the walk-in is 0.55-0.76 m
+# against a 1.06 m standing pose, and the round-opening ceremony reads as two men
+# dragging themselves across the mat on all fours.
+#
+# READ THIS BEFORE CHANGING ANY COEFFICIENT IN THIS FILE.
+# Four runs have already failed at exactly this — tall01, tall02, tall03, tall04 —
+# and they failed for an arithmetic reason, not a tuning one:
+#
+#   a fall in Mode.Walk  = -1, plus the forgone +3 graduation, and SetReward
+#                          discards that step's shaping   ->  about -4
+#   tall-vs-crawl gain   = 0.0063 per step
+#
+# Break-even is one extra fall per ~13 s of walking. A tall bipedal gait on this
+# ragdoll is far more fall-prone than that, so CROUCHING IS CORRECT PLAY and no
+# reasonable shaping coefficient changes it. tall01 raised the height reward and
+# zeroed walkBendReward to make room; the gait collapsed outright to 0.33 m and
+# stopped travelling at all. Do not re-run that experiment.
+#
+# WHAT IS DIFFERENT HERE, AND IT IS THE ONLY THING THAT IS DIFFERENT
+# CLAUDE.md names one untried lever: "reducing the fall risk/penalty during a walk
+# curriculum so the policy can afford to experiment with standing up." That is this
+# run. `walk_fall_penalty` is now a curriculum parameter read by Agent_Biped in
+# OnEpisodeBegin, and it ramps 0.05 -> 1.0 across the run:
+#
+#   Lesson0  0-25%   0.05   falling is nearly free; stand up and find out
+#   Lesson1  25-50%  0.25
+#   Lesson2  50-75%  0.60
+#   Lesson3  75-100% 1.00   historical value restored; protect the gait you found
+#
+# The ramp matters as much as the low start. Ending the run at 1.0 means the final
+# policy is evaluated under the SAME terminal the shipped brains use, so a gait that
+# only survives while falling is cheap does not get deployed by accident.
+#
+# WALK SHAPING IS DELIBERATELY UNCHANGED from MattStamina01. The height gate and
+# the small additive height term are the right shape and cost nothing; they were
+# simply never sufficient on their own. walkBendReward in particular STAYS — it is
+# load-bearing for balance, and removing it is what killed tall01.
+#
+# HOW TO JUDGE IT — measure the gait, do not eyeball it
+#   1. Torso height during the walk-in must rise above the 0.55-0.76 band. That band
+#      is the thing being fixed; anything inside it is another failed run.
+#   2. The walkers must still TRAVEL. tall01 scored better on posture by standing
+#      still. Assert every walker still reaches its target: WALK-IN RESULT lines in
+#      a played match should report contact, not STALLED.
+#   3. Mean reward must carry real VARIANCE. Pinned just under the +3 graduation
+#      bonus with near-zero variance is the walk-lane facingSign failure signature
+#      (CLAUDE.md), not convergence.
+#   4. ELO must not slide. This is a shared trunk — the same network fights — and a
+#      gait fix that costs 200 ELO is not a fix. Flat is fine; a monotonic slide is
+#      a reject.
+#
+# WARM START, so this is 5M and not 15M: the trunk already fights well after
+# stamina01 and only the walk half is being moved. learning_rate is 1.5e-4 rather
+# than 3e-4 for the same reason — this nudges a mature trunk, it does not build one.
+# network_settings MUST stay 512 x 3 or --initialize-from cannot load the trunk.
+#
+# Launch:
+#   mlagents-learn Training/configs/MattGait01.yaml --run-id=matt_gait01 \
+#     --initialize-from=matt_stamina01 --env=Builds/MattEnv/MattEnv.exe \
+#     --num-envs=4 --base-port=5005 --no-graphics --results-dir=Training/results
+
+behaviors:
+  Matt:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 0.00015
+      beta: 0.005
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:
+      normalize: true
+      hidden_units: 512
+      num_layers: 3
+      vis_encode_type: simple
+    reward_signals:
+      extrinsic:
+        gamma: 0.997
+        strength: 1.0
+    keep_checkpoints: 20
+    checkpoint_interval: 100000
+    max_steps: 16000000
+    time_horizon: 1000
+    summary_freq: 20000
+    threaded: true
+    self_play:
+      window: 25
+      play_against_latest_model_ratio: 0.25
+      save_steps: 50000
+      swap_steps: 50000
+      team_change: 250000
+
+environment_parameters:
+  # Read by Agent_Biped.OnEpisodeBegin as the magnitude of the Mode.Walk fall
+  # terminal. `progress` is elapsed_steps / max_steps, so these thresholds are the
+  # quarter marks of the run and the ramp is deterministic rather than dependent on
+  # a reward threshold that a crawling policy might satisfy without ever standing.
+  walk_fall_penalty:
+    curriculum:
+      - name: FreeToFall
+        completion_criteria:
+          measure: progress
+          behavior: Matt
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.25
+        value: 0.05
+      - name: Consequences
+        completion_criteria:
+          measure: progress
+          behavior: Matt
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.5
+        value: 0.25
+      - name: Tightening
+        completion_criteria:
+          measure: progress
+          behavior: Matt
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.75
+        value: 0.6
+      - name: FullPenalty
+        value: 1.0

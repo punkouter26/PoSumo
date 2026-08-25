@@ -48,26 +48,6 @@
       },
       "url": "https://package.openupm.com"
     },
-    "com.ivanmurzak.unity.mcp.cinemachine": {
-      "version": "1.0.14",
-      "depth": 0,
-      "source": "registry",
-      "dependencies": {
-        "com.ivanmurzak.unity.mcp": "0.86.0",
-        "com.unity.cinemachine": "3.1.6"
-      },
-      "url": "https://package.openupm.com"
-    },
-    "com.ivanmurzak.unity.mcp.particlesystem": {
-      "version": "1.2.30",
-      "depth": 0,
-      "source": "registry",
-      "dependencies": {
-        "com.ivanmurzak.unity.mcp": "0.86.3",
-        "com.unity.modules.particlesystem": "1.0.0"
-      },
-      "url": "https://package.openupm.com"
-    },
     "com.unity.2d.animation": {
       "version": "15.1.0",
       "depth": 0,
@@ -181,7 +161,7 @@
       "url": "https://packages.unity.com"
     },
     "com.unity.burst": {
-      "version": "1.8.29",
+      "version": "1.8.30",
       "depth": 2,
       "source": "registry",
       "dependencies": {
@@ -190,22 +170,12 @@
       },
       "url": "https://packages.unity.com"
     },
-    "com.unity.cinemachine": {
-      "version": "3.1.6",
-      "depth": 1,
-      "source": "registry",
-      "dependencies": {
-        "com.unity.splines": "2.0.0",
-        "com.unity.modules.imgui": "1.0.0"
-      },
-      "url": "https://packages.unity.com"
-    },
     "com.unity.collab-proxy": {
-      "version": "2.13.3",
+      "version": "2.13.5",
       "depth": 0,
       "source": "registry",
       "dependencies": {
-        "com.unity.collections": "2.6.2"
+        "com.unity.collections": "2.6.8"
       },
       "url": "https://packages.unity.com"
     },
@@ -348,15 +318,8 @@
       }
     },
     "com.unity.searcher": {
-      "version": "4.9.4",
+      "version": "4.9.5",
       "depth": 2,
-      "source": "registry",
-      "dependencies": {},
-      "url": "https://packages.unity.com"
-    },
-    "com.unity.settings-manager": {
-      "version": "2.1.1",
-      "depth": 3,
       "source": "registry",
       "dependencies": {},
       "url": "https://packages.unity.com"
@@ -369,17 +332,6 @@
         "com.unity.render-pipelines.core": "17.5.0",
         "com.unity.searcher": "4.9.3"
       }
-    },
-    "com.unity.splines": {
-      "version": "2.9.0",
-      "depth": 2,
-      "source": "registry",
-      "dependencies": {
-        "com.unity.mathematics": "1.2.1",
-        "com.unity.modules.imgui": "1.0.0",
-        "com.unity.settings-manager": "1.0.3"
-      },
-      "url": "https://packages.unity.com"
     },
     "com.unity.test-framework": {
       "version": "1.7.0",
@@ -426,11 +378,11 @@
       }
     },
     "com.unity.visualscripting": {
-      "version": "1.9.11",
+      "version": "1.9.12",
       "depth": 0,
       "source": "registry",
       "dependencies": {
-        "com.unity.ugui": "1.0.0",
+        "com.unity.ugui": "2.0.0",
         "com.unity.modules.jsonserialize": "1.0.0"
       },
       "url": "https://packages.unity.com"

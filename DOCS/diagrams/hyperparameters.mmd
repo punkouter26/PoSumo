@@ -1,0 +1,82 @@
+flowchart LR
+    %% PoSumo - Hyperparameter & Trainer Specification (PPO self-play)
+
+    subgraph Trainer["mlagents-learn  trainer"]
+        direction TB
+        T["PPO<br/>trainer_type"]:::tr
+    end
+
+    subgraph HP["hyperparameters"]
+        direction TB
+        H1[batch_size = 2048]:::hp
+        H2[buffer_size = 20480]:::hp
+        H3[learning_rate = 3.0e-4]:::hp
+        H4[beta entropy = 5.0e-3]:::hp
+        H5[epsilon clip = 0.2]:::hp
+        H6[lambd GAE = 0.95]:::hp
+        H7[num_epoch = 3]:::hp
+        H8[learning_rate_schedule = linear]:::hp
+    end
+
+    subgraph NS["network_settings"]
+        direction TB
+        N1[normalize = true]:::ns
+        N2[hidden_units = 512]:::ns
+        N3[num_layers = 3]:::ns
+        N4[vis_encode_type = simple]:::ns
+    end
+
+    subgraph RS["reward_signals"]
+        direction TB
+        R1[extrinsic gamma 0.997]:::rs
+        R2[strength 1.0]:::rs
+    end
+
+    subgraph SP["self_play"]
+        direction TB
+        S1[window = 25]:::sp
+        S2[play_against_latest_model_ratio = 0.25]:::sp
+        S3[save_steps = 50000]:::sp
+        S4[swap_steps = 50000]:::sp
+        S5[team_change = 250000]:::sp
+    end
+
+    subgraph Sched["Training schedule"]
+        direction TB
+        Sch1[max_steps = 15,000,000]:::sch
+        Sch2[time_horizon = 1000]:::sch
+        Sch3[checkpoint_interval = 250,000]:::sch
+        Sch4[keep_checkpoints = 5]:::sch
+        Sch5[summary_freq = 30,000]:::sch
+        Sch6[threaded = true]:::sch
+    end
+
+    subgraph RSW["Reward weight matrix (sumo, per character)"]
+        direction TB
+        RSU[upright 0.0005]:::rw
+        RSC[closing 0.0006]:::rw
+        RSL[lunge 0.001]:::rw
+        RSI[impact 0.01, cap 8]:::rw
+        RSK[knee bend 0.0004]:::rw
+        RSH[hips low 0.0003]:::rw
+        RSS[stance 0.0009]:::rw
+        RSCad[cadence 0.0015]:::rw
+        RSP[energy penalty 0.0004]:::rw
+        RSJ[jerk penalty 0.0003]:::rw
+        RSE[effort 0.0015]:::rw
+    end
+
+    T --> HP
+    T --> NS
+    T --> RS
+    T --> SP
+    T --> Sched
+    T --> RSW
+
+    classDef tr fill:#fde2f3,stroke:#c43b8d,color:#4a0d2c
+    classDef hp fill:#eef6ff,stroke:#3a78c2,color:#0e2a4d
+    classDef ns fill:#fde2f3,stroke:#c43b8d,color:#4a0d2c
+    classDef rs fill:#e8f7e8,stroke:#3a9a3a,color:#103d10
+    classDef sp fill:#fff4e5,stroke:#d9923a,color:#4a2e08
+    classDef sch fill:#f0f0f0,stroke:#666,color:#222
+    classDef rw fill:#fdeeee,stroke:#c93b3b,color:#4a0e0e
