@@ -78,6 +78,8 @@ namespace PoSumo
         private bool enableAtmosphere = true, enableMusic = true;
         private bool enableBodyDamage = true;
         private bool enableStrikeImpulse = true;
+        private bool enableKimarite = true;
+        private bool enableCrowdMomentum = true;
         [Tooltip("Round-opening countdown length; physics and brains are held until it finishes.")]
         public int countdownSeconds = 3;
         [Tooltip("Camera ortho when the countdown punches in on a fighter's head.")]
@@ -291,6 +293,13 @@ namespace PoSumo
         /// True while a round is actually being contested. Unlike ScoringLive this
         /// includes the countdown, because what it answers is "may something hand
         /// a body back to its brain" — Systems_BodyDamage's expiring knockout.
+        /// How the most recent round ended. Exposed so a companion can read it in
+        /// its `RoundEnded` handler without a fifth match event — four events are
+        /// the entire coupling surface between this referee and ~15 companions, and
+        /// each new one is a new thing every companion may come to depend on.
+        /// Set in `EndRound` BEFORE `RoundEnded` fires.
+        public RoundOutcome LastOutcome { get; private set; }
+
         public bool RoundLive => _phase == Phase.Fighting;
 
         /// True while the pause card is up. Read by Systems_MatchPresentation,
@@ -360,6 +369,8 @@ namespace PoSumo
                 enableMusic = tuning.enableMusic;
                 enableBodyDamage = tuning.enableBodyDamage;
                 enableStrikeImpulse = tuning.enableStrikeImpulse;
+                enableKimarite = tuning.enableKimarite;
+                enableCrowdMomentum = tuning.enableCrowdMomentum;
             }
 
             // NOT ANDed with Systems_ArenaLighting.LightingEffects, and that is
@@ -831,6 +842,8 @@ namespace PoSumo
             }
             SpawnCompanion<Systems_ImpactFx>(enableImpactFx, "ImpactFx");
             SpawnCompanion<Systems_StrikeImpulse>(enableStrikeImpulse, "StrikeImpulse");
+            SpawnCompanion<Systems_KimariteCaller>(enableKimarite, "Kimarite");
+            SpawnCompanion<Systems_CrowdMomentum>(enableCrowdMomentum, "CrowdMomentum");
             SpawnCompanion<Systems_ArenaLighting>(enableLighting, "ArenaLighting");
             SpawnCompanion<Systems_CareerRecorder>(recordCareerStats, "CareerRecorder");
             SpawnCompanion<Systems_ArenaAtmosphere>(enableAtmosphere, "Atmosphere");
@@ -1779,6 +1792,7 @@ namespace PoSumo
             // are included on purpose: a RingOut at 3.9m and a TimeoutDecision at
             // 0.2m tell you the ring is doing its job, whereas a run of timeouts
             // with both fighters parked near the middle says they never engaged.
+            LastOutcome = outcome;
             _roundsLogged++;
             _outcomeTally[(int)outcome]++;
             float centre = transform.position.x;

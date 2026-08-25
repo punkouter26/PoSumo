@@ -44,6 +44,19 @@ namespace PoSumo
         [Tooltip("Multiplies joint motor torque caps to carry the extra mass.")]
         public float torqueScale = 1f;
 
+        /// Whole-body torque multiplier for transient GAME-LAYER effects; 1 is
+        /// normal. Written by `Systems_CrowdMomentum` and by nothing else.
+        ///
+        /// NonSerialized on purpose: it is runtime state, not configuration, and a
+        /// serialized copy would be exactly the kind of stale scene value this
+        /// project keeps getting bitten by. `ResetPose` does NOT clear it — the
+        /// crowd system owns it and restores 1 in its own OnDisable, because a
+        /// round boundary is not the same thing as the crowd going quiet.
+        ///
+        /// The training referee has no equivalent, so no brain has ever trained
+        /// against this. Keep the magnitude small; see Systems_CrowdMomentum.
+        [System.NonSerialized] public float adrenaline = 1f;
+
         [Tooltip("Optional face texture for the head (drawn right-facing; auto-flipped when facingSign is -1). Falls back to a plain circle.")]
         public Sprite headSprite;
 
@@ -1110,8 +1123,16 @@ namespace PoSumo
             // you are because of what you have already spent. Eccentric bracing keeps
             // its 1.5x gain but pays the same fatigue tax, so a fighter can be worn
             // down while holding a shove — which is exactly how a real bout is won.
+            // ADRENALINE is a whole-body, game-layer multiplier (crowd momentum).
+            // It sits here beside the Hill and fatigue terms rather than scaling
+            // the ACTION, because scaling the action does nothing: ApplyMotor
+            // clamps the command to [-1,1] before it reaches motorSpeed, so a
+            // boost applied there is silently discarded while a cut is not.
+            // Going through `target` also means it inherits the activation
+            // dynamics below, so the crowd lifting a fighter ramps over ~50 ms
+            // instead of stepping.
             float target = _maxTorque[jointIndex] * Mathf.Clamp(fv, 0f, ECCENTRIC_GAIN)
-                           * StrengthFactor(jointIndex);
+                           * StrengthFactor(jointIndex) * adrenaline;
 
             // ACTIVATION DYNAMICS. Muscle torque cannot step: it rises over ~50 ms
             // and falls over ~70 ms. At decision period 3 (60 ms) the policy could

@@ -4,3 +4,8 @@ c:\Users\punko\Downloads\PoSumo\CLAUDE.md
 c:\Users\punko\Downloads\PoSumo\CLAUDE.md
 c:\Users\punko\Downloads\PoSumo\CLAUDE.md
 c:\Users\punko\Downloads\PoSumo\CLAUDE.md
+c:\Users\punko\Downloads\PoSumo\Assets\Scripts\Systems\Systems_Kimarite.cs
+c:\Users\punko\Downloads\PoSumo\Assets\Scripts\Systems\Systems_KimariteCaller.cs
+c:\Users\punko\Downloads\PoSumo\Assets\Scripts\Systems\Systems_CrowdMomentum.cs
+c:\Users\punko\Downloads\PoSumo\Assets\Scripts\Systems\Systems_PromotionCeremony.cs
+c:\Users\punko\Downloads\PoSumo\Assets\Tests\EditMode\KimariteTests.cs

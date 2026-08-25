@@ -15,9 +15,9 @@ PluginImporter:
       enabled: 1
       settings:
         Exclude Android: 1
-        Exclude Editor: 0
+        Exclude Editor: 1
     Editor:
-      enabled: 1
+      enabled: 0
       settings:
         DefaultValueInitialized: true
     WindowsStoreApps:

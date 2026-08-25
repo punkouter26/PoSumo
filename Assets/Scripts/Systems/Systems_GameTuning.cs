@@ -124,5 +124,11 @@ namespace PoSumo
         public bool enableBodyDamage = true;
         [Tooltip("Punches and kicks drive the man they land on backwards, and a good one launches him. GAME-ONLY: the training referee has no equivalent, so no brain has fought against it. Turning this on changes who wins rounds — a launched fighter can be knocked clean off the mat.")]
         public bool enableStrikeImpulse = true;
+
+        [Tooltip("Announce the winning technique (kimarite) after every round. Read-only with respect to the fight — it names the finish, it does not decide it.")]
+        public bool enableKimarite = true;
+
+        [Tooltip("The crowd backs whoever is losing, and sustained support grants a small torque boost. THIS CHANGES WHO WINS ROUNDS and the training referee has no equivalent, so no brain has trained against it — game-only, like knockoutsToLoseMatch.")]
+        public bool enableCrowdMomentum = true;
     }
 }

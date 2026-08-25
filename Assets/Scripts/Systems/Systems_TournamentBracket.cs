@@ -101,6 +101,7 @@ namespace PoSumo
         /// scroll position.
         private VisualElement _content;
         private Systems_CareerScreen _careerScreen;
+        private Systems_PromotionCeremony _promotionCeremony;
         private Button _careerButton;
         /// Promotion banner. Shown once, on the first Refresh after returning from
         /// a match that moved somebody up or down the banzuke.
@@ -335,7 +336,13 @@ namespace PoSumo
             // UI Toolkit resolves both draw and pick order by document order here.
             _careerScreen = new Systems_CareerScreen(_root);
 
+            // After the career screen, for the same document-order reason: a
+            // promotion lands the moment you return from a bout and must draw over
+            // everything, including the career table if it happens to be open.
+            _promotionCeremony = new Systems_PromotionCeremony(_root);
+
             Systems_SafeArea.Attach(transform, screen, _careerScreen.SafeAreaTarget);
+            Systems_SafeArea.Attach(transform, screen, _promotionCeremony.SafeAreaTarget);
 
             _root.RegisterCallback<PointerMoveEvent>(OnPointerMove);
             _root.RegisterCallback<PointerUpEvent>(OnPointerUp);
@@ -542,6 +549,14 @@ namespace PoSumo
             _rankNews.style.color = change.Promoted ? Systems_UiKit.Gold : Systems_UiKit.Bad;
             _rankNews.style.display = DisplayStyle.Flex;
             _rankNews.FadeIn();
+
+            // The label STAYS. It is the persistent record on the bracket page; the
+            // ceremony is the one-shot moment over the top of it. Removing the label
+            // would mean a player who dismissed the ceremony has no way to see what
+            // happened, and TryTakeRankChange is consume-once.
+            _promotionCeremony?.Show(change, change.FromRank);
+            Systems_Log.Info($"[BANZUKE] {fighter} {(change.Promoted ? "PROMOTED" : "DEMOTED")} " +
+                             $"{change.FromRank} -> {change.ToRank}");
         }
 
         private void BuildPalette()

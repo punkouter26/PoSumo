@@ -801,6 +801,8 @@ a tick on one asset rather than an edit in three scenes.
 | `Systems_BodyDamage` / `Systems_RingBlood` | bruise decals, **limb loss and decapitation**, the bloody head KO, and blood left on the mat. **Owns the `Knockout` static event the referee's 3-KO rule reads**, so it is the one "presentation" system with a rules consequence |
 | `Systems_FaceMood` | expression driven by dominance |
 | `Systems_CareerRecorder` | the only writer into career stats |
+| `Systems_KimariteCaller` | announces the winning technique after every round. Read-only w.r.t. the fight — it names the finish, it does not decide it. Measures; `Systems_Kimarite` (pure static, unit-tested) decides |
+| `Systems_CrowdMomentum` | the crowd backs whoever is losing; sustained support is a small torque boost. **Changes who wins rounds** — see below |
 
 **Fighters can be dismembered and decapitated, and this is not cosmetic.** Measured play
 produces `[DAMAGE] Damage_Nick lost LegNear at 20.0 damage — bleeding from stump 'Pelvis'`
@@ -858,6 +860,53 @@ that round. That is the interaction to keep in mind when tuning either: shorten
 `downOutSeconds` and dismembered fighters are retired faster; disable it and they lie
 there until the clock expires, which is the exact stall the rule was added to kill.
 The training referee has no equivalent, so no brain has ever trained against it.
+
+### Three features added 2026-08-25 (kimarite, banzuke ceremony, crowd momentum)
+
+**`Systems_Kimarite` is pure logic on purpose.** It takes a struct of measurements
+and returns a name — no MonoBehaviour, no physics, no disk — which makes it the third
+thing in this project that is genuinely unit-testable (with `Systems_CareerLadder` and
+`Reward_Context.San`). `Assets/Tests/EditMode/KimariteTests.cs` covers it; the suite is
+now **38 tests**, not the 23 this file used to claim. `Systems_KimariteCaller` does the
+measuring off a live ragdoll and is verified only by a harness run — a green unit run
+says nothing about whether the call on screen is right.
+
+One test there is load-bearing: `EveryRoundOutcome_ProducesANamedResult` walks the
+`RoundOutcome` enum. That enum has grown twice already (`Gibbed`, `DownOut`), and a new
+member would otherwise fall through to a **blank banner with no error anywhere**.
+
+`Systems_GameMatchManager.LastOutcome` was added rather than a fifth match event, and
+is set in `EndRound` **before** `RoundEnded` fires. Four events are the entire coupling
+surface between the referee and ~15 companions; a companion reading the manager it was
+spawned by is the sanctioned alternative.
+
+> **`Systems_CrowdMomentum` changes who wins rounds, and the training referee has no
+> equivalent — so no brain has ever trained against it.** Same class as
+> `knockoutsToLoseMatch`: deliberately game-only. Porting it into
+> `Systems_SumoMatchManager` would teach the policy to farm the comeback bonus by
+> giving up ground early, which is the shaping-exploit failure this file warns about
+> throughout. `MAX_BOOST` is **0.12**, inside the band a fighter already loses to
+> fatigue (`FATIGUE_DEPTH` 0.35) — enough to decide a close round, not enough to
+> rescue a bad one. Raise it and that stops being true.
+
+It writes `Agent_BipedBody.adrenaline`, a NonSerialized whole-body torque multiplier
+applied in `ApplyMotor` beside the Hill and fatigue terms. **Not** via `actionScale`:
+that path clamps the command to [-1,1] before it reaches `motorSpeed`, so a boost
+applied there is silently discarded while a cut is not — and `actionScale` is already
+owned by the manager's opening ramp. Going through the torque budget also means the
+boost inherits activation dynamics, so it ramps over ~50 ms instead of stepping.
+`ResetPose` does NOT clear it; the crowd system restores 1 in its own `OnDisable`.
+
+Measured live: support builds to 1.00 → `adrenaline` 1.120, decays when the backing
+lapses, and returns to 1.000 the moment the round is not live.
+
+The **banzuke ceremony** (`Systems_PromotionCeremony`) is a plain C# class built into
+the bracket's existing UIDocument root, exactly like `Systems_CareerScreen` — not a
+second `UIDocument`. `RankChange` gained a `FromRank`, carried rather than recomputed
+because `Systems_CareerStats.Get` hands back the LIVE record and the "before" state no
+longer exists by the time the bracket shows it. The old `_rankNews` label **stays**: it
+is the persistent record on the page, the ceremony is the one-shot moment over it, and
+`TryTakeRankChange` is consume-once so a dismissed ceremony is otherwise unrecoverable.
 
 ### Telemetry (`Systems_Telemetry`)
 Spawns itself via `[RuntimeInitializeOnLoadMethod]` in **Editor and development builds

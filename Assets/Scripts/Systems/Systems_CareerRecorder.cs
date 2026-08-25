@@ -32,12 +32,19 @@ namespace PoSumo
             public readonly string Fighter;
             public readonly string ToRank;
             public readonly bool Promoted;
+            /// The rung left behind. Carried here rather than recomputed by the
+            /// reader because `Systems_CareerStats.Get` hands back the LIVE record
+            /// out of its list — by the time the bracket shows the ceremony the
+            /// "before" state no longer exists anywhere to be read back.
+            public readonly string FromRank;
 
-            public RankChange(string fighter, string toRank, bool promoted)
+            public RankChange(string fighter, string toRank, bool promoted,
+                              string fromRank = null)
             {
                 Fighter = fighter;
                 ToRank = toRank;
                 Promoted = promoted;
+                FromRank = fromRank;
             }
         }
 
@@ -167,7 +174,8 @@ namespace PoSumo
             {
                 _pending = new RankChange(winnerName,
                                           Systems_CareerLadder.RungAt(winnerRankAfter).Name,
-                                          promoted: true);
+                                          promoted: true,
+                                          fromRank: RungName(winnerRankBefore));
                 _hasPending = true;
                 return;
             }
@@ -180,10 +188,16 @@ namespace PoSumo
             {
                 _pending = new RankChange(loserName,
                                           Systems_CareerLadder.RungAt(loserRankAfter).Name,
-                                          promoted: false);
+                                          promoted: false,
+                                          fromRank: RungName(loserRankBefore));
                 _hasPending = true;
             }
         }
+
+        /// Rung name for an index, tolerating UNRANKED (-1).
+        private static string RungName(int index) =>
+            index == Systems_CareerLadder.UNRANKED
+                ? "UNRANKED" : Systems_CareerLadder.RungAt(index).Name;
 
         /// The fighter's ladder identity, or null if the fighter does not RATE.
         ///
