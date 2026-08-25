@@ -182,8 +182,82 @@ namespace PoSumo
                 horizontalMargin = tuning.horizontalMargin;
                 smoothing = tuning.smoothing;
                 wideOrtho = tuning.wideOrtho;
+                _bandEnabled = tuning.enableArenaBand;
+                _bandBottom = tuning.arenaBandBottom;
+                _bandTop = tuning.arenaBandTop;
+            }
+            ApplyArenaBand();
+        }
+
+        // ---- arena band -----------------------------------------------------
+        //
+        // See Systems_GameTuning.enableArenaBand for the measurement. In short:
+        // ortho is a VERTICAL half-height, the visible width is ortho*aspect, and a
+        // portrait aspect of ~0.56 (worse on a tall phone) forces the camera to buy
+        // horizontal coverage with vertical view it has nothing to put in. The dead
+        // space below the dohyo is the bill for that.
+        //
+        // The note on feetDrop above is right that no VALUE fixes this — but it
+        // concludes the space must be filled rather than squeezed, and that
+        // conclusion assumed the camera must own the whole screen. It does not.
+        // Confining it to a band raises the aspect the ortho maths divides by, which
+        // is the one lever that changes the trade itself rather than shuffling it.
+        //
+        // OFF by default, and deliberately so: the region outside a camera's rect is
+        // not drawn by that camera, so this is a rendering change and not just a
+        // framing one. It needs the clear camera below, and it wants arena dressing
+        // that reaches the band edges.
+        private bool _bandEnabled;
+        private float _bandBottom = 0.20f;
+        private float _bandTop = 0.82f;
+        private Camera _bandClear;
+
+        /// Applies the band rect and makes sure something still clears the pixels
+        /// outside it.
+        ///
+        /// Without the clear camera the area outside the rect keeps whatever the
+        /// framebuffer last held, which reads on screen as the previous frame
+        /// smearing — a rendering artefact that looks nothing like a camera bug and
+        /// would send the next person hunting in the wrong file. It culls NOTHING
+        /// (`cullingMask = 0`) and exists purely for its clear.
+        private void ApplyArenaBand()
+        {
+            if (!_bandEnabled)
+            {
+                return;
+            }
+
+            float height = Mathf.Clamp01(_bandTop - _bandBottom);
+            if (height <= 0.01f)
+            {
+                Debug.LogWarning($"Systems_CameraFollow: arena band is empty " +
+                                 $"(bottom={_bandBottom:F2} top={_bandTop:F2}) — ignoring it.");
+                return;
+            }
+            _cam.rect = new Rect(0f, _bandBottom, 1f, height);
+
+            var go = new GameObject("ArenaBandClear");
+            go.transform.SetParent(transform.parent, false);
+            _bandClear = go.AddComponent<Camera>();
+            _bandClear.orthographic = true;
+            _bandClear.rect = new Rect(0f, 0f, 1f, 1f);
+            // Well below the follow camera so it clears first and is then drawn over.
+            _bandClear.depth = _cam.depth - 10f;
+            _bandClear.clearFlags = CameraClearFlags.SolidColor;
+            _bandClear.backgroundColor = BAND_LETTERBOX;
+            _bandClear.cullingMask = 0;
+            // An AudioListener rides on a new Camera in some setups; the arena
+            // already has exactly one and two would warn on every match.
+            AudioListener stray = go.GetComponent<AudioListener>();
+            if (stray != null)
+            {
+                Destroy(stray);
             }
         }
+
+        /// Letterbox colour outside the band. Near-black rather than pure black so
+        /// it reads as the unlit far end of the hall rather than as a hole.
+        private static readonly Color BAND_LETTERBOX = new Color(0.03f, 0.03f, 0.045f, 1f);
 
         /// Adds impact shake. `amount01` is clamped and ACCUMULATES, so a flurry
         /// shakes harder than one blow, but the squared falloff keeps it bounded.

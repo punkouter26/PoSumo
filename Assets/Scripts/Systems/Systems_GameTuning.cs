@@ -18,6 +18,13 @@ namespace PoSumo
         [Tooltip("Ortho for the wide establishing shot used by the walk-in and the post-match pull-back. ~14 holds the +/-6 m walk-in start marks at portrait aspect.")]
         public float wideOrtho = 14f;
 
+        [Tooltip("Render the arena into a horizontal BAND instead of the whole screen.\n\northo is a VERTICAL half-height and the visible width is ortho*aspect, so a 9:16 portrait viewport (aspect 0.5625) must buy width with height it has no use for: covering the 7 m mat needs ~28 m of vertical view to show a 1.8 m fighter, and roughly 30% of every frame below the dohyo is pure black.\n\nConfining the camera to a band RAISES the effective aspect, so the same width costs far less height. MEASURED 2026-08-25 at 1080x1920: a 0.20-0.82 band took aspect 0.563 -> 0.907 and the fighters rendered about 2.5x larger with both still in frame.\n\nOFF by default. The area outside the band is not drawn by this camera, so it needs the clear camera this spawns AND arena dressing that reaches the band edges — turn it on and look at it before shipping it.")]
+        public bool enableArenaBand;
+        [Tooltip("Bottom edge of the arena band, 0-1 up the screen. Should clear the HUD dock.")]
+        [Range(0f, 0.5f)] public float arenaBandBottom = 0.20f;
+        [Tooltip("Top edge of the arena band, 0-1 up the screen. Should sit under the scorebug.")]
+        [Range(0.5f, 1f)] public float arenaBandTop = 0.82f;
+
         [Header("Ring")]
         // The ring lives here rather than only on the arena scene because it is
         // serialized into it, and a public field already written into a scene

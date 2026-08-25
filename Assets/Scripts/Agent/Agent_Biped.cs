@@ -80,6 +80,16 @@ namespace PoSumo
 
         [Tooltip("ML-Agents behavior name; must exactly match the YAML config key.")]
         public string behaviorName = "Matt";
+
+        /// Scoreboard name when set. Set by nothing except `Systems_MatchRoster` on
+        /// the second side of a MIRROR match, where both fighters share one
+        /// character asset and the scorebug otherwise reads "NICK 1 : 1 NICK".
+        ///
+        /// Deliberately SEPARATE from `behaviorName`, which must keep matching the
+        /// YAML key exactly — it is what `BehaviorParameters` resolves the policy
+        /// through, so suffixing it would leave that fighter with no brain at all.
+        /// This is presentation only.
+        [System.NonSerialized] public string displayNameOverride;
         // 42 = 5 body + 26 joints + 4 feet + 1 task flag + 4 opponent/target + 2 edges.
         // Was 41; the task flag was added when the walk and fight brains were merged
         // into one policy per fighter. That +1 invalidated every brain trained before

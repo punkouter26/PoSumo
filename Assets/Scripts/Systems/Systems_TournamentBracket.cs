@@ -277,6 +277,37 @@ namespace PoSumo
             spacer.style.minHeight = Systems_UiKit.SPACE_3;
             _content.Add(spacer);
 
+            // A ScrollView's content children inherit `flex-shrink: 1`, so a column
+            // TALLER than the viewport is silently COMPRESSED to fit it instead of
+            // scrolling. Nothing errors and the scroller never appears — the page
+            // just gets quietly squashed, and the damage lands on whichever child
+            // can absorb it least gracefully.
+            //
+            // MEASURED, 2026-08-25 at 1080x1920: the roster palette reported
+            // height 139 while laying its three wrapped lines out to y=210, so 71pt
+            // of it overflowed onto the QUARTERFINALS header and the BOT chip drew
+            // on top of that label. The banzuke block was squashed the same way and
+            // printed its three rows on top of each other. Both are one bug.
+            //
+            // The palette is the worst hit because it WRAPS: a wrapping row's height
+            // is not the sum of its children, so the shrink has no natural floor to
+            // stop at. But every child was being compressed, which is also why the
+            // whole column measured exactly the 1033pt viewport and the ScrollView
+            // never scrolled at all.
+            //
+            // The footer already carries flexShrink 0 for this reason (see below);
+            // it is applied here in one place so a block added later cannot miss it.
+            // The spacer is the deliberate exception — it exists to absorb slack and
+            // must still collapse when the content needs the room.
+            for (int childIndex = 0; childIndex < _content.childCount; childIndex++)
+            {
+                if (_content[childIndex] == spacer)
+                {
+                    continue;
+                }
+                _content[childIndex].style.flexShrink = 0;
+            }
+
             // The status line and the two action buttons live OUTSIDE the
             // ScrollView, pinned to the bottom of the panel.
             //

@@ -34,6 +34,20 @@ namespace PoSumo
         /// this one colour for near/far depth; it never introduces a second hue, so
         /// a wrestler always reads as a single identifiable colour.
         public Color teamColor = new Color(0.85f, 0.25f, 0.2f);
+
+        /// Wins over `character.teamColor` when set, and set by nothing except
+        /// `Systems_MatchRoster` on the second side of a MIRROR match (the bracket
+        /// seeds five fighters into eight slots, so a fighter can and does meet
+        /// itself — measured as a Nick-v-Nick FINAL on 2026-08-25).
+        ///
+        /// It has to be an override rather than an edit to the character sheet
+        /// because both sides share the same ScriptableObject INSTANCE: writing
+        /// `character.teamColor` would recolour the opponent too, and would dirty a
+        /// shipped asset on disk in the Editor.
+        ///
+        /// NonSerialized on purpose — it is a per-bout decision, never scene data.
+        [System.NonSerialized] public Color? teamColorOverride;
+
         private bool _faceArtFacesLeft;
 
         [Header("Build (1 = Matt's lightweight baseline)")]
@@ -432,6 +446,12 @@ namespace PoSumo
                 widthScale = character.widthScale;
                 torqueScale = character.torqueScale;
                 _faceArtFacesLeft = character.faceArtFacesLeft;
+            }
+            // AFTER the character block, so a mirror match's second side keeps every
+            // other property of the shared sheet and changes only its colour.
+            if (teamColorOverride.HasValue)
+            {
+                teamColor = teamColorOverride.Value;
             }
             Build();
         }

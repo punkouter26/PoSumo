@@ -158,9 +158,15 @@ allocate), and do not reach for UniTask — it is not installed.
 
 ## Input
 
-`com.unity.inputsystem` 1.20.0 is installed and `Assets/Settings/InputSystem_Actions.inputactions`
-exists, but no runtime script reads either: the game's only input is UI Toolkit buttons,
-which handle their own events. Legacy `Input.GetKey` / `GetAxis` / `GetButton` must not be
+`com.unity.inputsystem` 1.20.0 is installed and **is read at runtime** —
+`Systems_GameMatchManager` uses `Keyboard.current.escapeKey` to pause and
+`Pointer.current.press` / `Keyboard.current.spaceKey` to continue. (This section claimed
+"no runtime script reads either" until 2026-08-25; it was true once and the code moved
+past it. The package is therefore NOT a removal candidate.)
+
+`Assets/Settings/InputSystem_Actions.inputactions` is a different matter: nothing reads the
+asset, only the static `Keyboard`/`Pointer` devices. Everything else is UI Toolkit buttons
+handling their own events. Legacy `Input.GetKey` / `GetAxis` / `GetButton` must not be
 introduced. If real gameplay input is ever added, add a single `Systems_Input*` reader that
 enables its map in `OnEnable` and disables it in `OnDisable`, and have it call into the
 referee rather than mutating fighters directly.
@@ -185,9 +191,19 @@ from parts**, not a hierarchy.
 
 ## On `Systems_GameMatchManager` being large
 
-It is ~1455 lines and it is the largest file in the project: round state machine, scoring,
-countdown, timeout tiebreak, HUD, and the spawn site for every companion. A generic rule
-would call this a god object.
+It is ~2170 lines and it is the largest file in the project: round state machine, scoring,
+countdown, timeout tiebreak, ceremony camera beats, and HUD. A generic rule would call this
+a god object. (This line said ~1455 until 2026-08-25 — it had grown 50% while the doc
+stood still, which is the usual way a file like this gets away from you. Re-count it rather
+than trusting this number.)
+
+The companion spawning came out on 2026-08-25 into
+`Systems_GameMatchManager.Companions.cs`, a **partial of the same class** — the fourteen
+`enable*` flags are private fields resolved from `GameTuning` in `Start`, so a separate type
+would mean exposing all fourteen or threading a fourteen-field struct, which adds more
+surface than the split removes. It is a file split, not yet the decoupling; the bodies did
+not change, so it cannot alter a match. Making those flags a record this can take by
+reference is what turns it into a real class with no further edits.
 
 It is accepted, and the containment is the event surface: companions do not call back into
 it, they subscribe. Do not add unrelated responsibility to it — a new feature is a new

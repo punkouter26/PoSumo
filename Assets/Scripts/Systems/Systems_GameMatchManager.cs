@@ -15,9 +15,15 @@ namespace PoSumo
     /// dims the arena and waits for the REMATCH button, a pointer press or Space
     /// — except in a bracket bout, where the result is already final (see
     /// MarkBracketBout). UI Toolkit only.
-    public sealed class Systems_GameMatchManager : MonoBehaviour
+    // `partial`: the presentation-companion spawning lives in
+    // Systems_GameMatchManager.Companions.cs. See that file for why it is a partial
+    // of this class rather than a type of its own.
+    public sealed partial class Systems_GameMatchManager : MonoBehaviour
     {
-        private enum Phase { Fighting, RoundEnded, Grace, Intro, WalkIn, MatchOver }
+        // WalkInPark is appended rather than inserted next to WalkIn: `_phase` is not
+        // serialized, but Phase values are compared in several places and keeping the
+        // existing members at their existing ordinals costs nothing.
+        private enum Phase { Fighting, RoundEnded, Grace, Intro, WalkIn, MatchOver, WalkInPark }
 
         public Agent_Biped wrestlerA;           // teamId 0
         public Agent_Biped wrestlerB;           // teamId 1
@@ -484,16 +490,45 @@ namespace PoSumo
         /// fighting, so swapping the roster needs no further scene edits.
         private void AdoptCharacterIdentity()
         {
+            // Both read through the fighter's own overrides where present, so a
+            // MIRROR match (same character asset on both sides) shows two different
+            // names and two different colours instead of "NICK 1 : 1 NICK" in one
+            // blue. Systems_MatchRoster sets them; everywhere else they are null and
+            // the character sheet answers exactly as before.
             if (wrestlerA.character != null)
             {
-                nameA = wrestlerA.character.behaviorName.ToUpperInvariant();
-                colorA = wrestlerA.character.teamColor;
+                nameA = DisplayName(wrestlerA);
+                colorA = BodyColor(wrestlerA);
             }
             if (wrestlerB.character != null)
             {
-                nameB = wrestlerB.character.behaviorName.ToUpperInvariant();
-                colorB = wrestlerB.character.teamColor;
+                nameB = DisplayName(wrestlerB);
+                colorB = BodyColor(wrestlerB);
             }
+        }
+
+        /// Scoreboard name for a fighter: its mirror-match override if it has one,
+        /// otherwise its character's behavior name.
+        private static string DisplayName(Agent_Biped fighter)
+        {
+            string name = string.IsNullOrEmpty(fighter.displayNameOverride)
+                ? fighter.character.behaviorName
+                : fighter.displayNameOverride;
+            return name.ToUpperInvariant();
+        }
+
+        /// Scoreboard colour for a fighter. Read off the BODY rather than the
+        /// character sheet, because the body is what the override was applied to and
+        /// what the player is actually looking at — a scorebug that disagrees with
+        /// the wrestler on the mat is worse than no colour at all.
+        private static Color BodyColor(Agent_Biped fighter)
+        {
+            Agent_BipedBody body = fighter.GetComponent<Agent_BipedBody>();
+            if (body != null && body.teamColorOverride.HasValue)
+            {
+                return body.teamColorOverride.Value;
+            }
+            return fighter.character.teamColor;
         }
 
         /// Round opening: both fighters hold a neutral standing pose at the
@@ -608,6 +643,55 @@ namespace PoSumo
                 SetSimulated(body, true);
             }
             w.actionsEnabled = true;
+        }
+
+        /// Seconds spent gliding a failed walk-in onto the stand-off marks. Short
+        /// enough not to add dead air to an opening that has already wasted several
+        /// seconds, long enough to read as movement rather than a teleport.
+        private const float WALKIN_PARK_SECONDS = 0.45f;
+
+        private float _parkLeft;
+        private float _parkFromAx, _parkFromBx;
+
+        /// Starts the glide onto the stand-off marks after a failed approach.
+        /// Physics is already frozen by the HoldUpright at the call site, so this
+        /// only has to move transforms.
+        private void BeginWalkInPark()
+        {
+            _parkFromAx = wrestlerA != null ? wrestlerA.TorsoX : transform.position.x;
+            _parkFromBx = wrestlerB != null ? wrestlerB.TorsoX : transform.position.x;
+            _parkLeft = WALKIN_PARK_SECONDS;
+            _phase = Phase.WalkInPark;
+        }
+
+        /// Advances the glide. Returns true on the step it completes, which is when
+        /// the caller opens the round.
+        ///
+        /// Smoothstep rather than a straight lerp: the fighters are already at rest
+        /// when this starts and are at rest when it ends, so a linear slide begins
+        /// and finishes with a visible jerk at both ends.
+        private bool TickWalkInPark()
+        {
+            _parkLeft -= Time.fixedDeltaTime;
+            float t = Mathf.Clamp01(1f - _parkLeft / WALKIN_PARK_SECONDS);
+            t = t * t * (3f - 2f * t);
+
+            float centreX = transform.position.x;
+            MoveTo(wrestlerA, Mathf.Lerp(_parkFromAx, centreX - neutralGapHalf, t));
+            MoveTo(wrestlerB, Mathf.Lerp(_parkFromBx, centreX + neutralGapHalf, t));
+            return _parkLeft <= 0f;
+        }
+
+        /// Slides a frozen fighter's whole ragdoll to an absolute x, keeping its
+        /// pose. The root is moved by the DELTA from the torso rather than being set
+        /// outright: the torso is the part the stand-off is measured from, and the
+        /// root transform is not necessarily on top of it once the body has walked.
+        private void MoveTo(Agent_Biped w, float targetTorsoX)
+        {
+            if (w == null) return;
+            float delta = targetTorsoX - w.TorsoX;
+            Vector3 p = w.transform.position;
+            w.transform.position = new Vector3(p.x + delta, p.y, p.z);
         }
 
         /// True once the two fighters' bodies actually meet.
@@ -823,117 +907,6 @@ namespace PoSumo
                 }
                 part.simulated = simulated;
             }
-        }
-
-        /// Presentation, audio and face-mood are runtime-spawned children so
-        /// scenes stay manager-only and older scenes pick them up automatically.
-        private void SpawnCompanionSystems()
-        {
-            SpawnCompanion<Systems_MatchPresentation>(enablePresentation, "Presentation");
-            SpawnCompanion<Systems_MatchAudio>(enableAudio, "MatchAudio");
-            // One mood driver per fighter that actually has face art.
-            if (enableFaceMood && FindAnyObjectByType<Systems_FaceMood>() == null)
-            {
-                SpawnFaceMood(wrestlerA);
-                SpawnFaceMood(wrestlerB);
-            }
-            if (enableBodyDamage && FindAnyObjectByType<Systems_BodyDamage>() == null)
-            {
-                SpawnBodyDamage(wrestlerA);
-                SpawnBodyDamage(wrestlerB);
-            }
-            // Sweat and clay are terms in the BodyLit shader, so they ride the
-            // lighting flag rather than earning a GameTuning bool of their own —
-            // with the lighting rig off there is no shaded surface to wet or stain,
-            // and Systems_BodySurface disables itself on the flat-shading path.
-            if (enableLighting && FindAnyObjectByType<Systems_BodySurface>() == null)
-            {
-                SpawnBodySurface(wrestlerA);
-                SpawnBodySurface(wrestlerB);
-            }
-            if (enableVoice && FindAnyObjectByType<Systems_FighterVoice>() == null)
-            {
-                SpawnVoice(wrestlerA, 1f);
-                // The bracket seeds every fighter twice, so both wrestlers can be
-                // the same character. Drop the second one's pitch so a Matt-vs-Matt
-                // bout does not sound like one man arguing with himself.
-                bool mirrorMatch = wrestlerA != null && wrestlerB != null
-                                   && wrestlerA.behaviorName == wrestlerB.behaviorName;
-                SpawnVoice(wrestlerB, mirrorMatch ? mirrorPitchScale : 1f);
-            }
-            SpawnCompanion<Systems_ImpactFx>(enableImpactFx, "ImpactFx");
-            SpawnCompanion<Systems_StrikeImpulse>(enableStrikeImpulse, "StrikeImpulse");
-            SpawnCompanion<Systems_KimariteCaller>(enableKimarite, "Kimarite");
-            SpawnCompanion<Systems_CrowdMomentum>(enableCrowdMomentum, "CrowdMomentum");
-            SpawnCompanion<Systems_PerfHud>(enablePerfHud, "PerfHud");
-            SpawnCompanion<Systems_ArenaLighting>(enableLighting, "ArenaLighting");
-            SpawnCompanion<Systems_CareerRecorder>(recordCareerStats, "CareerRecorder");
-            SpawnCompanion<Systems_ArenaAtmosphere>(enableAtmosphere, "Atmosphere");
-            SpawnCompanion<Systems_MusicDirector>(enableMusic, "Music");
-        }
-
-        /// Spawns one companion as a child of the manager, if its GameTuning flag is
-        /// on and the scene does not already have one. The per-fighter companions
-        /// (face mood, voice, body damage) keep their own helpers because they need
-        /// arguments; everything else is this one shape, and was six copies of it.
-        private void SpawnCompanion<T>(bool enabled, string objectName) where T : Component
-        {
-            if (!enabled || FindAnyObjectByType<T>() != null) return;
-            var go = new GameObject(objectName);
-            go.transform.SetParent(transform, false);
-            go.AddComponent<T>();
-        }
-
-        private void SpawnBodyDamage(Agent_Biped fighter)
-        {
-            if (fighter == null) return;
-            var body = fighter.GetComponent<Agent_BipedBody>();
-            if (body == null) return;
-            var go = new GameObject($"Damage_{fighter.behaviorName}");
-            go.transform.SetParent(transform, false);
-            go.AddComponent<Systems_BodyDamage>().body = body;
-        }
-
-        /// One sweat/clay driver per fighter. Bound to the body instance rather
-        /// than the behaviour name because a mirror bout has two wrestlers with the
-        /// same name and each needs its own material written.
-        private void SpawnBodySurface(Agent_Biped fighter)
-        {
-            if (fighter == null) return;
-            var body = fighter.GetComponent<Agent_BipedBody>();
-            if (body == null) return;
-            var go = new GameObject($"Surface_{fighter.behaviorName}");
-            go.transform.SetParent(transform, false);
-            go.AddComponent<Systems_BodySurface>().body = body;
-        }
-
-        /// One voice per fighter. Systems_FighterVoice disables itself when that
-        /// fighter has no recorded clips in Resources, so this is safe to call for
-        /// everyone — today only Matt has a voice.
-        private void SpawnVoice(Agent_Biped fighter, float pitchScale)
-        {
-            if (fighter == null) return;
-            var go = new GameObject($"Voice_{fighter.behaviorName}");
-            go.transform.SetParent(transform, false);
-            var voice = go.AddComponent<Systems_FighterVoice>();
-            // The instance, not just the name: in a mirror bout the name matches
-            // both wrestlers and every voice bound to wrestlerA.
-            voice.fighter = fighter;
-            voice.fighterBehaviorName = fighter.behaviorName;
-            voice.pitchScale = pitchScale;
-        }
-
-        private void SpawnFaceMood(Agent_Biped fighter)
-        {
-            if (fighter == null) return;
-            var body = fighter.GetComponent<Agent_BipedBody>();
-            if (body == null || body.character == null || body.character.headSprite == null) return;
-            var go = new GameObject($"FaceMood_{fighter.behaviorName}");
-            go.transform.SetParent(transform, false);
-            var mood = go.AddComponent<Systems_FaceMood>();
-            // See SpawnVoice: the instance disambiguates a mirror bout.
-            mood.fighter = fighter;
-            mood.fighterBehaviorName = fighter.behaviorName;
         }
 
         private static string Hex(Color c) => ColorUtility.ToHtmlStringRGB(c);
@@ -1585,7 +1558,34 @@ namespace PoSumo
                         // count the same round in twice; and a policy that cannot
                         // close 3 m of empty mat is a training problem, not
                         // something the referee should paper over with more dead air.
+                        // ...but GLIDE onto the marks rather than snapping to them.
+                        //
+                        // MEASURED 2026-08-25: this path fires on EVERY match, not
+                        // occasionally — a full 7-match bracket stalled 7 times
+                        // (3.3 s, 4.5 s, ...) because the shipped gait cannot cross
+                        // the opening gap at all. That makes it the normal opening of
+                        // every bout rather than the rare backstop it was written as,
+                        // and a hard snap from wherever they gave up straight onto
+                        // the marks is the most visible glitch in the game.
+                        //
+                        // Presentation only: the destination is identical and the
+                        // fight starts from the same marks, WALKIN_PARK_SECONDS
+                        // later. It gives the ceremony a readable ending without
+                        // pretending the walk worked. Delete it the day a policy can
+                        // actually walk in.
+                        //
+                        // Recorded BEFORE HoldUpright, which is itself a teleport
+                        // onto the marks — capturing after it would read the
+                        // destination and glide from the mark to the mark.
+                        BeginWalkInPark();
                         HoldUpright();
+                        return;
+                    }
+                    return;
+
+                case Phase.WalkInPark:
+                    if (TickWalkInPark())
+                    {
                         EndWalkInPhase();
                         RestoreFightRing();
                         // Drop the wide ceremony shot so the camera settles back

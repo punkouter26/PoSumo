@@ -56,6 +56,19 @@ namespace PoSumo
         private int _framesSinceSample;
         private float _timeSinceSample;
         private float _worstMsThisWindow;
+
+        /// Seconds of heap samples averaged into the displayed allocation rate.
+        /// Long enough to span the gaps between collections (measured at ~4 s apart)
+        /// so the number reads as a trend rather than as noise.
+        private const float ALLOC_WINDOW = 3f;
+
+        /// Amber above this. A phone can absorb a few MB/s; it is a sustained tens
+        /// of MB/s that turns into visible GC hitching.
+        private const float ALLOC_WARN_MB_PER_SECOND = 12f;
+
+        private long _allocWindowBytes;
+        private float _allocWindowSeconds;
+        private float _allocRateMbPerSecond;
         private long _lastGcBytes;
 
         private void Awake()
@@ -168,18 +181,50 @@ namespace PoSumo
             long gcNow = System.GC.GetTotalMemory(false);
             long delta = gcNow - _lastGcBytes;
             _lastGcBytes = gcNow;
+
+            // SUSTAINED rate over ALLOC_WINDOW, not the instantaneous one.
+            //
+            // This used to print `delta / SAMPLE_INTERVAL` from a single 0.25 s
+            // window, and only when the delta was POSITIVE. Both halves of that
+            // inflate it: a window that straddles a collection is discarded rather
+            // than netted off, so the readout samples only the peaks of a bursty
+            // allocator; and dividing by the CONSTANT rather than the measured
+            // elapsed time over-reports again whenever a frame overruns, which on
+            // this project is most of them (measured frames of 380 ms).
+            //
+            // MEASURED 2026-08-25: the HUD read a steady "+280 MB/s" during a live
+            // match while the heap's actual growth was ~19 MB/s and only ~13 MB/s of
+            // that was the Editor itself — with just 2 gen-0 collections in 8
+            // seconds, so there was no hidden gross allocation to explain the gap.
+            // The overlay was crying wolf by roughly 15x, which is worse than not
+            // having it: it points at a GC emergency that is not there and hides the
+            // real one if it ever arrives.
+            //
+            // Negative deltas are now KEPT, so a collection nets against the
+            // allocation that preceded it and what is displayed is real growth.
+            _allocWindowBytes += delta;
+            _allocWindowSeconds += _timeSinceSample;
+            if (_allocWindowSeconds >= ALLOC_WINDOW)
+            {
+                _allocRateMbPerSecond = _allocWindowBytes / 1048576f / _allocWindowSeconds;
+                _allocWindowBytes = 0L;
+                _allocWindowSeconds = 0f;
+            }
+
             _sb.Clear();
             _sb.Append("mono ").Append((gcNow / 1048576f).ToString("F0")).Append("MB");
-            if (delta > 0)
+            if (_allocRateMbPerSecond > 0.05f)
             {
-                // Per-second rate, so the number does not change meaning if
-                // SAMPLE_INTERVAL is retuned.
-                _sb.Append(" +").Append((delta / 1048576f / SAMPLE_INTERVAL).ToString("F1")).Append("MB/s");
+                _sb.Append(" +").Append(_allocRateMbPerSecond.ToString("F1")).Append("MB/s");
             }
             _memory.text = _sb.ToString();
-            // The golden rule is zero allocation in Update/FixedUpdate, so any
-            // sustained positive delta is worth seeing in amber.
-            _memory.style.color = delta > 0 ? Systems_UiKit.Warn : Systems_UiKit.TextMid;
+            // The golden rule is zero allocation in Update/FixedUpdate, but a live
+            // Editor session never reaches zero and amber-on-any-growth made the
+            // line permanently amber and therefore unreadable as a signal. Amber now
+            // means a rate that would actually matter on a phone.
+            _memory.style.color = _allocRateMbPerSecond > ALLOC_WARN_MB_PER_SECOND
+                ? Systems_UiKit.Warn
+                : Systems_UiKit.TextMid;
 
             _sb.Clear();
             _sb.Append("phys ").Append((Time.fixedDeltaTime * 1000f).ToString("F0")).Append("ms x")

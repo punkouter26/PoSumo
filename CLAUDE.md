@@ -60,10 +60,20 @@ the roster overview; there is no code mirror of it.
 
 **A fifth entry, `Bot_v01`, is in the roster ON PURPOSE and is NOT a defect — do not
 "fix" it by deleting it or dropping it from the seeding** (confirmed 2026-08-07). It holds
-only `Bot_Character.asset` with `inferenceModel: {fileID: 0}`: no brain, no `.onnx`, no
-manifest. It therefore logs
-`Systems_MatchRoster: character 'Bot' has no inferenceModel` at Error level on every match
-it appears in, and collapses as a ragdoll when it fights. That is known and accepted.
+only `Bot_Character.asset` with `inferenceModel: {fileID: 0}`: no `.onnx` and no manifest.
+
+**It does NOT collapse as a ragdoll, and this file said it did until 2026-08-25.** The
+asset carries **`useBot: 1`**, so `Agent_Biped.Awake` sets `BehaviorType.HeuristicOnly` and
+the fighter is driven by `Agent_Bot` — 822 lines of hand-written rules, a real opponent
+with no neural policy at all. Measured in a played bracket on 2026-08-25 it **won its
+quarterfinal 2-0 by ring-out** (`[ROUND] 1 RingOut winner=BOT t=9.0s`, `t=7.0s`). Treat it
+as the project's rules-based baseline, which is what makes it useful: toggling `useBot` on
+any character compares the bot and a trained brain on identical physique and reward setup.
+
+The `Systems_MatchRoster` error it used to log every match — "will have no brain and will
+not fight", about a fighter that had just won — is now suppressed for `useBot` characters.
+An Error-level line that is routinely false is worse than no line: it teaches whoever is
+reading the console to skip real ones.
 
 Consequence: the 8-slot bracket no longer seeds four fighters twice each. With five
 entries it draws Standard ×2, Matt ×2, Nick ×2, Kim ×1, Bot ×1.
@@ -156,6 +166,30 @@ still or twitches rather than erroring), suspect this before suspecting the brai
 > console errors by package. If they all come from `Library/PackageCache/`, it is not your
 > code.
 
+### 24 packages were removed on 2026-08-25 — what went, and how it was decided
+
+`manifest.json` went from 58 dependencies to 34. Each removal had to clear three tests:
+**no namespace reference** anywhere in `Assets/**/*.cs`, **no asset of the type it imports**
+in the project, and **nothing in `packages-lock.json` depending on it**.
+
+Gone: `visualscripting` (+`ugui`, whose only dependent it was), `2d.animation`,
+`2d.aseprite`, `2d.psdimporter`, `2d.spriteshape`, `2d.tilemap.extras` (+`2d.tilemap`),
+`2d.tooling`, `multiplayer.center`, `pipeline` (0.4.0-**exp**), `collab-proxy`, and twelve
+`com.unity.modules.*` with no code reference at all — terrain, terrainphysics, vehicles,
+cloth, wind, xr, video, umbra, ai, unityanalytics, adaptiveperformance, vectorgraphics.
+
+The asset census is what makes this safe and is worth re-running before adding anything
+back: the project contains **no `.anim`, `.controller`, `.playable`, `.psd`, `.aseprite`,
+`.prefab`, tilemap or spriteshape assets at all**, and no UGUI Canvas. Everything is
+built in code at runtime, so the importers had nothing to import.
+
+**Two that look removable and are NOT:**
+- **`com.unity.timeline`** — nothing here uses it, but `com.besty.unity-skills` depends on
+  it. Removing it breaks that package, not the game.
+- **`com.unity.inputsystem`** — `Systems_GameMatchManager` reads `Keyboard.current.escapeKey`
+  to pause and `Pointer.current.press` / `spaceKey` to continue. `.claude/rules/architecture.md`
+  claimed no runtime script read it; that was stale, and it is corrected there now.
+
 Re-measure rather than trusting this table when something behaves oddly; a version drifting
 under a "required set" heading is how a project ends up debugging the wrong layer.
 
@@ -241,6 +275,7 @@ each live in *Editor menu tools* and *Training workflow* below.
 | Train | `Training\Start-Training.ps1` (wraps `mlagents-learn.exe` + TensorBoard + `--base-port`) |
 | Stop training / kill orphans | `Training\Stop-Training.ps1` (`-Prune` also clears event-less runs) |
 | Watch a live env | `curl http://127.0.0.1:8787/metrics` — see *Telemetry*; needs an env built after 2026-08-07 |
+| Check portrait layout on real aspects | `python Tools/portrait_check.py` — see *Portrait layout checking* |
 | Drive the Editor from a shell | `python Tools/unity.py <ping\|scene\|play\|stop\|errors\|shot\|exec\|raw>` |
 | Ship a brain | *PoSumo → Deploy \<Name\> Brain* |
 | Unit test | `python Tools/unity.py raw run_tests '{"mode":"EditMode","assemblyNames":["PoSumo.Tests.EditMode"]}'` then poll `get_test_job` |
@@ -1278,9 +1313,28 @@ sets the character asset's `inferenceModel`. Copying a checkpoint does not requi
 a headless run.
 
 `Training/results` **is** the TensorBoard logdir, so treat it as a curated list, not a
-dumping ground: it holds only runs that back a deployed brain (currently eight — a sumo
-and a walk run for each of the four fighters). Everything
-else goes elsewhere —
+dumping ground. Everything else goes elsewhere —
+
+> **As of the 2026-08-25 purge it holds exactly four runs — `matt_tall04`,
+> `standard_tall04`, `nick_tall04`, `kim_tall04` — totalling 65 MB.** These are the
+> warm-start trunks `<Name>Obs01.yaml` initializes from; each keeps its
+> `<Behavior>.onnx`, `<Behavior>/checkpoint.pt`, `configuration.yaml`, `run_logs/` and one
+> tfevents file, which is precisely the prune shape specified below.
+>
+> It had drifted to **16 runs and 4.14 GB**, of which **3.81 GB was numbered per-step
+> checkpoints** — the exact thing the first bullet says to delete.
+>
+> **This line used to claim the directory "holds only runs that back a deployed brain
+> (currently eight — a sumo and a walk run for each of the four fighters)". That was false
+> in both halves.** There were sixteen runs, not eight; there has been ONE run per fighter
+> since the walk+fight merge, not two; and — measured by hashing all four shipped `.onnx`
+> against every `.onnx` in every run — **not one of them backed a deployed brain**. The
+> runs that produced the shipped brains were pruned long ago.
+>
+> **Consequence worth stating plainly: the four shipped `.onnx` files are NOT reproducible
+> from anything on disk.** They exist only as the committed copies under `Assets/Agents/`.
+> Treat those four files as irreplaceable artefacts, not as build output — and never
+> `git checkout`/overwrite one without knowing where the replacement comes from.
 
 - prune a deployed run to its final `<Behavior>.onnx`, `checkpoint.pt`,
   `configuration.yaml`, `run_logs/` and tfevents; the numbered per-step checkpoints are
@@ -1307,7 +1361,15 @@ else goes elsewhere —
 | `NormalizeVoice` | *Normalize Voice Levels* — evens out the per-fighter voice clips |
 
 **Both of these write assets that then go stale silently, and both had done so.** Fixing the
-generator does nothing until the menu item is re-run, and nothing in the game warns you:
+generator does nothing until the menu item is re-run, and nothing in the game warns you.
+
+> **Both were re-measured on 2026-08-25 and both are now CORRECT on disk.** The four stems
+> are 661544 bytes each = **7.5000 s exactly**, and `VoiceGains.asset` holds 60 clip names
+> against 60 gains with a **maximum of exactly 1.0**. The two paragraphs below describe
+> faults that have been repaired; they are kept because the FAILURE MODE is what matters —
+> both assets are generated, both can drift again the moment a generator changes and its
+> menu item is not re-run, and neither the game nor the console will tell you. Re-measure
+> rather than assuming either way.
 
 - The four `MUS_*.wav` stems must be **identical length**. `Systems_MusicDirector` starts all
   four with a single `PlayScheduled` and `loop = true` and never re-syncs, so unequal lengths
@@ -1322,10 +1384,13 @@ generator does nothing until the menu item is re-run, and nothing in the game wa
   no-op. `NormalizeVoice` rebases so max gain is exactly 1.0; the asset had never been
   regenerated after that fix.
 
-Audio content is uneven and this is not a bug. **Matt and Nick have all three voice sets**
-(Happy / Sad / Insult, 5 levels each); **Kim has Happy only** as of 2026-08-15, so she
-cheers a win and is silent when losing or taunting; **Standard has none**. Only
-**Kim, Matt and Nick have face art** — Standard has neither art nor voice.
+**All four fighters now have all three voice sets** — Happy / Sad / Insult, 5 levels each,
+60 clips, verified on disk 2026-08-25. `GeneratePlaceholderVoices` filled the gaps. This
+paragraph said "Matt and Nick have all three, Kim has Happy only, Standard has none" until
+then, which was true on 2026-08-15 and stopped being true without the text moving.
+
+Face art is still uneven and that IS still the case: only **Kim, Matt and Nick have it**
+(7 PNGs each — neutral, happy 1-3, sad 1-3). Standard has no face art.
 `Systems_FighterVoice` and `Systems_FaceMood` both disable themselves rather than warn, so
 a silent, faceless fighter looks intentional. The bracket seeds all four twice.
 
@@ -1471,6 +1536,97 @@ design — these are not bugs:
   gate); read the message, then retry the same edit.
 - `git add ProjectSettings/…` and destructive Bash (`rm -rf Library/`, `git clean -fdx`, …)
   are denied on first attempt.
+
+## Portrait layout checking (`Tools/portrait_check.py`)
+
+`python Tools/portrait_check.py` sets a real device Game-view size, opens
+`SCN_TOURNAMENT`, plays a bout, captures both screens and runs an **overflow audit**
+over the live visual tree at 1080x1920, 1080x2400 and 1200x1600. `--no-play` audits
+the bracket only; `--sizes 1080x2400` picks one.
+
+**It exists because the Game view was on 960x2658 — not a device aspect — and the
+Editor was parked on `SCN_TRAIN_MATT`, so a whole class of layout fault was
+invisible.** The audit reports any element whose children lay out past its own
+resolved height, which is the signature of the bug below; ScrollViews are exempt,
+because holding more than they show is their job.
+
+> **A ScrollView's content children inherit `flex-shrink: 1`, so a column taller than
+> the viewport is silently COMPRESSED to fit instead of scrolling.** Nothing errors,
+> no scroller appears, and the only visible symptom is two unrelated things
+> overlapping somewhere further down the page.
+>
+> MEASURED 2026-08-25 on the bracket at 1080x1920: the roster palette reported
+> height **139** while laying its three wrapped lines out to **y=210**, so it drew
+> over the QUARTERFINALS header; the banzuke block printed its three rows on top of
+> each other; and the whole column measured exactly the 1033pt viewport, i.e. the
+> page never scrolled at all. `flexShrink = 0` on the content children took it to
+> 1345pt and it scrolls. The palette was worst hit because it WRAPS — a wrapping
+> row's height is not the sum of its children, so the shrink has no natural floor.
+>
+> `Systems_TournamentBracket` now applies this in ONE place after the content is
+> built, with the slack spacer as the deliberate exception. Add a block to that
+> column and it is covered; build another scrolling screen and it is not.
+
+## Three things measured on 2026-08-25 that contradict what the code assumed
+
+- **The perf HUD shipped to players.** `enablePerfHud` defaults `true` in code and is
+  ABSENT from `GameTuning.asset`, so the code default is what runs, and
+  `Systems_PerfHud` carries no build guard. It is now ANDed with
+  `Debug.isDebugBuild || Application.isEditor` at the spawn site, the same gate
+  `Systems_Telemetry` uses.
+- **The perf HUD's GC readout was wrong by ~15x.** It printed one 0.25 s window,
+  divided by the CONSTANT rather than the measured elapsed time, and only when the
+  delta was positive — so it sampled the peaks of a bursty allocator and discarded
+  every window that straddled a collection. It read "+280 MB/s" during a live match
+  while real heap growth was ~19 MB/s, of which ~13 MB/s was the Editor itself, with
+  only 2 gen-0 collections in 8 seconds. **There is no allocation emergency in this
+  project** — do not go hunting one on the strength of the old readout. It now
+  averages over 3 s and keeps negative deltas.
+- **A fighter can meet ITSELF, and it is not just cosmetic.**
+  `SeparateFirstRoundMirrors` fixes the opening round and documents that later
+  mirrors are structural; a **Nick-v-Nick FINAL** was measured. Both sides render the
+  same colour and face, the scorebug reads "NICK 1 : 1 NICK", and
+  `Systems_CareerStats.RecordMatch` guards `winner == loser` — so the most important
+  match of the bracket banked no W/L, no Elo and no match count while `RecordTitle`
+  still awarded the title. `Systems_MatchRoster` now hue-shifts side B's body and
+  names it `<Name> II`, read back through `Agent_BipedBody.teamColorOverride` and
+  `Agent_Biped.displayNameOverride` (both `[NonSerialized]`, both presentation only —
+  `behaviorName` must keep matching the YAML key or that fighter has no brain).
+
+### The walk-in stalls on EVERY match, and the referee now glides out of it
+
+`Phase.WalkInPark` was added 2026-08-25. The stall path was written as a rare
+backstop; measured, it fires **every single bout** (7 stalls in a 7-match bracket,
+3.3-4.7 s each) because the shipped gait cannot cross the opening gap at all. That
+made a hard snap from wherever they gave up straight onto the stand-off marks the
+most visible glitch in the game.
+
+The fighters now glide onto the marks over `WALKIN_PARK_SECONDS` (0.45 s,
+smoothstepped). Physics is already frozen, the destination is identical and the fight
+starts from the same marks — it is presentation only, and it should be **deleted the
+day a policy can actually walk in**. It is the "solve the ceremony in presentation"
+option this file recommends after five failed gait retrains, not a fix for the gait.
+
+Note `BeginWalkInPark()` must be called **before** `HoldUpright()`, which is itself a
+teleport onto the marks — capturing after it glides from the mark to the mark.
+
+### The portrait dead space has a lever nobody had tried: `Camera.rect`
+
+`Systems_CameraFollow`'s `feetDrop` note is right that no camera VALUE fixes the
+~30% of every frame that is black below the dohyo, and concludes the space must be
+filled. That conclusion assumed the camera owns the whole screen.
+
+`GameTuning.enableArenaBand` (**OFF by default**) confines it to a band instead,
+which raises the aspect the ortho maths divides by — the one lever that changes the
+trade rather than shuffling it. MEASURED at 1080x1920: a 0.20-0.82 band took aspect
+**0.563 -> 0.907** and the fighters rendered about **2.5x larger** with both still in
+frame. Verified with no HUD overflow at three aspects.
+
+It is off because it is a RENDERING change, not just a framing one: the region
+outside a camera's rect is not drawn by that camera, so it needs the `ArenaBandClear`
+camera the follow spawns (`cullingMask = 0`, it exists purely for its clear — without
+it the outside keeps the previous frame and smears). Turn it on, look at it at more
+than two moments, and give the arena dressing something to reach the band edges.
 
 ## Verification expectations
 

@@ -91,3 +91,10 @@ __pycache__/
 /Assets/packages-merged-link/
 /Assets/packages-merged-link.meta
 Training/*.log
+
+# Claude Code per-session scratch. These are rewritten on every session (and by
+# hooks mid-session), so tracking them put a permanent M/D/?? block in every
+# `git status` and produced merge noise that never meant anything. `.gitkeep`
+# stays tracked so the directory itself survives a clone.
+.claude/state/*
+!.claude/state/.gitkeep
