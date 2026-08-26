@@ -40,6 +40,33 @@ if echo "$COMMAND" | grep -qEi 'Start-Training\.ps1|Start-StaminaExtension\.ps1|
     exit 0
 fi
 
+# INSPECTION IS NOT LAUNCHING.
+#
+# The first version of this hook matched any command containing the trainer's
+# name, and immediately blocked `Get-Process mlagents-learn` — i.e. the very
+# command that answers "is a run in progress?". Asking whether training is
+# running is the opposite of starting it without TensorBoard, and a guard that
+# blocks its own diagnostic teaches people to work around it.
+#
+# Anchored on the verbs, because the trainer name will appear as an ARGUMENT to
+# all of these rather than as the command being run.
+#
+# Both the process verbs AND the file verbs are needed, and the second group was
+# added only after the hook blocked `ls Training/venv/Scripts/mlagents-learn.exe`
+# — an existence check. Every time this list is too narrow the guard fires on
+# someone trying to find out the state of the world, which is exactly the person
+# it should be helping.
+if echo "$COMMAND" | grep -qEi '(Get-Process|Stop-Process|Wait-Process|pgrep|pkill|taskkill|tasklist|ps -|grep|Where-Object|Select-String|which |command -v)'; then
+    exit 0
+fi
+if echo "$COMMAND" | grep -qEi '(^|[|;&] *)(ls|ll|dir|stat|file|cat|head|tail|wc|test|\[|Test-Path|Get-Item|Get-ChildItem|Get-Content)( |$)'; then
+    exit 0
+fi
+# Stop-Training.ps1 tears a run DOWN; it names the trainer to kill it.
+if echo "$COMMAND" | grep -qEi 'Stop-Training\.ps1'; then
+    exit 0
+fi
+
 # Already listening on 6006? Then the requirement is satisfied however it got
 # there, and blocking would be noise. Checked with PowerShell because this runs
 # on Windows under Git Bash, where ss/netstat may be absent.

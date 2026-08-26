@@ -47,6 +47,9 @@ namespace PoSumo
         // so covering the +/-2.5 m opening stand-off needs ortho >= ~5.4, which buys
         // ~11 m of VERTICAL view for about 2 m of fighter. No camera value fixes
         // that. The space has to be FILLED (backdrop or HUD), not squeezed out.
+        [Tooltip("Ortho the camera SNAPS to when a round opens, before the follow logic zooms it back in.\n\nSeparate from wideOrtho (14), which is the ceremony and post-match pull-back: that one frames the whole hall and is allowed to be extravagant because nothing is happening. This one opens a ROUND, so it has to show the arena without making the fighters unreadable — 9.5 holds the full 7 m mat plus the near crowd at portrait aspect.\n\nThe zoom back in is not scripted. This is only the STARTING value; the ordinary separation-driven target (halfDist + margin) / aspect takes over immediately and the existing smoothing eases between them, so the camera closes in exactly as fast as the fighters actually close on each other.")]
+        public float establishOrtho = 9.5f;
+
         public float feetDrop = 0.95f;
         public float horizontalMargin = 0.5f;
         public float smoothing = 4f;
@@ -160,6 +163,37 @@ namespace PoSumo
         }
 
         /// Cancels any active punch-in or wide shot and returns to normal follow.
+        /// Opens a round on the whole arena, then lets the fighters pull the camera
+        /// in as they close.
+        ///
+        /// Deliberately a SNAP of the current ortho rather than a timed override
+        /// like PullBackWide. A timed override pins the camera for a fixed duration
+        /// and then hands back, which is what produced the old opening: a hard hold
+        /// at 14 for the entire walk-in followed by a jump to follow framing. By
+        /// setting the starting value instead, the target for the very next frame is
+        /// already the ordinary separation-driven one, so the move in is continuous
+        /// and its SPEED is the speed the fighters actually approach at — which is
+        /// what was asked for, and it costs no new state, no new mode in the
+        /// FixedUpdate switch, and nothing to unwind if the round ends early.
+        ///
+        /// Called on every round open (Systems_GameMatchManager.StartCountdown), so
+        /// rounds 2+ get it too. Those open at the stand-off with barely any gap to
+        /// close, so there the snap plus smoothing reads as a short push-in rather
+        /// than a long approach — which is the correct emphasis, since round 1 is
+        /// the one with the ceremony.
+        ///
+        /// Safe to call while a shot is live: an active PunchIn or PullBackWide
+        /// still wins on the very next frame, because both are applied after this
+        /// value is read.
+        public void BeginEstablishingShot()
+        {
+            if (_cam == null)
+            {
+                return;
+            }
+            _cam.orthographicSize = Mathf.Max(_cam.orthographicSize, establishOrtho);
+        }
+
         public void ClearShots()
         {
             _focus = null;

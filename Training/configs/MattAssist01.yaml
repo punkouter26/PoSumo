@@ -1,0 +1,117 @@
+# Matt OBS 01 - created 2026-08-25. WARM start from matt_tall04.
+#
+# WHY THIS RUN EXISTS
+# Observation 0 was WORLD-ABSOLUTE torso height and the walk lane sits at y = -60.
+#
+#   Agent_Biped.CollectObservations (before this fix):
+#       Vector2 tp = Torso.position;          // world
+#       sensor.AddObservation(San(tp.y / 2f));
+#
+# Measured from SCN_TRAIN_MATT: 4 sumo agents at mode:1 on referees at y = 0, and
+# 6 walk agents at mode:0 on a lane at y = -60. So one policy received, in the SAME
+# input slot:
+#
+#       sumo agents   (1.06)      / 2  =   +0.53
+#       walk agents   (-60 + 1.06)/ 2  =  -29.50
+#
+# Two disjoint ranges, same slot, same network. It has been that way since the
+# walk+fight merge took the vector to 45.
+#
+# THIS IS THE BUG Reward_StepCadence ALREADY DOCUMENTS AND WAS FIXED FOR:
+# "Heights are ARENA-RELATIVE... Against absolute world Y this test was meaningless
+# for the walk lane, which sits at y = -60." The REWARD side was corrected then. The
+# OBSERVATION side was missed, which is the likeliest reason five gait retrains
+# failed: tall01, tall02, tall03, tall04 and gait01 each tuned what the policy was
+# PAID while what it could PERCEIVE stayed broken.
+#
+# THE FIX IS ONE LINE
+#       sensor.AddObservation(San((tp.y - arenaGroundY) / 2f));
+#
+# WHY THIS RUN CHANGES NOTHING ELSE - READ BEFORE ADDING TO IT
+# The vector STAYS AT 45. contactObservations (+4) and staminaObservation (+1) are
+# both wanted and both deliberately NOT in this run, because either one takes it to
+# 50 and --initialize-from requires a matching observation space: adding them makes
+# this a COLD retrain against trunks worth 12-45M steps, and confounds three changes
+# in one run so a moved ELO tells you nothing about which one moved it.
+#
+# Sense01 is the follow-up that turns those on, cold, IF this run shows the fix
+# helps. Do not merge the two.
+#
+# WARM-START CAVEAT: normalize is true, so the checkpoint carries running mean/std
+# fitted to the OLD obs-0 distribution - a mixture of -29.5 and +0.53, i.e. enormous
+# variance on that one input. After the fix the input collapses to a narrow band
+# around +0.53 and the normalizer has to re-converge. That is why this is 3M steps
+# at a reduced learning rate rather than the usual 1M corrective: the first few
+# hundred thousand steps are spent re-fitting statistics, not learning.
+#
+# The trunk also predates the shrinking mat and Systems_StrikeImpulse (both ported
+# into Systems_SumoMatchManager on 2026-08-16), so this run adapts to those too.
+# tall04 DOES already include the fatigue model.
+#
+# num-envs: 4 (record it - it changes how experience is batched, so it changes the
+# resulting model even with every hyperparameter held fixed).
+#
+# JUDGE ON ELO, NOT MEAN REWARD. Also watch the walk lane specifically: if mean
+# reward pins just under the +3 graduation bonus with near-zero variance, that is
+# one terminal firing every episode, not convergence.
+#
+# Launch:
+#   Training/Start-StaminaExtension.ps1 -Phase Obs01 -InitializeFromPhase Tall04 -Minutes <n>
+# or by hand:
+#   Training/venv/Scripts/mlagents-learn.exe Training/configs/MattObs01.yaml `
+#     --run-id=matt_obs01 --results-dir=Training/results `
+#     --initialize-from=matt_tall04 `
+#     --env=Builds/MattEnv/MattEnv.exe --num-envs=4 --no-graphics --base-port=5005
+
+behaviors:
+  Matt:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 0.0001
+      beta: 0.005
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:
+      normalize: true
+      hidden_units: 512
+      num_layers: 3
+      vis_encode_type: simple
+    reward_signals:
+      extrinsic:
+        gamma: 0.997
+        strength: 1.0
+    keep_checkpoints: 20
+    checkpoint_interval: 100000
+    max_steps: 5000000
+    time_horizon: 1000
+    summary_freq: 20000
+    threaded: true
+    self_play:
+      window: 25
+      play_against_latest_model_ratio: 0.25
+      save_steps: 50000
+      swap_steps: 50000
+      team_change: 250000
+
+# --- TALL04 ADDENDUM -------------------------------------------------------
+# Tall03 (the height gate) ALSO failed to move the gait: 0.54-0.71 against the
+# shipped 0.55-0.76, despite ELO climbing 1297 -> 1935. The gate mechanism was
+# right; its CALIBRATION was not.
+#
+# WALK_CROUCH_Y / WALK_TALL_Y had been copied from the sumo school as 0.65/0.95.
+# The walking gait actually operates at 0.46-0.80 m, so TallFactor was clamped
+# at ZERO across most of its own working range and the reward could not tell
+# 0.60 from 0.55. No gradient, so no multiplier strength could ever have helped.
+# A shaping term that saturates outside the range the policy occupies is not a
+# weak term, it is an absent one — and it looks identical to a weak one from the
+# outside, which is why it survived two runs.
+#
+# Now 0.45 -> 1.00, spanning the measured distribution end to end, and
+# stanceFloor 0.25. Crawling at 0.55 gates to 0.40, standing at 0.95 gates to
+# 1.00 — tall pays 2.5x AND there is gradient at every height the fighter uses.
+#
+# Warm start moves to matt_tall03, keeping its ELO gain.

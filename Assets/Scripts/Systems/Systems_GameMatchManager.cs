@@ -582,16 +582,25 @@ namespace PoSumo
         private void BeginWalkInPhase()
         {
             _walkInPlayed = true;
-            // Pull the camera out for the approach. At normal framing the start
-            // marks sit outside the frame, so the fighters appeared from
-            // off-screen already halfway through their walk — the approach is the
-            // point, so it has to be visible from the first stride. Held a beat
-            // past the timeout; the arrival path clears it early. This also
-            // continues the wide beat the countdown ended on, so the handover from
-            // ceremony to approach is one unbroken shot.
+            // Open the approach on the arena, then let the fighters pull the camera
+            // in as they close on each other.
+            //
+            // This used to be `PullBackWide(walkInTimeout + 1f)` — a TIMED PIN at
+            // wideOrtho 14 for the whole walk-in, which then handed back to follow
+            // framing when the timer expired. Two problems with that: 14 is the
+            // ceremony/post-match framing and makes the fighters tiny in portrait
+            // (~28 m of vertical view for a 1.8 m body), and because the hold was on
+            // a clock rather than on the fighters, the shot did not tighten as they
+            // approached — it stayed wide and then jumped.
+            //
+            // The establishing snap keeps the reason the pull-back existed (the
+            // start marks must be in frame from the first stride, or the fighters
+            // appear from off-screen halfway through their walk) while making the
+            // push-in track the actual closing distance. It also removes a timer
+            // that had to be kept in sync with walkInTimeout.
             if (_camFollow != null)
             {
-                _camFollow.PullBackWide(walkInTimeout + 1f);
+                _camFollow.BeginEstablishingShot();
             }
 
             WidenMatForWalkIn();
@@ -1231,6 +1240,14 @@ namespace PoSumo
         {
             _countdownLeft = countdownSeconds;
             _lastCountdownDigit = -1;
+            // Open on the arena, then let the fighters draw the camera in as they
+            // close. This only sets the STARTING ortho — the separation-driven
+            // follow target takes over on the next frame, so the push-in tracks the
+            // actual approach rather than running on a timer.
+            if (_camFollow != null)
+            {
+                _camFollow.BeginEstablishingShot();
+            }
         }
 
         /// 3-2-1 over the walk-in: the camera punches in on one fighter's head

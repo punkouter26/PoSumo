@@ -25,7 +25,7 @@ MonoBehaviour:
   extendedObservations: 1
   decisionPeriod: 3
   contactObservations: 0
-  staminaObservation: 1
+  staminaObservation: 0
   inferenceModel: {fileID: 5022602860645237092, guid: 239f499b7abb2934f8d71d52682b5f23, type: 3}
   useBot: 0
   uprightReward: 0.002
@@ -35,7 +35,7 @@ MonoBehaviour:
   impactReward: 0.005
   impactCap: 8
   kneeBendReward: 0.0004
-  hipsLowReward: 0.00015
+  hipsLowReward: 0.0003
   cadenceReward: 0.0015
   riseReward: 0.02
   effortPenalty: 0.0015

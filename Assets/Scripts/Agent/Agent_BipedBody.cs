@@ -1266,6 +1266,74 @@ namespace PoSumo
         /// per DecisionPeriod (3 steps here), and passive tissue does not take
         /// turns. Equal and opposite on the connected body so the pair stays an
         /// internal force and cannot push the fighter around by itself.
+        /// Peak restoring torque, in N·m, applied to the pelvis when the torso is
+        /// fully on its side. Sized against the hip's 300 N·m budget: meaningful
+        /// help, nowhere near enough to stand the body up on its own.
+        private const float POSTURAL_ASSIST_TORQUE = 55f;
+
+        /// Damping on the same axis, N·m per rad/s. Without it the assist is a
+        /// spring with no loss and the torso oscillates instead of settling.
+        private const float POSTURAL_ASSIST_DAMPING = 9f;
+
+        /// Below this uprightness the assist fades out entirely. A fighter who has
+        /// genuinely been thrown should STAY thrown — otherwise the aid quietly
+        /// rewrites the ring-out and knockdown rules by righting a losing body, and
+        /// the referee's IsDown test stops meaning anything.
+        private const float POSTURAL_ASSIST_FLOOR = 0.15f;
+
+        /// A postural reflex the policy cannot opt out of.
+        ///
+        /// WHY THIS IS PHYSICS AND NOT REWARD. Six runs have now tried to buy an
+        /// upright gait with shaping — tall01-tall04, gait01, and obs01 — and the
+        /// arithmetic in Reward_WalkObjective explains why they could not: in
+        /// Mode.Walk a fall costs about -4 (the -1 terminal, which also discards
+        /// that step's shaping, plus the forgone +3 graduation) while the entire
+        /// per-step advantage of standing tall over crawling is 0.0063. Break-even
+        /// is an extra fall probability of 0.16% per step. Crouching is simply
+        /// CORRECT PLAY under that trade, and no coefficient changes it.
+        ///
+        /// So this does not pay the fighter to stand. It makes standing cheaper, by
+        /// supplying part of the postural tone a real trunk has and this ragdoll
+        /// does not. `CLAUDE.md` nominates exactly this after gait01: "a stability
+        /// aid the policy cannot opt out of (a torso-height constraint enforced in
+        /// physics rather than paid for in reward)".
+        ///
+        /// TORQUE, NOT LIFT. An upward force would be anti-gravity — the body would
+        /// read as floaty and, worse, would change how much force it takes to push
+        /// one out of the ring, which is the core of the game. A restoring torque
+        /// toward world-up adds no vertical energy; it only resists TIPPING, which
+        /// is what a postural reflex actually does.
+        ///
+        /// This changes the dynamics every brain was fitted against, so it needs the
+        /// usual short corrective pass at reduced learning rate — not a cold retrain.
+        private void ApplyPosturalAssist()
+        {
+            if (Torso == null || !Torso.simulated)
+            {
+                return;
+            }
+
+            // +1 fully upright, 0 on its side, negative inverted.
+            float upright = Torso.transform.up.y;
+            if (upright <= POSTURAL_ASSIST_FLOOR)
+            {
+                return;
+            }
+
+            // Signed tilt from vertical, in radians, in the plane the game runs in.
+            float tilt = Mathf.Atan2(Torso.transform.up.x, Torso.transform.up.y);
+
+            // Scaled by how upright the body already is, so the aid is strongest for
+            // a fighter who is nearly standing and vanishes for one who is going
+            // down anyway. That keeps it a stabiliser rather than a righting reflex.
+            float authority = Mathf.InverseLerp(POSTURAL_ASSIST_FLOOR, 1f, upright);
+
+            float torque = (-tilt * POSTURAL_ASSIST_TORQUE
+                            - Torso.angularVelocity * Mathf.Deg2Rad * POSTURAL_ASSIST_DAMPING)
+                           * authority;
+            Torso.AddTorque(torque);
+        }
+
         private void FixedUpdate()
         {
             SampleFootLoad(FootNear, out FootDownNear, out FootLoadNear);
@@ -1279,6 +1347,7 @@ namespace PoSumo
             // fighter standing between rounds must still be recovering. Physics time,
             // not decision time, is what a muscle runs on.
             IntegrateFatigue(Time.fixedDeltaTime);
+            ApplyPosturalAssist();
 
             for (int jointIndex = 0; jointIndex < Joints.Length; jointIndex++)
             {

@@ -65,7 +65,7 @@ param(
     # 'Obs01' is the corrective run for the world-absolute observation 0 fix, and
     # carries the upright walk/stance shaping raised on 2026-08-25. New run id, so
     # it warm-starts from the tall04 trunks rather than resuming.
-    [ValidateSet('Stamina01', 'Gait01', 'Obs01')]
+    [ValidateSet('Stamina01', 'Gait01', 'Obs01', 'Assist01')]
     [string]$Phase = 'Stamina01',
 
     # Source run for --initialize-from, e.g. 'stamina01'. Resolves BY BEHAVIOR NAME
