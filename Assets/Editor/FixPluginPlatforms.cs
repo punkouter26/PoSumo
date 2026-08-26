@@ -70,6 +70,11 @@ namespace PoSumo.EditorTools
 
                 importer.SetCompatibleWithAnyPlatform(false);
                 importer.SetCompatibleWithEditor(true);
+                // Explicit, not implied by Any=false: the Android player build is
+                // the one consumer that must never see these (2026-08-26, the
+                // McpPlugin.dll linker failure came back after the 0.90.0 upgrade).
+                importer.SetCompatibleWithPlatform(BuildTarget.Android, false);
+                EditorUtility.SetDirty(importer);
                 importer.SaveAndReimport();
                 changed++;
                 report.Append("  ").AppendLine(path.Substring(PLUGIN_FOLDER.Length + 1));

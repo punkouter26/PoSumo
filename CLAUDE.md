@@ -1538,8 +1538,24 @@ level 5 is 7.96 s for exactly this reason.
 deliberately not persistent: `LoadScene(ARENA_SCENE)` is Single mode, so it dies with the
 scene rather than fighting `SCN_SUMO`'s own listener.
 
+> **The MCP NuGet DLLs WILL be in your Android build unless something removes them at
+> build time (measured 2026-08-26).** The first APK build after the 0.90.0 MCP upgrade
+> died in managed stripping — `Failed to resolve base type
+> com.IvanMurzak.ReflectorNet.MethodWrapper for type com.IvanMurzak.McpPlugin.RunPrompt in
+> assembly McpPlugin.dll` — because `Assets/Plugins/NuGet/McpPlugin.dll` was Any-Platform
+> again. *PoSumo → Fix Plugin Platforms* does not stick: the package's own
+> `NuGetPluginConfigurator.ConfigureAll` (called from `NuGetDependencyResolver` on every
+> restore/reload) re-applies `includeInBuild: true` from its hardcoded `NuGetConfig`, and
+> was measured reverting the fix within one refresh, twice. The durable fix is
+> `Assets/Editor/ExcludeMcpPluginsFromPlayer.cs`, an `IPreprocessBuildWithReport` that
+> switches every DLL in that folder to Editor-only INSIDE the build, after the last
+> refresh. It logs `PLUGIN PLATFORM RESULT (preprocess Android): excluded N …`; if that
+> line is missing from a build log, this is the first thing to suspect.
+
 **Android signing keeps the keystore and its password outside the repo**, at
-`C:/Users/punko/Downloads/PoSumo-Release/` (`keystore.pass`, one line), because Unity
+`C:/Users/punko/OneDrive/VAULT/_CODE/` (`posumo-upload.jks` + `posumo-upload.pass`, one
+line — this said `Downloads/PoSumo-Release/` until 2026-08-26; that folder does not exist
+and the vault is where the files live), because Unity
 deliberately does not serialize keystore passwords into `ProjectSettings`. Both Android
 builds read `POSUMO_KEYSTORE_PASS` first and fall back to that file, then clear the
 password out of `PlayerSettings` afterwards. Without either, the build **aborts** rather

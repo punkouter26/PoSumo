@@ -13,8 +13,12 @@ namespace PoSumo.EditorTools
     ///
     /// The upload keystore and its password live OUTSIDE the repo so neither can
     /// be committed:
-    ///     C:/Users/punko/Downloads/PoSumo-Release/posumo-upload.jks
-    ///     C:/Users/punko/Downloads/PoSumo-Release/keystore.pass   (password, one line)
+    ///     C:/Users/punko/OneDrive/VAULT/_CODE/posumo-upload.jks
+    ///     C:/Users/punko/OneDrive/VAULT/_CODE/posumo-upload.pass  (password, one line)
+    ///
+    /// The folder moved from Downloads/PoSumo-Release/ to the OneDrive vault on
+    /// 2026-08-26 — that is where the files actually were, and a copy would have
+    /// meant a second copy of a signing secret on disk.
     ///
     /// Unity deliberately does not serialize keystore passwords into
     /// ProjectSettings.asset, so they must be supplied at build time — that is what
@@ -30,7 +34,7 @@ namespace PoSumo.EditorTools
         private const string APP_ID = "com.punkoutersoftware.posumo";
         // internal, not private: BuildAndroid signs its test APK with the same
         // upload key. One copy of these facts, so the two builders cannot diverge.
-        internal const string KEYSTORE_PATH = "C:/Users/punko/Downloads/PoSumo-Release/posumo-upload.jks";
+        internal const string KEYSTORE_PATH = "C:/Users/punko/OneDrive/VAULT/_CODE/posumo-upload.jks";
         internal const string KEYALIAS = "posumo-upload";
 
         // Google Play requires new apps and updates to target API 36 from 2026-08-31.
