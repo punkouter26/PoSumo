@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.UIElements;
 
 namespace PoSumo
 {
@@ -53,9 +52,6 @@ namespace PoSumo
         private Systems_FightHud _hud;
         private Agent_BipedBody _bodyA, _bodyB;
 
-        private VisualElement _meterTrack, _meterFill;
-        private Label _meterLabel;
-
         /// 0 = silent, 1 = the crowd is fully behind `BackedIsA`.
         public float Support01 { get; private set; }
 
@@ -99,7 +95,6 @@ namespace PoSumo
                 if (_manager.wrestlerB != null)
                     _bodyB = _manager.wrestlerB.GetComponent<Agent_BipedBody>();
             }
-            BuildMeter();
         }
 
         private void ResetSupport()
@@ -149,7 +144,6 @@ namespace PoSumo
             }
 
             ApplyBoost();
-            UpdateMeter();
         }
 
         /// -1 = A is the underdog, +1 = B, 0 = too even to call.
@@ -194,63 +188,6 @@ namespace PoSumo
             float boost = 1f + MAX_BOOST * Support01;
             if (_bodyA != null) _bodyA.adrenaline = BackedIsA ? boost : 1f;
             if (_bodyB != null) _bodyB.adrenaline = BackedIsA ? 1f : boost;
-        }
-
-        // ---- meter -----------------------------------------------------------
-
-        /// A slim bar in the dock, under the existing live strip. Deliberately not
-        /// in the centre band: that is where the round banner and the kimarite call
-        /// appear, and three things competing for one slot is how taps got swallowed
-        /// before `Systems_HudRoot` existed.
-        private void BuildMeter()
-        {
-            var hud = FindAnyObjectByType<Systems_HudRoot>();
-            if (hud == null || hud.Dock == null) return;
-
-            VisualElement row = Systems_UiKit.Column(Align.Stretch);
-            row.style.marginTop = Systems_UiKit.SPACE_1;
-            row.NoPickTree();
-
-            _meterLabel = Systems_UiKit.Caption("", Systems_UiKit.FONT_MICRO,
-                                                Systems_UiKit.TextLow);
-            _meterLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
-
-            _meterTrack = new VisualElement();
-            _meterTrack.style.height = 4;
-            _meterTrack.style.backgroundColor = Systems_UiKit.Track;
-            _meterTrack.Round(Systems_UiKit.RADIUS_SM);
-
-            _meterFill = new VisualElement();
-            _meterFill.style.height = 4;
-            _meterFill.style.width = Length.Percent(0f);
-            _meterFill.style.backgroundColor = Systems_UiKit.Gold;
-            _meterFill.Round(Systems_UiKit.RADIUS_SM);
-            _meterTrack.Add(_meterFill);
-
-            row.Add(_meterLabel);
-            row.Add(_meterTrack);
-            hud.Dock.Add(row);
-        }
-
-        /// Writes text and style on retained elements — never rebuilds the
-        /// hierarchy, which is UI Toolkit's equivalent of a full Canvas rebuild.
-        private void UpdateMeter()
-        {
-            if (_meterFill == null || _meterLabel == null) return;
-
-            _meterFill.style.width = Length.Percent(Support01 * 100f);
-
-            if (Support01 <= 0.02f)
-            {
-                _meterLabel.text = "";
-                return;
-            }
-            string who = BackedIsA ? _manager.nameA : _manager.nameB;
-            _meterLabel.text = Support01 >= 0.99f
-                ? $"CROWD ROARING FOR {who}"
-                : $"CROWD BEHIND {who}";
-            _meterLabel.style.color = Support01 >= 0.99f
-                ? Systems_UiKit.Gold : Systems_UiKit.TextLow;
         }
     }
 }

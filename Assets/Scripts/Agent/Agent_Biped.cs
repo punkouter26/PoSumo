@@ -229,6 +229,7 @@ namespace PoSumo
                 _contactSensors[sensorIndex].Clear();
             }
             NonFootGroundContacts = 0;
+            if (_b.HeadContact != null) _b.HeadContact.Clear();
             _pendingImpact = 0f;
             _lastTorsoY = _b.Torso.position.y;
             _cadence.Reset();
@@ -239,6 +240,20 @@ namespace PoSumo
         public Rigidbody2D Torso => _b.Torso;
         public float TorsoX => Torso.position.x;
         public bool IsDown => NonFootGroundContacts > 0;
+
+        /// The head is on the mat. Read by both referees' headTouchLoses rule.
+        public bool HeadDown => _b.HeadContact != null && _b.HeadContact.Touching;
+
+        /// The head is on the arena FLOOR below the dohyo — the ring-out since
+        /// 2026-08-26 (ringOutOnHeadFloor in both referees).
+        public bool HeadOnFloor => _b.HeadContact != null && _b.HeadContact.TouchingFloor;
+
+        /// Referees call this once the arena is known, so the head sensor can tell
+        /// the floor from the mat.
+        public void BindArenaFloor(Collider2D floor)
+        {
+            if (_b.HeadContact != null) _b.HeadContact.floor = floor;
+        }
 
         /// Called by Sensor_Impact when a body part hits the opponent.
         public void ReportOpponentImpact(float relativeSpeed)

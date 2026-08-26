@@ -184,6 +184,7 @@ namespace PoSumo
             // scroll: the overflow was simply clipped, so the RESHUFFLE button
             // could not be reached at all.
             var scroll = new ScrollView(ScrollViewMode.Vertical);
+            _scroll = scroll;
             scroll.style.flexGrow = 1;
             // Vertical mode alone still leaves the horizontal scroller on Auto, so
             // a row a few points too wide draws a bar across the bottom of the
@@ -268,6 +269,7 @@ namespace PoSumo
             // screen, its disclosure row belongs directly under it, and the slack
             // belongs below both.
             BuildCareerTable();
+            BuildLadderCard();
 
             // Absorbs whatever vertical slack is left, so the bracket sits under
             // the title and the controls sit at the bottom edge. Collapses to
@@ -498,8 +500,10 @@ namespace PoSumo
             // seconds forfeits the round — it looks like the game giving up — and
             // that rule ends the majority of rounds.
             Label rules = Systems_UiKit.Text(
-                "WIN A ROUND BY PUSHING YOUR OPPONENT OUT, PUTTING THEM DOWN, "
-                + "OR LEADING ON POSITION AT THE BELL.",
+                // No clock and no down-out since 2026-08-26: the mat closes until
+                // somebody is off it, and the ring-out is the head hitting the floor.
+                "WIN A ROUND BY PUTTING YOUR OPPONENT OFF THE DOHYO. "
+                + "THE MAT SHRINKS UNTIL SOMEBODY FALLS.",
                 Systems_UiKit.FONT_MICRO, Systems_UiKit.TextLow);
             rules.style.whiteSpace = WhiteSpace.Normal;
             rules.style.unityTextAlign = TextAnchor.MiddleCenter;
@@ -577,6 +581,10 @@ namespace PoSumo
             _rankNews.text = change.Promoted
                 ? $"{fighter} PROMOTED TO {change.ToRank}"
                 : $"{fighter} DEMOTED TO {change.ToRank}";
+            if (change.Promoted && !string.IsNullOrEmpty(change.Note))
+            {
+                _rankNews.text += $"  ·  {change.Note}";
+            }
             _rankNews.style.color = change.Promoted ? Systems_UiKit.Gold : Systems_UiKit.Bad;
             _rankNews.style.display = DisplayStyle.Flex;
             _rankNews.FadeIn();
@@ -969,6 +977,7 @@ namespace PoSumo
 
         private void Refresh()
         {
+            RefreshLadder();
             for (int seedSlotIndex = 0; seedSlotIndex < _seedSlots.Count; seedSlotIndex++)
             {
                 int seedIndex = (int)_seedSlots[seedSlotIndex].userData;
@@ -1083,6 +1092,170 @@ namespace PoSumo
         /// press START — with no automated coverage. That is how two
         /// NullReferenceExceptions per bout survived in it unnoticed.
         public void PressAction() => OnAction();
+
+        // ---- BOT LADDER ----------------------------------------------------------
+        //
+        // A card under the career row: pick a challenger, pick a rung, fight the
+        // Bot. Lives on this screen rather than its own because the roster, the
+        // arena launch and the "you came back with a result" news line are all
+        // already here. State is Systems_BotLadderState; this is only the view.
+
+        private readonly List<Button> _ladderChallengerButtons = new List<Button>();
+        private readonly List<Button> _ladderTierButtons = new List<Button>();
+        private Label _ladderStatus;
+        private Label _ladderNews;
+        private ScrollView _scroll;
+
+        /// Scrolls the column so the ladder card is in view. Used by the screenshot
+        /// flow (the card sits below the banzuke, off the first screen).
+        public void ScrollToLadder()
+        {
+            if (_scroll != null && _ladderStatus != null) _scroll.ScrollTo(_ladderStatus);
+        }
+        private Agent_CharacterDefinition _ladderChallenger;
+        private Agent_CharacterDefinition _ladderBot;
+
+        private void BuildLadderCard()
+        {
+            if (_roster == null) return;
+            _ladderBot = null;
+            for (int index = 0; index < _roster.Length; index++)
+            {
+                if (_roster[index] != null && _roster[index].useBot) { _ladderBot = _roster[index]; break; }
+            }
+            if (_ladderBot == null) return;   // no Bot in the roster, no ladder
+
+            VisualElement card = AddRound("BOT LADDER");
+            card.style.paddingBottom = Systems_UiKit.SPACE_3;
+
+            Label hint = Systems_UiKit.Caption("beat the bot at each rung to unlock the next",
+                                               Systems_UiKit.FONT_MICRO, Systems_UiKit.TextLow);
+            hint.style.unityTextAlign = TextAnchor.MiddleCenter;
+            hint.style.marginBottom = Systems_UiKit.SPACE_2;
+            card.Add(hint);
+
+            // Challenger chips: every trained fighter, 2-up like the palette.
+            VisualElement challengers = Systems_UiKit.Row();
+            challengers.style.flexWrap = Wrap.Wrap;
+            challengers.style.justifyContent = Justify.Center;
+            card.Add(challengers);
+            _ladderChallengerButtons.Clear();
+            for (int index = 0; index < _roster.Length; index++)
+            {
+                Agent_CharacterDefinition character = _roster[index];
+                if (character == null || character.useBot) continue;
+                if (_ladderChallenger == null) _ladderChallenger = character;
+                Agent_CharacterDefinition captured = character;
+                Button chip = Systems_UiKit.ChipButton(character.behaviorName.ToUpperInvariant(),
+                                                      () => { _ladderChallenger = captured; RefreshLadder(); },
+                                                      0);
+                chip.style.flexGrow = 1;
+                chip.style.flexBasis = Length.Percent(46f);
+                chip.style.marginLeft = Systems_UiKit.SPACE_1;
+                chip.style.marginRight = Systems_UiKit.SPACE_1;
+                chip.style.marginBottom = Systems_UiKit.SPACE_1;
+                chip.userData = character;
+                challengers.Add(chip);
+                _ladderChallengerButtons.Add(chip);
+            }
+
+            // Tier buttons: EASY / MEDIUM / HARD. Locked until the one below is beaten.
+            VisualElement tiers = Systems_UiKit.Row();
+            tiers.style.justifyContent = Justify.Center;
+            tiers.style.marginTop = Systems_UiKit.SPACE_2;
+            card.Add(tiers);
+            _ladderTierButtons.Clear();
+            for (int tier = 0; tier < Systems_BotLadderState.TIER_COUNT; tier++)
+            {
+                int captured = tier;
+                Button button = Systems_UiKit.ChipButton(Systems_BotLadderState.TierNames[tier],
+                                                        () => PressLadder(captured), 0);
+                button.style.flexGrow = 1;
+                button.style.flexBasis = 0;
+                button.style.marginLeft = Systems_UiKit.SPACE_1;
+                button.style.marginRight = Systems_UiKit.SPACE_1;
+                tiers.Add(button);
+                _ladderTierButtons.Add(button);
+            }
+
+            _ladderStatus = Systems_UiKit.Caption("", Systems_UiKit.FONT_MICRO, Systems_UiKit.TextLow);
+            _ladderStatus.style.unityTextAlign = TextAnchor.MiddleCenter;
+            _ladderStatus.style.marginTop = Systems_UiKit.SPACE_2;
+            card.Add(_ladderStatus);
+
+            _ladderNews = Systems_UiKit.Text("", Systems_UiKit.FONT_SMALL, Systems_UiKit.Gold, true);
+            _ladderNews.style.unityTextAlign = TextAnchor.MiddleCenter;
+            _ladderNews.style.whiteSpace = WhiteSpace.Normal;
+            _ladderNews.style.display = DisplayStyle.None;
+            card.Add(_ladderNews);
+
+            RefreshLadder();
+        }
+
+        /// Launch a ladder bout at `tier` for the selected challenger. Public so a
+        /// harness can drive it without a tap.
+        public void PressLadder(int tier)
+        {
+            if (_ladderChallenger == null || _ladderBot == null) return;
+            if (!Systems_BotLadderState.IsUnlocked(_ladderChallenger.behaviorName, tier))
+            {
+                if (_ladderStatus != null) _ladderStatus.text = "beat the rung below first";
+                return;
+            }
+            // A ladder bout is played OUTSIDE the bracket; a tournament in progress
+            // stays exactly where it is and resumes when you come back.
+            Systems_BotLadderState.Begin(_ladderChallenger, _ladderBot, tier);
+            SceneManager.LoadScene(ARENA_SCENE);
+        }
+
+        /// Writes text and style on retained elements — never rebuilds.
+        private void RefreshLadder()
+        {
+            if (_ladderStatus == null || _ladderChallenger == null) return;
+            string name = _ladderChallenger.behaviorName;
+            int beaten = Systems_BotLadderState.RungsBeaten(name);
+
+            for (int index = 0; index < _ladderChallengerButtons.Count; index++)
+            {
+                Button chip = _ladderChallengerButtons[index];
+                var character = (Agent_CharacterDefinition)chip.userData;
+                bool selected = character == _ladderChallenger;
+                chip.style.color = selected ? character.teamColor : Systems_UiKit.TextLow;
+                chip.style.borderBottomWidth = selected ? 3 : 0;
+                chip.style.borderBottomColor = character.teamColor;
+            }
+            for (int tier = 0; tier < _ladderTierButtons.Count; tier++)
+            {
+                Button button = _ladderTierButtons[tier];
+                bool unlocked = beaten >= tier;
+                bool done = beaten > tier;
+                // Plain ASCII suffixes: no font asset ships, so a glyph is a box on
+                // any device whose default font lacks it (see PauseButton).
+                button.text = done ? Systems_BotLadderState.TierNames[tier] + " - BEATEN"
+                            : unlocked ? Systems_BotLadderState.TierNames[tier]
+                            : Systems_BotLadderState.TierNames[tier] + " - LOCKED";
+                button.style.color = done ? Systems_UiKit.Good : unlocked ? Systems_UiKit.Gold : Systems_UiKit.TextLow;
+                button.style.opacity = unlocked ? 1f : 0.55f;
+            }
+            _ladderStatus.text = beaten >= Systems_BotLadderState.TIER_COUNT
+                ? $"{name.ToUpperInvariant()} has cleared the ladder"
+                : $"{name.ToUpperInvariant()} · {beaten}/{Systems_BotLadderState.TIER_COUNT} rungs beaten · tap a rung to fight";
+
+            if (Systems_BotLadderState.TryTakeResult(out Systems_BotLadderState.Result result))
+            {
+                string tierName = Systems_BotLadderState.TierNames[result.Tier];
+                string who = (result.Challenger ?? "?").ToUpperInvariant();
+                _ladderNews.text = result.Won
+                    ? (result.Tier + 1 < Systems_BotLadderState.TIER_COUNT
+                        ? $"{who} BEAT THE {tierName} BOT — {Systems_BotLadderState.TierNames[result.Tier + 1]} UNLOCKED"
+                        : $"{who} BEAT THE {tierName} BOT — LADDER CLEARED")
+                    : $"THE {tierName} BOT HELD {who}";
+                _ladderNews.style.color = result.Won ? Systems_UiKit.Gold : Systems_UiKit.Bad;
+                _ladderNews.style.display = DisplayStyle.Flex;
+                _ladderNews.FadeIn();
+                Systems_Log.Info($"[LADDER] {_ladderNews.text}");
+            }
+        }
 
         private void OnAction()
         {

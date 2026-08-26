@@ -171,9 +171,19 @@ namespace PoSumo
         {
             int margin = MarginForFighter();
             int level = Mathf.Clamp(Mathf.Abs(margin), 1, 3);
+            // Two ring-outs running: happy3 held twice as long, whatever the
+            // margin — the same streak Systems_MatchAudio chants for. Tracked here
+            // rather than read off the audio companion, because companions do not
+            // reach across to each other.
+            bool ringOut = _manager != null
+                && _manager.LastOutcome == Systems_GameMatchManager.RoundOutcome.RingOut;
+            _ringOutStreak = winner == _fighter && ringOut ? _ringOutStreak + 1 : 0;
+            if (_ringOutStreak >= 2) { Flash(3, flashSeconds * 2f); return; }   // 2 = the clinch in a first-to-2 bout
             if (winner == _fighter) Flash(level, flashSeconds);
             else if (loser == _fighter) Flash(-level, flashSeconds);
         }
+
+        private int _ringOutStreak;
 
         /// Score margin from this fighter's point of view, after the round.
         private int MarginForFighter()
@@ -195,6 +205,7 @@ namespace PoSumo
         {
             _holdActive = false;
             _flashActive = false;
+            _ringOutStreak = 0;
             _smoothedDom = 50f;
             _idleFlourishes = 0;
             MarkInterest();

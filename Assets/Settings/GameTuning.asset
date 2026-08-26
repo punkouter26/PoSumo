@@ -28,6 +28,7 @@ MonoBehaviour:
   tawaraFriction: 0.18
   shrinkStartSeconds: 8
   shrinkToHalfWidth: 1.8
+  shrinkSeconds: 12
   enableWalkIn: 1
   walkInHalfWidth: 3.5
   walkInStartGapHalf: 2.5
@@ -35,13 +36,14 @@ MonoBehaviour:
   walkInTimeout: 9
   pointsToWin: 3
   tournamentPointsToWin: 2
-  roundTimeoutSeconds: 20
+  roundTimeoutSeconds: 0
   betweenRoundsPause: 2.5
   graceSeconds: 0.4
   downGraceSeconds: 0.2
   downOutSeconds: 0
   gibLosesRound: 1
   knockdownLoses: 0
+  headTouchLoses: 0
   knockoutsToLoseMatch: 2
   knockoutAnnounceSeconds: 2.2
   enablePresentation: 1

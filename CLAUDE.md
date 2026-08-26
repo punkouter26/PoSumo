@@ -728,6 +728,60 @@ Three rules used to be game-only. **Two of them were ported into the training re
   motionless bodies on a mat that never closes. The history is worth keeping: it existed
   because `IsDown` can latch permanently once a leg is under the body, and it once decided
   **57%** of rounds.
+> **2026-08-26 — three rule changes, all in BOTH referees where a referee is involved:**
+> - **The round clock is OFF.** `GameTuning.roundTimeoutSeconds` is **0** (= no clock: no
+>   timeout decision, no draw, blank clock label). The mat has its own contraction
+>   duration now, `shrinkSeconds` (12), and **keeps closing past `shrinkToHalfWidth` to
+>   zero** (`LerpUnclamped`, floored at 0; `Systems_SumoArena.SetPlatformHalfWidth`
+>   clamps at 0.1 m, so a 20 cm sliver survives). Measured: harness 6 matches / 25 rounds,
+>   **25 ring-outs, 0 timeouts**, longest fight 61 s. The training referee got the same
+>   unclamped shrink; with the scenes' serialized 20 s timeout (8 + 12) it is
+>   behaviour-neutral there until someone raises that timeout.
+> - **`headTouchLoses` exists and is OFF** (GameTuning + a copy on
+>   `Systems_SumoMatchManager`, both `false`). It reads `Sensor_HeadContact` on the
+>   `HeadHitbox` child (the head is a compound collider on Chest, so
+>   `Sensor_BodyPartContact` cannot see it) and ends the round the instant the head
+>   touches ANY static collider, reported as `RoundOutcome.Knockdown` + "HEAD ON THE MAT".
+>   It was tried ON for one bracket and **decided every round in 1.4-3.2 s before contact**
+>   (6/6 "went down unaided") because the crawl gait faceplants at the bell. Switched off
+>   the same day in favour of the rule below.
+> - **THE RING-OUT IS NOW "HEAD ON THE ARENA FLOOR"** — `ringOutOnHeadFloor` (GameTuning
+>   + a copy on `Systems_SumoMatchManager`, both `true`). `Systems_SumoArena.FloorCollider`
+>   is handed to each fighter's `Sensor_HeadContact` via `Agent_Biped.BindArenaFloor`, and
+>   `HeadOnFloor` is the loss. A foot below `footOffMatY` no longer ends the round — it
+>   still calls `GoLimp` so the fall plays out — and the torso backstop is 2 m under the
+>   floor (`fallY` at -0.2 would trip on a body merely lying on the 0.6 m-lower floor).
+>   **Strictly the head, chosen knowingly**: a fighter landing on the floor on their feet
+>   or back is not out until the head touches. Measured: 4/4 rounds RingOut, 0 errors.
+>   Set it `false` to get the foot rule back. The perf HUD is also hidden by default now,
+>   behind a **DBG** chip at the lower-left of the stage (`Systems_PerfHud.Toggle`), and
+>   carries real render counters — note there is no plain "Draw Calls Count" in this
+>   Unity's Render category; it uses "Standard Draw Calls Count" / "SRP Batcher Draw Calls Count".
+> - **No "FIGHT!" / "HAKKEYOI!" banners and no crowd-support meter.** The countdown digit
+>   hides and the bout is simply live. The crowd's backing is now audible instead:
+>   `Systems_MatchAudio` folds `Systems_CrowdMomentum.Support01` into the bed
+>   (`murmurPeak` 0.6) and fires one cheer as support peaks.
+
+> **Three engagement features also landed 2026-08-26**, all verified live:
+> - **Streak + upset bonuses** (`Systems_CareerStats.RecordMatch`): beating a fighter rated
+>   40+ above you transfers an extra 8 Elo, and the 3rd+ consecutive win transfers 4 per
+>   win (cap 12). TRANSFERS, never grants — the banzuke thresholds assume a zero-sum pool
+>   at 1000. `Record` gained `winStreak` / `bestStreak` / `upsets`; `RankChange.Note` carries
+>   the "UPSET +8 · 3-WIN STREAK +4" text into the ceremony and the bracket's news line.
+> - **Ring-out streak chant**: two consecutive ring-outs by one fighter in a match makes
+>   `Systems_MatchAudio` fire three cheer beats on a timer (`[CROWD] chant for …`) and
+>   `Systems_FaceMood` hold happy3 twice as long. Two, not three — a bracket bout is
+>   first-to-2, so three could never happen there. Each companion tracks the streak itself;
+>   they do not read each other.
+> - **BOT LADDER** (`Systems_BotLadderState` static + `Systems_BotLadderReporter`, card on
+>   the bracket screen under the career row): pick a trained fighter, beat `Bot_v01` at
+>   EASY → MEDIUM → HARD. Difficulty is ONE number, `Agent_BipedBody.torqueMultiplier`
+>   (0.7 / 1.0 / 1.3), written by `Systems_MatchRoster` before the joints are built.
+>   Progress is `PlayerPrefs` `ladder.<behaviorName>`, not `career.json`, because a Bot
+>   bout is unrated (`Systems_CareerRecorder.NameOf` returns null for it). Ladder bouts are
+>   best-of-3 and show CONTINUE, exactly like a bracket bout. `PressLadder(tier)` on the
+>   bracket drives it from the bridge.
+
 - **The low-friction `tawara` band** at the rim (`tawaraBandWidth` / `tawaraFriction`) that
   turns "almost out" into "out". **Now in both.** `Systems_SumoMatchManager` writes both
   values onto `Systems_SumoArena` in `Start`, *before* the first `ResetRound`, because the

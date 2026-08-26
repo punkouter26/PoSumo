@@ -133,7 +133,11 @@ namespace PoSumo
             _toRank.style.color = up ? Systems_UiKit.Gold : Systems_UiKit.Bad;
             _arrow.text = up ? "  →  " : "  ↓  ";
 
-            _footnote.text = FootnoteFor(change.ToRank, up);
+            // A streak or upset bonus is the headline of a promotion when there
+            // was one: it is the thing the player did, not a rule about the rung.
+            _footnote.text = up && !string.IsNullOrEmpty(change.Note)
+                ? change.Note + "\n" + FootnoteFor(change.ToRank, up)
+                : FootnoteFor(change.ToRank, up);
 
             Root.style.display = DisplayStyle.Flex;
             Root.FadeIn();

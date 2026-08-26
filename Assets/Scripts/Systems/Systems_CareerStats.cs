@@ -23,6 +23,56 @@ namespace PoSumo
         private const float ELO_START = 1000f;
         private const float ELO_K = 24f;
 
+        /// Rating gap above which beating a stronger fighter counts as an UPSET.
+        private const float UPSET_GAP = 40f;
+        /// Extra rating TRANSFERRED loser -> winner on an upset. A transfer, not a
+        /// grant: the banzuke thresholds are tuned for a zero-sum pool pinned at
+        /// 1000 (see Systems_CareerLadder), so every bonus here moves points
+        /// between the two fighters and never mints any.
+        private const float UPSET_BONUS = 8f;
+        /// Streak bonus per consecutive win from the third onward, transferred the
+        /// same way, capped at STREAK_BONUS_MAX so a long run cannot snowball.
+        private const float STREAK_BONUS = 4f;
+        private const float STREAK_BONUS_MAX = 12f;
+        private const int STREAK_FROM = 3;
+
+        /// What the last decided match earned beyond plain Elo. Read by
+        /// Systems_CareerRecorder immediately after RecordMatch, on the same frame;
+        /// not persisted and not consume-once.
+        public readonly struct MatchBonus
+        {
+            public readonly bool Upset;
+            public readonly int Streak;
+            public readonly float BonusElo;
+
+            public MatchBonus(bool upset, int streak, float bonusElo)
+            {
+                Upset = upset;
+                Streak = streak;
+                BonusElo = bonusElo;
+            }
+
+            /// "UPSET +8 · 3-WIN STREAK +4", or empty when nothing extra happened.
+            public string Describe()
+            {
+                if (BonusElo <= 0f) return string.Empty;
+                var sb = new System.Text.StringBuilder(48);
+                if (Upset) sb.Append("UPSET +").Append(Mathf.RoundToInt(UPSET_BONUS));
+                if (Streak >= STREAK_FROM)
+                {
+                    if (sb.Length > 0) sb.Append(" · ");
+                    sb.Append(Streak).Append("-WIN STREAK +")
+                      .Append(Mathf.RoundToInt(StreakBonusFor(Streak)));
+                }
+                return sb.ToString();
+            }
+        }
+
+        public static MatchBonus LastBonus { get; private set; }
+
+        private static float StreakBonusFor(int streak) =>
+            streak < STREAK_FROM ? 0f : Mathf.Min(STREAK_BONUS_MAX, STREAK_BONUS * (streak - STREAK_FROM + 1));
+
         [Serializable]
         public sealed class Record
         {
@@ -33,6 +83,9 @@ namespace PoSumo
             public int roundLosses;
             public int titles;              // tournaments won
             public float elo = ELO_START;
+            public int winStreak;           // consecutive decided-match wins, 0 after a loss
+            public int bestStreak;
+            public int upsets;              // wins over a higher-rated opponent (see UPSET_GAP)
             /// Flattened head-to-head: opponent names and wins against each, kept
             /// as parallel lists because Unity's JsonUtility cannot serialize a
             /// Dictionary.
@@ -163,9 +216,27 @@ namespace PoSumo
 
             // Standard Elo. K is deliberately low-ish (24): these are deterministic
             // policies, so ratings should settle rather than swing on one bout.
+            // Upset is judged on the ratings BEFORE this match moves them.
+            bool upset = l.elo - w.elo >= UPSET_GAP;
+
             float expectedW = 1f / (1f + Mathf.Pow(10f, (l.elo - w.elo) / 400f));
             w.elo += ELO_K * (1f - expectedW);
             l.elo -= ELO_K * (1f - expectedW);
+
+            // Streak + upset bonuses (2026-08-26). Both are TRANSFERS so the pool
+            // stays zero-sum — see the constants. A loss ends the loser's streak.
+            w.winStreak++;
+            w.bestStreak = Mathf.Max(w.bestStreak, w.winStreak);
+            l.winStreak = 0;
+            float bonus = StreakBonusFor(w.winStreak);
+            if (upset)
+            {
+                w.upsets++;
+                bonus += UPSET_BONUS;
+            }
+            w.elo += bonus;
+            l.elo -= bonus;
+            LastBonus = new MatchBonus(upset, w.winStreak, bonus);
 
             _data.matchesPlayed++;
             Save();

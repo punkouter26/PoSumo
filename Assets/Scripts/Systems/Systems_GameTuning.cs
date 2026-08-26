@@ -50,6 +50,8 @@ namespace PoSumo
 
         [Tooltip("Half-width the ring closes to by the time the round clock expires. Reached by a linear contraction from ringHalfWidth starting at shrinkStartSeconds.\n\n1.8 m leaves a mat about two body-widths across at the bell: tight enough that a grapple in the middle runs out of floor, wide enough that it is still wrestling rather than a coin toss. Set equal to ringHalfWidth to disable the contraction while keeping the timer.")]
         public float shrinkToHalfWidth = 1.8f;
+        [Tooltip("Seconds the contraction takes from ringHalfWidth to shrinkToHalfWidth. It used to be implied by roundTimeoutSeconds - shrinkStartSeconds (20 - 8 = 12); it has its own number now because the clock can be OFF. The mat does not stop at shrinkToHalfWidth — it keeps closing at the same rate to zero, so a round with no clock still ends: at the defaults the floor is gone ~33 s in.")]
+        public float shrinkSeconds = 12f;
         [Tooltip("Play the ceremonial walk-in at the start of each match. Lives here because the arena scenes each serialize their own copy of the flag, and SCN_SUMO had it switched OFF — so the ceremony was silently never running no matter what the code default said.")]
         public bool enableWalkIn = true;
         [Tooltip("Platform half-width during the ceremonial walk-in. The mat contracts to ringHalfWidth before the bell.")]
@@ -84,7 +86,8 @@ namespace PoSumo
         public int pointsToWin = 3;
         [Tooltip("Round wins needed to take a tournament bracket. 2 = best of three. Single source for both modes so they cannot drift apart.")]
         public int tournamentPointsToWin = 2;
-        public float roundTimeoutSeconds = 30f;
+        [Tooltip("Round clock. 0 = NO CLOCK: no timeout decision, no draw, the clock label stays blank, and the shrinking mat (see shrinkSeconds) is what ends a stalemate — every round finishes on a ring-out. Set to 0 on 2026-08-26; a bracket had just gone 3 timeout decisions in 8 rounds.")]
+        public float roundTimeoutSeconds = 0f;
         public float betweenRoundsPause = 2.5f;
         public float graceSeconds = 0.4f;
         [Tooltip("Non-foot ground contact must persist this long to count as a throw-down.")]
@@ -95,6 +98,10 @@ namespace PoSumo
         public bool gibLosesRound = true;
         [Tooltip("Must stay false and match Systems_SumoMatchManager. Falling is not a loss in either referee — if you change it, change it in BOTH or trained brains face a rule they never saw.")]
         public bool knockdownLoses = false;
+        [Tooltip("The round is lost the instant a fighter's HEAD touches the mat (2026-08-26). Read through Sensor_HeadContact on the head hitbox, so a shoulder or knee on the clay does not count — that stays governed by knockdownLoses/downOutSeconds. In BOTH referees: Systems_SumoMatchManager carries its own copy (headTouchLoses) and must stay equal. Every brain shipped before this date trained without it.")]
+        public bool headTouchLoses = false;
+        [Tooltip("THE RING-OUT RULE (2026-08-26). ON: a fighter is out only when their HEAD lands on the arena floor below the dohyo (Systems_SumoArena.FloorCollider, via Sensor_HeadContact). Feet over the edge no longer end the round — they still cut the motors so the fall plays out (see GoLimp) — and the torso backstop moves to 2 m below the floor. OFF: the old rule, a foot below footOffMatY.\n\nBoth referees carry this; Systems_SumoMatchManager.ringOutOnHeadFloor must stay equal. Strictly the head: a fighter who lands on the floor on their feet or back is NOT out, which was chosen knowingly.")]
+        public bool ringOutOnHeadFloor = true;
         [Tooltip("Head knockouts one fighter can suffer before losing the whole match on the spot — boxing's three-knockdown rule. 0 disables it. GAME-ONLY: Systems_SumoMatchManager has no equivalent, so the brains never train against it; it is a spectacle rule layered on top of the sumo rules, not one of them.")]
         public int knockoutsToLoseMatch = 3;
         [Tooltip("Realtime seconds between the deciding knockout and the result card. Must outlast Systems_MatchPresentation.koSlowMoRealSeconds or the card cuts off the slow-motion replay of the hit that ended it.")]

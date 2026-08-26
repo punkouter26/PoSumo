@@ -48,7 +48,10 @@ namespace PoSumo
 
         [Header("Crowd")]
         [Range(0f, 1f)] public float murmurBase = 0.13f;
-        [Range(0f, 1f)] public float murmurPeak = 0.34f;
+        [Tooltip("Bed volume at full excitement. Raised 0.34 -> 0.6 on 2026-08-26 when the on-screen 'CROWD ROARING FOR' meter was removed: the crowd's backing is now something you HEAR, not read.")]
+        [Range(0f, 1f)] public float murmurPeak = 0.6f;
+        [Tooltip("How much full crowd support (Systems_CrowdMomentum.Support01) counts toward excitement. 1 = a fully backed underdog is as loud as a fighter on the rim.")]
+        [Range(0f, 1f)] public float supportExcitement = 0.9f;
         [Tooltip("Fraction of the ring half-width past which a fighter counts as being walked to the edge.")]
         [Range(0.5f, 1f)] public float edgeFraction = 0.72f;
 
@@ -92,6 +95,9 @@ namespace PoSumo
         private float _murmurPitch = 1f;
         private float _tension;
         private float _anticipation;
+        private Systems_CrowdMomentum _momentum;
+        private bool _momentumLookedUp;
+        private bool _roarFired;
         private float _duckUntil;
         private float _duckAmount;
         private readonly Dictionary<Agent_BipedBody, float> _nextScuffTime = new Dictionary<Agent_BipedBody, float>();
@@ -274,6 +280,41 @@ namespace PoSumo
             // next one.
             PlayCrowd(_applause, 0.5f, 1f);
             _anticipation = 1f;
+
+            // Ring-out streak chant (2026-08-26): consecutive ring-outs by the
+            // same fighter in one match and the crowd takes up a chant — three
+            // cheer beats on a timer, on top of the applause. Any other outcome, or
+            // the other fighter scoring, breaks the run.
+            bool ringOut = winner != null && _manager != null
+                && _manager.LastOutcome == Systems_GameMatchManager.RoundOutcome.RingOut;
+            if (ringOut && winner == _streakFighter) _streakCount++;
+            else { _streakFighter = ringOut ? winner : null; _streakCount = ringOut ? 1 : 0; }
+            if (_streakCount >= CHANT_STREAK)
+            {
+                _chantBeatsLeft = CHANT_BEATS;
+                _nextChantTime = Time.unscaledTime + 0.6f;   // let the applause land first
+                Systems_Log.Info($"[CROWD] chant for {winner.behaviorName} — {_streakCount} ring-outs running");
+            }
+        }
+
+        // 2, not 3: a bracket bout is first-to-2, so a three-round run could never
+        // happen there. Two ring-outs running IS the clinch, and that is the moment.
+        private const int CHANT_STREAK = 2;
+        private const int CHANT_BEATS = 3;
+        private const float CHANT_BEAT_SECONDS = 0.45f;
+        private Agent_Biped _streakFighter;
+        private int _streakCount;
+        private int _chantBeatsLeft;
+        private float _nextChantTime;
+
+        /// One cheer per beat, on the unscaled clock — no coroutine, per the rules.
+        private void TickChant()
+        {
+            if (_chantBeatsLeft <= 0 || Time.unscaledTime < _nextChantTime) return;
+            _chantBeatsLeft--;
+            _nextChantTime = Time.unscaledTime + CHANT_BEAT_SECONDS;
+            PlayCrowd(_cheer, 0.9f, 1.04f);
+            if (_chantBeatsLeft == 0) PlayCrowd(_applause, 0.6f, 1f);
         }
 
         private void OnMatchEnded(Agent_Biped winner)
@@ -289,6 +330,9 @@ namespace PoSumo
         {
             _anticipation = 0f;
             _tension = 0f;
+            _streakFighter = null;
+            _streakCount = 0;
+            _chantBeatsLeft = 0;
             PlayCrowd(_applause, 0.4f, 1.05f);
         }
 
@@ -465,7 +509,22 @@ namespace PoSumo
             _anticipation = Mathf.Max(0f, _anticipation - dt * 0.5f);
 
             float edge = EdgeTension();
-            float excitement = Mathf.Clamp01(Mathf.Max(_tension, edge));
+            float support = CrowdSupport();
+            float excitement = Mathf.Clamp01(Mathf.Max(_tension, edge, support * supportExcitement));
+
+            // The crowd hitting full support used to print "CROWD ROARING FOR X"
+            // in the dock. It is now a roar: one cheer as support peaks, re-armed
+            // once it drops back, so a see-saw bout gets one per swing rather than
+            // a cheer every frame it sits at 1.
+            if (support >= 0.99f && !_roarFired)
+            {
+                _roarFired = true;
+                PlayCrowd(_cheer, 0.85f, Random.Range(0.97f, 1.03f));
+            }
+            else if (support < 0.6f)
+            {
+                _roarFired = false;
+            }
 
             if (_murmurSource != null && _murmurSource.clip != null)
             {
@@ -487,6 +546,19 @@ namespace PoSumo
                 _nextOohTime = Time.unscaledTime + 2.6f;
                 PlayCrowd(_ooh, Mathf.Lerp(0.3f, 0.7f, edge), Random.Range(0.95f, 1.05f));
             }
+        }
+
+        /// `Systems_CrowdMomentum.Support01`, or 0 when that companion is off.
+        /// Looked up once and late: both are spawned in the same Start and the
+        /// order is undefined, so an Awake-time lookup would find nothing.
+        private float CrowdSupport()
+        {
+            if (!_momentumLookedUp)
+            {
+                _momentumLookedUp = true;
+                _momentum = FindAnyObjectByType<Systems_CrowdMomentum>();
+            }
+            return _momentum != null ? _momentum.Support01 : 0f;
         }
 
         /// 0 when both fighters are mid-ring, approaching 1 as either nears the
@@ -516,6 +588,7 @@ namespace PoSumo
         {
             UpdateVoices();
             UpdateCrowd();
+            TickChant();
             UpdateFilters();
         }
 

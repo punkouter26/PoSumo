@@ -41,6 +41,10 @@ namespace PoSumo
         public float roundTimeoutSeconds = 20f;
         [Tooltip("Legacy rule: any non-foot ground contact loses. Off for game parity.")]
         public bool knockdownLoses = false;
+        [Tooltip("Head on the mat loses the round instantly. Must match GameTuning.headTouchLoses (true since 2026-08-26). Read from Sensor_HeadContact on the head hitbox only — a shoulder or knee does not count.")]
+        public bool headTouchLoses = false;
+        [Tooltip("Ring-out = the HEAD lands on the arena floor below the dohyo. Must match GameTuning.ringOutOnHeadFloor (true since 2026-08-26). OFF restores the foot-below-footOffMatY rule. Strictly the head; the torso backstop moves 2 m under the floor.")]
+        public bool ringOutOnHeadFloor = true;
         public float fallY = -0.2f;
         [Tooltip("Game parity: a foot dropping below this height loses the bout (stepping out). Must match Systems_GameMatchManager.footOffMatY.")]
         public float footOffMatY = -0.06f;
@@ -96,6 +100,8 @@ namespace PoSumo
         public float shrinkStartSeconds = 8f;
         [Tooltip("Half-width the mat closes to by the bell, at the default ring size. Must match GameTuning.shrinkToHalfWidth.\n\nScaled by the round's randomized start width, so a domain-randomized small ring shrinks by the same PROPORTION rather than to the same absolute number — which would mean no shrink at all on an already-narrow round.")]
         public float shrinkToHalfWidth = 1.8f;
+        [Tooltip("Seconds the contraction takes to reach shrinkToHalfWidth. Must match GameTuning.shrinkSeconds. The mat keeps closing past that point at the same rate, exactly as in the game, so with the training scenes' 20 s timeout (8 + 12) nothing changes for an existing scene; a scene that raises the timeout gets a mat that closes to zero.")]
+        public float shrinkSeconds = 12f;
 
         private float _elapsed;
         private float _downA, _downB;
@@ -148,6 +154,11 @@ namespace PoSumo
             wrestlerB.arenaCenterX = transform.position.x;
             _bodyA = wrestlerA.GetComponent<Agent_BipedBody>();
             _bodyB = wrestlerB.GetComponent<Agent_BipedBody>();
+            if (arena != null)
+            {
+                wrestlerA.BindArenaFloor(arena.FloorCollider);
+                wrestlerB.BindArenaFloor(arena.FloorCollider);
+            }
             _startHalf = ringHalfWidth;
             ResetRound();
         }
@@ -226,15 +237,15 @@ namespace PoSumo
         {
             if (arena == null || shrinkStartSeconds <= 0f) return;
 
-            float span = roundTimeoutSeconds - shrinkStartSeconds;
             float target = _startHalf;
-            if (span > 0f && _elapsed > shrinkStartSeconds)
+            if (shrinkSeconds > 0f && _elapsed > shrinkStartSeconds)
             {
                 float endHalf = ringHalfWidth > 0f
                     ? shrinkToHalfWidth * (_startHalf / ringHalfWidth)
                     : shrinkToHalfWidth;
-                float progress = Mathf.Clamp01((_elapsed - shrinkStartSeconds) / span);
-                target = Mathf.Lerp(_startHalf, endHalf, progress);
+                // Unclamped, floored at zero — mirrors the game referee.
+                float progress = (_elapsed - shrinkStartSeconds) / shrinkSeconds;
+                target = Mathf.Max(0f, Mathf.LerpUnclamped(_startHalf, endHalf, progress));
             }
 
             // 1 cm of hysteresis: below that the contraction is invisible and only
@@ -254,15 +265,30 @@ namespace PoSumo
             // mat surface has gone over the edge. Training previously used only
             // the torso test, so policies never learned that a stray foot is
             // fatal — the rules had silently diverged.
-            Agent_BipedBody body = w == wrestlerA ? _bodyA : _bodyB;
-            if (body != null)
+            if (ringOutOnHeadFloor)
             {
-                float limit = transform.position.y + footOffMatY;
-                if (body.FootNear != null && body.FootNear.position.y < limit) return true;
-                if (body.FootFar != null && body.FootFar.position.y < limit) return true;
+                // Mirrors Systems_GameMatchManager: head on the floor below, with a
+                // torso backstop 2 m under that floor. fallY would trip on a body
+                // merely lying on the floor, so it is not used in this mode.
+                if (w.HeadOnFloor) return true;
+                float floorTop = arena != null && arena.FloorCollider != null
+                    ? arena.FloorCollider.bounds.max.y
+                    : transform.position.y - 1f;
+                if (w.Torso.position.y < floorTop - 2f) return true;
             }
-            if (w.Torso.position.y < fallY) return true;   // backstop: thrown clear
+            else
+            {
+                Agent_BipedBody body = w == wrestlerA ? _bodyA : _bodyB;
+                if (body != null)
+                {
+                    float limit = transform.position.y + footOffMatY;
+                    if (body.FootNear != null && body.FootNear.position.y < limit) return true;
+                    if (body.FootFar != null && body.FootFar.position.y < limit) return true;
+                }
+                if (w.Torso.position.y < fallY) return true;   // backstop: thrown clear
+            }
             if (knockdownLoses && w.IsDown) return true;   // legacy instant-loss rule
+            if (headTouchLoses && w.HeadDown) return true; // head on the mat — mirrors the game
             return false;
         }
 

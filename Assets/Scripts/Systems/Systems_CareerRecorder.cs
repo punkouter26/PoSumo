@@ -37,14 +37,18 @@ namespace PoSumo
             /// out of its list — by the time the bracket shows the ceremony the
             /// "before" state no longer exists anywhere to be read back.
             public readonly string FromRank;
+            /// What the deciding match earned beyond plain Elo — "UPSET +8 ·
+            /// 3-WIN STREAK +4" — or empty. Shown by the ceremony and the news line.
+            public readonly string Note;
 
             public RankChange(string fighter, string toRank, bool promoted,
-                              string fromRank = null)
+                              string fromRank = null, string note = null)
             {
                 Fighter = fighter;
                 ToRank = toRank;
                 Promoted = promoted;
                 FromRank = fromRank;
+                Note = note ?? string.Empty;
             }
         }
 
@@ -140,6 +144,11 @@ namespace PoSumo
             int loserRankBefore = Systems_CareerLadder.IndexFor(Systems_CareerStats.Get(loserName));
 
             Systems_CareerStats.RecordMatch(winnerName, loserName);
+            string bonusNote = Systems_CareerStats.LastBonus.Describe();
+            if (bonusNote.Length > 0)
+            {
+                Systems_Log.Info($"[CAREER] {winnerName} {bonusNote}");
+            }
 
             // The final of a bracket also awards a title. Decided here rather than
             // in the reporter because an exhibition match must never award one.
@@ -152,7 +161,7 @@ namespace PoSumo
             // as rating — winning the final is exactly the moment a fighter can clear
             // the Ozeki or Yokozuna gate, and sampling before it would miss the one
             // promotion the player most wants to be told about.
-            CaptureRankChange(winnerName, winnerRankBefore, loserName, loserRankBefore);
+            CaptureRankChange(winnerName, winnerRankBefore, loserName, loserRankBefore, bonusNote);
         }
 
         /// Records at most one change, preferring the promotion.
@@ -162,7 +171,8 @@ namespace PoSumo
         /// line on the bracket, and "X PROMOTED TO OZEKI" is the news — the other
         /// fighter sliding a rung is the same event told from the losing side.
         private static void CaptureRankChange(string winnerName, int winnerRankBefore,
-                                              string loserName, int loserRankBefore)
+                                              string loserName, int loserRankBefore,
+                                              string bonusNote)
         {
             int winnerRankAfter = Systems_CareerLadder.IndexFor(Systems_CareerStats.Get(winnerName));
             // The UNRANKED guard is on BOTH branches, not just the demotion one.
@@ -175,7 +185,8 @@ namespace PoSumo
                 _pending = new RankChange(winnerName,
                                           Systems_CareerLadder.RungAt(winnerRankAfter).Name,
                                           promoted: true,
-                                          fromRank: RungName(winnerRankBefore));
+                                          fromRank: RungName(winnerRankBefore),
+                                          note: bonusNote);
                 _hasPending = true;
                 return;
             }

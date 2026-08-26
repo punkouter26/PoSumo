@@ -1,11 +1,15 @@
 using System.Text;
+using Unity.Profiling;
 using UnityEngine;
 using UnityEngine.UIElements;
 
 namespace PoSumo
 {
-    /// Real-time diagnostic overlay: frame time, FPS, GC pressure, physics cost,
-    /// draw-call proxy and per-fighter stamina.
+    /// Real-time diagnostic overlay: frame time, FPS, GC pressure, render counters
+    /// (draw calls, batches, SetPass, triangles, vertices), screen mode, physics
+    /// cost and per-fighter stamina. HIDDEN by default; the DBG button in the
+    /// lower-left of the stage shows and hides it, and the choice persists across
+    /// the bouts of a bracket.
     ///
     /// `Systems_Telemetry` already computes most of this and publishes it twice — as
     /// JSON on `http://127.0.0.1:<port>/metrics` and into ML-Agents' `StatsRecorder`
@@ -48,7 +52,23 @@ namespace PoSumo
         private Agent_BipedBody _bodyA, _bodyB;
 
         private VisualElement _panel;
-        private Label _frame, _memory, _sim, _fighters;
+        private Button _toggle;
+        private Label _frame, _memory, _render, _screen, _sim, _fighters;
+
+        // Render statistics straight from the profiler counters. These are live in
+        // the Editor and in Development builds — the only places this component is
+        // spawned (see the developmentBuild gate in Systems_GameMatchManager).
+        private ProfilerRecorder _drawCalls, _batches, _triangles, _vertices, _setPass;
+
+        /// Whether the readout is showing. STATIC so the choice survives the scene
+        /// load between bracket bouts (this component is spawned fresh per match);
+        /// cleared on SubsystemRegistration like every static here, because domain
+        /// reload is off. Hidden by default — the DBG button in the lower-left of
+        /// the stage shows it (2026-08-26; it used to be always on).
+        private static bool s_visible;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStatic() { s_visible = false; }
 
         private readonly StringBuilder _sb = new StringBuilder(160);
 
@@ -86,7 +106,44 @@ namespace PoSumo
                     _bodyB = _manager.wrestlerB.GetComponent<Agent_BipedBody>();
             }
             _lastGcBytes = System.GC.GetTotalMemory(false);
+            // Counter names measured on 6000.5.6f1 via ProfilerRecorderHandle.GetAvailable:
+            // there is no plain "Draw Calls Count" / "Batches Count" in the Render
+            // category, only the per-path ones below.
+            _drawCalls = ProfilerRecorder.StartNew(ProfilerCategory.Render, "Standard Draw Calls Count");
+            _batches = ProfilerRecorder.StartNew(ProfilerCategory.Render, "SRP Batcher Draw Calls Count");
+            _triangles = ProfilerRecorder.StartNew(ProfilerCategory.Render, "Triangles Count");
+            _vertices = ProfilerRecorder.StartNew(ProfilerCategory.Render, "Vertices Count");
+            _setPass = ProfilerRecorder.StartNew(ProfilerCategory.Render, "SetPass Calls Count");
             BuildUi();
+        }
+
+        private void OnDestroy()
+        {
+            _drawCalls.Dispose();
+            _batches.Dispose();
+            _triangles.Dispose();
+            _vertices.Dispose();
+            _setPass.Dispose();
+        }
+
+        /// Show/hide the readout. Bound to the DBG button; public so a test or the
+        /// MCP bridge can flip it without simulating a tap.
+        public void Toggle()
+        {
+            s_visible = !s_visible;
+            ApplyVisibility();
+        }
+
+        private void ApplyVisibility()
+        {
+            if (_panel != null)
+            {
+                _panel.style.display = s_visible ? DisplayStyle.Flex : DisplayStyle.None;
+            }
+            if (_toggle != null)
+            {
+                _toggle.style.color = s_visible ? Systems_UiKit.Gold : Systems_UiKit.TextLow;
+            }
         }
 
         private void BuildUi()
@@ -122,15 +179,33 @@ namespace PoSumo
 
             _frame = Line();
             _memory = Line();
+            _render = Line();
+            _screen = Line();
             _sim = Line();
             _fighters = Line();
 
             _panel.Add(_frame);
             _panel.Add(_memory);
+            _panel.Add(_render);
+            _panel.Add(_screen);
             _panel.Add(_sim);
             _panel.Add(_fighters);
 
             hud.Stage.Add(_panel);
+
+            // The DBG toggle: lower-left of the stage, just above the dock. The
+            // stage itself is NoPick, which excludes only the stage element — a
+            // child button still receives its own taps.
+            _toggle = Systems_UiKit.ChipButton("DBG", Toggle, Systems_UiKit.TOUCH_MIN);
+            _toggle.name = "DebugToggle";
+            _toggle.style.position = Position.Absolute;
+            _toggle.style.left = Systems_UiKit.SPACE_2;
+            _toggle.style.bottom = Systems_UiKit.SPACE_2;
+            _toggle.style.fontSize = Systems_UiKit.FONT_MICRO;
+            _toggle.style.opacity = 0.85f;
+            hud.Stage.Add(_toggle);
+
+            ApplyVisibility();
         }
 
         private Label Line()
@@ -152,7 +227,9 @@ namespace PoSumo
             if (Time.unscaledTime < _nextSample) return;
             _nextSample = Time.unscaledTime + SAMPLE_INTERVAL;
 
-            Refresh();
+            // Hidden = no formatting at all; the accumulators above still run so
+            // the first visible sample after a toggle is honest.
+            if (s_visible) Refresh();
 
             _framesSinceSample = 0;
             _timeSinceSample = 0f;
@@ -226,6 +303,28 @@ namespace PoSumo
                 ? Systems_UiKit.Warn
                 : Systems_UiKit.TextMid;
 
+            // Render counters. LastValue is the previous frame's total; -1 when the
+            // counter is unavailable (a non-development player), printed as "--".
+            _sb.Clear();
+            _sb.Append("draw ");
+            AppendCount(_drawCalls);
+            _sb.Append(" srp ");
+            AppendCount(_batches);
+            _sb.Append(" setpass ");
+            AppendCount(_setPass);
+            _sb.Append("\ntris ");
+            AppendCount(_triangles);
+            _sb.Append(" verts ");
+            AppendCount(_vertices);
+            _render.text = _sb.ToString();
+
+            _sb.Clear();
+            _sb.Append("screen ").Append(Screen.width).Append('x').Append(Screen.height)
+               .Append(" @").Append(Screen.currentResolution.refreshRateRatio.value.ToString("F0")).Append("Hz")
+               .Append(" vsync ").Append(QualitySettings.vSyncCount)
+               .Append(" target ").Append(Application.targetFrameRate);
+            _screen.text = _sb.ToString();
+
             _sb.Clear();
             _sb.Append("phys ").Append((Time.fixedDeltaTime * 1000f).ToString("F0")).Append("ms x")
                .Append(Time.timeScale.ToString("F1"));
@@ -241,6 +340,30 @@ namespace PoSumo
             _sb.Append('/');
             AppendStamina(_bodyB);
             _fighters.text = _sb.ToString();
+        }
+
+        /// Thousands separator by hand: `ToString("N0")` allocates a culture lookup
+        /// per call and this runs four times a second for five counters.
+        private void AppendCount(ProfilerRecorder recorder)
+        {
+            if (!recorder.Valid)
+            {
+                _sb.Append("--");
+                return;
+            }
+            long value = recorder.LastValue;
+            if (value >= 1000000L)
+            {
+                _sb.Append((value / 1000000f).ToString("F1")).Append('M');
+            }
+            else if (value >= 10000L)
+            {
+                _sb.Append((value / 1000f).ToString("F1")).Append('k');
+            }
+            else
+            {
+                _sb.Append(value);
+            }
         }
 
         /// Stamina is 1 fresh down to 0 spent, averaged over the 13 POWERED joints.

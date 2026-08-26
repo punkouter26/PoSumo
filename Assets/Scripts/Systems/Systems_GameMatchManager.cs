@@ -46,6 +46,10 @@ namespace PoSumo
         // have silently given the game a losing condition no brain was trained
         // against. That divergence has bitten this project before.
         public bool knockdownLoses = false;
+        // Head on the mat loses on the spot. MUST match Systems_SumoMatchManager.headTouchLoses.
+        public bool headTouchLoses = false;
+        // Ring-out = head on the arena floor. MUST match Systems_SumoMatchManager.ringOutOnHeadFloor.
+        public bool ringOutOnHeadFloor = true;
         [Tooltip("Head knockouts one fighter can suffer before losing the match outright — boxing's three-knockdown rule. 0 disables it. Copied from GameTuning in Start.")]
         public int knockoutsToLoseMatch = 3;
         [Tooltip("Realtime seconds from the deciding knockout to the result card, so the KO slow-motion plays out first. Copied from GameTuning in Start.")]
@@ -61,6 +65,7 @@ namespace PoSumo
         /// Shrinking ring. Defaults mirror Systems_GameTuning; the ASSET wins.
         public float shrinkStartSeconds = 8f;
         public float shrinkToHalfWidth = 1.8f;
+        public float shrinkSeconds = 12f;
         /// Half-width the mat is currently at, so the contraction is only pushed to
         /// the arena when it actually changes — SetPlatformHalfWidth rebuilds
         /// collider and sprite scales, and calling it every physics step with an
@@ -345,7 +350,7 @@ namespace PoSumo
                 // rather than by the tournament reporter: Start order between
                 // components is undefined, and this Start was overwriting the
                 // reporter's value, silently running brackets as best-of-5.
-                pointsToWin = Systems_TournamentState.Active
+                pointsToWin = Systems_TournamentState.Active || Systems_BotLadderState.Active
                     ? tuning.tournamentPointsToWin
                     : tuning.pointsToWin;
                 roundTimeoutSeconds = tuning.roundTimeoutSeconds;
@@ -355,9 +360,12 @@ namespace PoSumo
                 downOutSeconds = tuning.downOutSeconds;
                 gibLosesRound = tuning.gibLosesRound;
                 knockdownLoses = tuning.knockdownLoses;
+                headTouchLoses = tuning.headTouchLoses;
+                ringOutOnHeadFloor = tuning.ringOutOnHeadFloor;
                 knockoutsToLoseMatch = tuning.knockoutsToLoseMatch;
                 shrinkStartSeconds = tuning.shrinkStartSeconds;
                 shrinkToHalfWidth = tuning.shrinkToHalfWidth;
+                shrinkSeconds = tuning.shrinkSeconds;
                 knockoutAnnounceSeconds = tuning.knockoutAnnounceSeconds;
                 ringHalfWidth = tuning.ringHalfWidth;
                 neutralGapHalf = tuning.neutralGapHalf;
@@ -407,6 +415,13 @@ namespace PoSumo
             // Baked scenes ship a 5.5 m-wide platform, so without this the
             // physical edge would ignore ringHalfWidth entirely.
             _arena = FindAnyObjectByType<Systems_SumoArena>();
+            if (_arena != null)
+            {
+                // The head sensor needs to know which static collider is the FLOOR
+                // (ringOutOnHeadFloor); every other static contact is "the mat".
+                wrestlerA.BindArenaFloor(_arena.FloorCollider);
+                wrestlerB.BindArenaFloor(_arena.FloorCollider);
+            }
             if (_arena != null && tuning != null)
             {
                 // Arena physics is tuned centrally, like everything else that the
@@ -768,20 +783,13 @@ namespace PoSumo
             _gibbedA = _gibbedB = false;
             _countdownLeft = 0f;   // contact IS the start; no freeze, no reposition
             BeginSimulation();
-            FlashFight();
             RoundStarted?.Invoke();
         }
 
-        /// "FIGHT!" without the preceding count — the fighters have already engaged,
-        /// so the banner marks the handoff rather than counting down to it.
-        private void FlashFight()
-        {
-            if (_hud == null || _countdown == null) return;
-            _countdown.style.fontSize = Systems_UiKit.FONT_HERO;
-            _countdown.text = "FIGHT!";
-            _hud.ShowCentre(_countdown);
-            _countdown.schedule.Execute(HideCountdown).StartingIn(600);
-        }
+        // There is deliberately NO "FIGHT!" banner any more (removed 2026-08-26).
+        // The count ends, the fighters close, and the bout is on — nothing is
+        // painted over the moment they meet. Same for the old "HAKKEYOI!" at the
+        // end of the ceremony count: the countdown digit simply hides.
 
         /// Puts the mat back to the full fighting ring, whatever width it is
         /// currently at, and resyncs the tawara and the shrink bookkeeping.
@@ -1258,11 +1266,8 @@ namespace PoSumo
             _countdownLeft -= Time.fixedDeltaTime;
             if (_countdownLeft <= 0f)
             {
-                // A word needs a smaller size than a single digit does: "FIGHT!"
-                // at the digit's 112pt runs past the edge of a 720pt-wide panel.
-                _countdown.style.fontSize = Systems_UiKit.FONT_HERO;
-                _countdown.text = "FIGHT!";
-                _countdown.schedule.Execute(HideCountdown).StartingIn(600);
+                // No "FIGHT!" — the digit goes away and the round is simply live.
+                HideCountdown();
                 return;
             }
 
@@ -1278,15 +1283,22 @@ namespace PoSumo
             // and it fires ~1s after the last digit, well clear of this animation.
             _countdown.PopFontSize(Systems_UiKit.FONT_MEGA + 28, Systems_UiKit.FONT_MEGA, 260);
 
-            if (digit == 1) return; // let the last punch-in expire — wide for the engage
-            var fighter = ((countdownSeconds - digit) & 1) == 0 ? wrestlerA : wrestlerB;
-            PunchOnHead(fighter);
-        }
-
-        private void PunchOnHead(Agent_Biped fighter)
-        {
-            if (_camFollow == null || fighter == null) return;
-            _camFollow.PunchIn(Systems_CameraFollow.FocusPoint(fighter), countdownHeadOrtho, CAMERA_BEAT_SECONDS);
+            // Same camera grammar as the ceremony count, for the same reason.
+            // StartCountdown opens on the establishing shot (ortho 9.5), so the
+            // head beats have to cross most of the range in one second — at the
+            // default follow smoothing they never arrived, and on the last digit
+            // "letting the punch expire" caught the camera mid-blend at an ortho
+            // too narrow for the +/-2.5 m stand-off: MEASURED at 1080x1920, both
+            // fighters half off the screen edges under the "1". An explicit wide
+            // shot on the final digit is what the intro does and what reads.
+            if (_camFollow == null) return;
+            if (digit == 1)
+            {
+                _camFollow.PullBackWide(CAMERA_BEAT_SECONDS, CEREMONY_BLEND);
+                return;
+            }
+            _camFollow.ClearShots();
+            PunchOnFace(((countdownSeconds - digit) & 1) == 0 ? wrestlerA : wrestlerB);
         }
 
         /// The ceremony version of PunchOnHead: same head, but the shot has to
@@ -1321,7 +1333,7 @@ namespace PoSumo
             _countdownLeft -= Time.fixedDeltaTime;
             if (_countdownLeft <= 0f)
             {
-                FlashHakkeyoi();
+                HideCountdown();
                 _phase = Phase.WalkIn;
                 BeginWalkInPhase();
                 return;
@@ -1379,22 +1391,6 @@ namespace PoSumo
             PunchOnFace((beat / 2) % 2 == 0 ? wrestlerA : wrestlerB);
         }
 
-        /// "HAKKEYOI!" — the gyoji's call to begin, shown when the ceremony count
-        /// hits zero and the fighters are released to walk. The fight itself has
-        /// not started yet, so this is deliberately NOT "FIGHT!": that banner still
-        /// belongs to the moment they meet and the fight brains take the bodies
-        /// (see FlashFight), which is several seconds later.
-        private void FlashHakkeyoi()
-        {
-            if (_hud == null || _countdown == null) return;
-            // Same size as "FIGHT!" and for the same reason — a word at the digit's
-            // 112pt runs past the edge of a 720pt-wide panel.
-            _countdown.style.fontSize = Systems_UiKit.FONT_HERO;
-            _countdown.text = "HAKKEYOI!";
-            _hud.ShowCentre(_countdown);
-            _countdown.schedule.Execute(HideCountdown).StartingIn(900);
-        }
-
         private void HideCountdown()
         {
             _hud.HideCentre(_countdown);
@@ -1402,6 +1398,7 @@ namespace PoSumo
 
         private void UpdateClock()
         {
+            if (roundTimeoutSeconds <= 0f) return;   // no clock: the label stays blank
             int remaining = Mathf.Max(0, Mathf.CeilToInt(roundTimeoutSeconds - _elapsed));
             if (remaining != _lastShownSeconds)
             {
@@ -1619,7 +1616,6 @@ namespace PoSumo
                         // into TickCountdown on the next step.
                         _countdownLeft = 0f;
                         BeginSimulation();
-                        FlashFight();
                         RoundStarted?.Invoke();
                     }
                     return;
@@ -1653,12 +1649,17 @@ namespace PoSumo
 
             TickShrinkingRing();
 
-            // Anyone off the mat goes limp the instant it happens, so the ragdoll
-            // flop plays out before the result is announced.
-            bool aOffMat = OutOfRing(wrestlerA, _bodyA);
-            bool bOffMat = OutOfRing(wrestlerB, _bodyB);
-            if (aOffMat) GoLimp(wrestlerA);
-            if (bOffMat) GoLimp(wrestlerB);
+            // Anyone off the mat goes limp the instant a foot dips below it, so
+            // the ragdoll flop plays out before the result is announced. Under
+            // ringOutOnHeadFloor that is NOT yet the loss: the round ends when the
+            // head lands on the floor below (or, backstop, the torso falls 2 m past
+            // it — off the edge of the world, not merely off the dohyo).
+            bool aFootOff = OutOfRing(wrestlerA, _bodyA);
+            bool bFootOff = OutOfRing(wrestlerB, _bodyB);
+            if (aFootOff) GoLimp(wrestlerA);
+            if (bFootOff) GoLimp(wrestlerB);
+            bool aOffMat = ringOutOnHeadFloor ? (wrestlerA.HeadOnFloor || BelowFloor(wrestlerA)) : aFootOff;
+            bool bOffMat = ringOutOnHeadFloor ? (wrestlerB.HeadOnFloor || BelowFloor(wrestlerB)) : bFootOff;
 
             // Down-out is GAME-ONLY and deliberately diverges from
             // Systems_SumoMatchManager. Every other losing condition is mirrored
@@ -1668,8 +1669,13 @@ namespace PoSumo
             bool aDownOut = downOutSeconds > 0f && _downA >= downOutSeconds;
             bool bDownOut = downOutSeconds > 0f && _downB >= downOutSeconds;
 
-            bool aOut = aOffMat || (knockdownLoses && _downA >= downGraceSeconds) || aDownOut;
-            bool bOut = bOffMat || (knockdownLoses && _downB >= downGraceSeconds) || bDownOut;
+            // Head on the mat: instant, no grace. Reported as a Knockdown outcome
+            // (the kimarite classifier already names a fall) with its own note.
+            bool aHead = headTouchLoses && wrestlerA.HeadDown;
+            bool bHead = headTouchLoses && wrestlerB.HeadDown;
+
+            bool aOut = aOffMat || (knockdownLoses && _downA >= downGraceSeconds) || aDownOut || aHead;
+            bool bOut = bOffMat || (knockdownLoses && _downB >= downGraceSeconds) || bDownOut || bHead;
 
             // A GIB OUTRANKS EVERY OTHER LOSING CONDITION, and is checked before
             // them. A fighter taken apart has parts scattered across and off the
@@ -1704,10 +1710,15 @@ namespace PoSumo
             // are the two ends of whether this game works and were indistinguishable
             // in the log before.
             else if (aOut) EndRound(wrestlerB, OutcomeFor(aOffMat, aDownOut), null,
-                                    aDownOut ? "COULD NOT CONTINUE" : null);
+                                    aDownOut ? "COULD NOT CONTINUE" : (aHead && !aOffMat ? "HEAD ON THE MAT" : null));
             else if (bOut) EndRound(wrestlerA, OutcomeFor(bOffMat, bDownOut), null,
-                                    bDownOut ? "COULD NOT CONTINUE" : null);
-            else if (_elapsed >= roundTimeoutSeconds) DecideOnTimeout();
+                                    bDownOut ? "COULD NOT CONTINUE" : (bHead && !bOffMat ? "HEAD ON THE MAT" : null));
+            // roundTimeoutSeconds <= 0 means there is NO clock: the mat keeps
+            // closing (TickShrinkingRing runs it past shrinkToHalfWidth to zero)
+            // until somebody is stood on nothing. Every round then ends on a
+            // ring-out, which is the sport's own result — requested 2026-08-26
+            // after 3 of 8 bracket rounds were still going to a position decision.
+            else if (roundTimeoutSeconds > 0f && _elapsed >= roundTimeoutSeconds) DecideOnTimeout();
         }
 
         /// Closes the mat in as the round clock runs down, so a stalemate finishes
@@ -1727,12 +1738,17 @@ namespace PoSumo
         {
             if (_arena == null || shrinkStartSeconds <= 0f) return;
 
-            float span = roundTimeoutSeconds - shrinkStartSeconds;
+            // The contraction has its own duration (shrinkSeconds) rather than
+            // borrowing the clock's, because there may be no clock. Progress is
+            // NOT clamped at 1: past shrinkToHalfWidth the mat keeps closing at the
+            // same rate all the way to zero, so with the timeout off a round still
+            // cannot last forever — at 3.5 -> 1.8 over 12 s that is ~0.14 m/s and
+            // the floor is gone about 33 s in.
             float target = ringHalfWidth;
-            if (span > 0f && _elapsed > shrinkStartSeconds)
+            if (shrinkSeconds > 0f && _elapsed > shrinkStartSeconds)
             {
-                float progress = Mathf.Clamp01((_elapsed - shrinkStartSeconds) / span);
-                target = Mathf.Lerp(ringHalfWidth, shrinkToHalfWidth, progress);
+                float progress = (_elapsed - shrinkStartSeconds) / shrinkSeconds;
+                target = Mathf.Max(0f, Mathf.LerpUnclamped(ringHalfWidth, shrinkToHalfWidth, progress));
             }
 
             // 1 cm of hysteresis: below that the contraction is invisible and only
@@ -1823,6 +1839,18 @@ namespace PoSumo
                     && body.FootFar.position.y < limit) return true;
             }
             return w.Torso.position.y < fallY;
+        }
+
+        /// Backstop for ringOutOnHeadFloor: the torso is 2 m under the arena floor,
+        /// i.e. the body left the world, not just the mat. fallY (-0.2) cannot be
+        /// used here — the floor itself is ~0.6 m below the mat, so a fighter LYING
+        /// on it would trip fallY before the head rule ever got its say.
+        private bool BelowFloor(Agent_Biped w)
+        {
+            float floorTop = _arena != null && _arena.FloorCollider != null
+                ? _arena.FloorCollider.bounds.max.y
+                : transform.position.y - 1f;
+            return w.Torso.position.y < floorTop - 2f;
         }
 
         private void EndRound(Agent_Biped roundWinner, RoundOutcome outcome,

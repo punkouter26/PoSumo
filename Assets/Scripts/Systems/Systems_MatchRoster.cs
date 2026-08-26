@@ -24,8 +24,13 @@ namespace PoSumo
             // A tournament match overrides the scene's own roster, so SCN_SUMO
             // serves both the bracket and standalone exhibition play.
             bool tournament = Systems_TournamentState.Active;
-            Agent_CharacterDefinition slotA = tournament ? Systems_TournamentState.CurrentA : _characterA;
-            Agent_CharacterDefinition slotB = tournament ? Systems_TournamentState.CurrentB : _characterB;
+            // A BOT LADDER bout overrides the roster the same way: challenger on
+            // the left, the Bot on the right at the tier's torque.
+            bool ladder = !tournament && Systems_BotLadderState.Active;
+            Agent_CharacterDefinition slotA = tournament ? Systems_TournamentState.CurrentA
+                                            : ladder ? Systems_BotLadderState.Challenger : _characterA;
+            Agent_CharacterDefinition slotB = tournament ? Systems_TournamentState.CurrentB
+                                            : ladder ? Systems_BotLadderState.Bot : _characterB;
 
             // A MIRROR match: both sides drew the same character asset.
             //
@@ -53,6 +58,17 @@ namespace PoSumo
                 }
                 Apply(agent, wanted);
 
+                if (ladder && agent.teamId != 0)
+                {
+                    // Before Agent_BipedBody.Awake (this runs at -500), so the joint
+                    // torque caps are built from the multiplied value.
+                    var body = agent.GetComponent<Agent_BipedBody>();
+                    if (body != null)
+                    {
+                        body.torqueMultiplier = Systems_BotLadderState.TierTorque[Systems_BotLadderState.Tier];
+                    }
+                }
+
                 // Only side B moves, so the fighter a player already recognises keeps
                 // its own colour and name and the CHALLENGER is the one marked.
                 if (mirror && agent.teamId != 0)
@@ -66,6 +82,12 @@ namespace PoSumo
                 var go = new GameObject("TournamentReporter");
                 go.transform.SetParent(transform, false);
                 go.AddComponent<Systems_TournamentReporter>();
+            }
+            if (ladder && FindAnyObjectByType<Systems_BotLadderReporter>() == null)
+            {
+                var go = new GameObject("BotLadderReporter");
+                go.transform.SetParent(transform, false);
+                go.AddComponent<Systems_BotLadderReporter>();
             }
         }
 

@@ -33,6 +33,11 @@ namespace PoSumo
 
         // Tawara bales, kept so width changes reposition them: (transform, side, index).
         private struct TawaraRef { public Transform t; public int side; public int index; }
+
+        /// The crowd-level floor below the dohyo. Both referees hand it to each
+        /// fighter's Sensor_HeadContact: a head landing on THIS collider is the
+        /// ring-out (2026-08-26). Bound by Build() and by RebindBaked() by name.
+        public Collider2D FloorCollider { get; private set; }
         private readonly List<TawaraRef> _tawara = new List<TawaraRef>();
         private Transform _platform, _surface, _baseLip;
         private float _currentHalf = -1f;
@@ -466,6 +471,7 @@ namespace PoSumo
                 {
                     _tawara.Add(new TawaraRef { t = child, side = 1, index = n[n.Length - 1] - '0' });
                 }
+                else if (n == "ArenaFloor") FloorCollider = child.GetComponent<Collider2D>();
                 else if (n == "DohyoPlatform") _platform = child;
                 else if (n == "ClaySurface") _surface = child;
                 else if (n == "DohyoBase") _baseLip = child;
@@ -547,6 +553,7 @@ namespace PoSumo
             fsr.sortingOrder = -6;
             var fcol = floor.AddComponent<BoxCollider2D>();
             fcol.sharedMaterial = SourcePhysMat("Floor", 0.8f, 0f);
+            FloorCollider = fcol;
 
             // --- Shikiri-sen: the two white starting lines at ring center.
             for (int s = -1; s <= 1; s += 2)

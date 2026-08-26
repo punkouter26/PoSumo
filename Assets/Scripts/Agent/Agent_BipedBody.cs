@@ -58,6 +58,12 @@ namespace PoSumo
         [Tooltip("Multiplies joint motor torque caps to carry the extra mass.")]
         public float torqueScale = 1f;
 
+        /// Runtime-only multiplier on top of the character's torqueScale. Written
+        /// by Systems_MatchRoster for the BOT LADDER (EASY 0.7 / MEDIUM 1.0 / HARD
+        /// 1.3) before Awake builds the joints; never serialized, never 1-not for
+        /// a trained fighter.
+        [System.NonSerialized] public float torqueMultiplier = 1f;
+
         /// Whole-body torque multiplier for transient GAME-LAYER effects; 1 is
         /// normal. Written by `Systems_CrowdMomentum` and by nothing else.
         ///
@@ -140,6 +146,9 @@ namespace PoSumo
         /// arrives as a Chest collision — identifying it means comparing against
         /// this. Exposed for Systems_BodyDamage's head-KO check.
         public CircleCollider2D HeadCollider { get; private set; }
+
+        /// Head-only ground contact, for the head-on-the-mat losing rule.
+        public Sensor_HeadContact HeadContact { get; private set; }
 
         /// Unit-scale transform riding on the head, immune to face-art rescaling.
         /// Parent head decals here, never to HeadRenderer.transform — local units
@@ -444,7 +453,9 @@ namespace PoSumo
                 headSprite = character.headSprite;
                 massScale = character.massScale;
                 widthScale = character.widthScale;
-                torqueScale = character.torqueScale;
+                // torqueMultiplier is runtime-only (the BOT LADDER's difficulty dial,
+                // written by Systems_MatchRoster before this Awake); 1 for everyone else.
+                torqueScale = character.torqueScale * torqueMultiplier;
                 _faceArtFacesLeft = character.faceArtFacesLeft;
             }
             // AFTER the character block, so a mirror match's second side keeps every
@@ -799,6 +810,7 @@ namespace PoSumo
                     hc.sharedMaterial = _bodyMat;
                     AllColliders.Add(hc);
                     HeadCollider = hc;
+                    HeadContact = headHit.AddComponent<Sensor_HeadContact>();
                 }
                 // (Chest rb mass already includes the head via the def table.)
 
