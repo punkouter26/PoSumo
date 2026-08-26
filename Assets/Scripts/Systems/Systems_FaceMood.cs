@@ -30,10 +30,9 @@ namespace PoSumo
         [Tooltip("Maximum idle flourishes per match.")]
         public int idleFlourishesPerMatch = 2;
 
-        // Face sprites live in Resources/Faces/. The prefix is applied HERE rather
-        // than baked into the character assets, so the assets keep bare sprite
-        // names and a future move only touches this one constant.
-        private const string FACE_PATH = "Faces/";
+        // Face sprites come from the FaceAtlas via Systems_FaceArt (bare names,
+        // e.g. "Nick_Happy_2"). They used to be Resources.Load'd from
+        // Resources/Faces/, which silently kept them OUT of the atlas.
 
         // Fallback for characters with no face names on their definition asset
         // (Matt predates the per-character face fields).
@@ -120,14 +119,14 @@ namespace PoSumo
             string[] sadNames = def != null && def.faceSadNames != null && def.faceSadNames.Length == 3
                 ? def.faceSadNames : FallbackSad;
 
-            _neutral = Resources.Load<Sprite>(FACE_PATH + neutralName);
+            _neutral = Systems_FaceArt.Load(neutralName);
             _happy = new Sprite[happyNames.Length];
             _sad = new Sprite[sadNames.Length];
             int loaded = _neutral != null ? 1 : 0;
             for (int happyNameIndex = 0; happyNameIndex < happyNames.Length; happyNameIndex++)
             {
-                _happy[happyNameIndex] = Resources.Load<Sprite>(FACE_PATH + happyNames[happyNameIndex]);
-                _sad[happyNameIndex] = Resources.Load<Sprite>(FACE_PATH + sadNames[happyNameIndex]);
+                _happy[happyNameIndex] = Systems_FaceArt.Load(happyNames[happyNameIndex]);
+                _sad[happyNameIndex] = Systems_FaceArt.Load(sadNames[happyNameIndex]);
                 if (_happy[happyNameIndex] != null) loaded++;
                 if (_sad[happyNameIndex] != null) loaded++;
             }

@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: 55a41e7656276d04781bf515d49a137a
+guid: c2def286bab3ab647a37d64cbda42f8b
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: 3479308159963836896
-    second: matt_happy3-removebg-preview_0
+      213: -4552214270439948103
+    second: matt_sad1-removebg-preview_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -46,7 +46,7 @@ TextureImporter:
   nPOTScale: 0
   lightmap: 0
   compressionQuality: 50
-  spriteMode: 2
+  spriteMode: 1
   spriteExtrude: 1
   spriteMeshType: 1
   alignment: 0
@@ -126,13 +126,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: matt_happy3-removebg-preview_0
+      name: matt_sad1-removebg-preview_0
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 354
-        height: 330
+        width: 328
+        height: 333
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -141,8 +141,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: 0e133ca565cf84030800000000000000
-      internalID: 3479308159963836896
+      spriteID: 9b086fc5d3943d0c0800000000000000
+      internalID: -4552214270439948103
       vertices: []
       indices: 
       edges: []
@@ -151,7 +151,7 @@ TextureImporter:
     customData: 
     physicsShape: []
     bones: []
-    spriteID: 
+    spriteID: 5e97eb03825dee720800000000000000
     internalID: 0
     vertices: []
     indices: 
@@ -161,7 +161,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      matt_happy3-removebg-preview_0: 3479308159963836896
+      matt_sad1-removebg-preview_0: -4552214270439948103
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

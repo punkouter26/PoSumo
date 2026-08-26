@@ -93,7 +93,7 @@ re-run training locally to recreate that directory.
 
 | Layer | Tool | Version | Notes |
 |---|---|---|---|
-| Engine | Unity Editor | **DISPUTED — see below** | `ProjectVersion.txt` says 6000.5.8f1 (changeset 5cb7df797b7d); the only editor INSTALLED and the one actually running is **6000.5.6f1** (measured live 2026-08-25). Drifted 6000.5.4f1 → 6000.5.6f1 → 6000.5.8f1 → back to 6000.5.6f1, each time WITHOUT this table moving. Re-read `ProjectSettings/ProjectVersion.txt` **and** `ls "C:/Program Files/Unity/Hub/Editor/"` — this row is not authoritative and neither source alone is sufficient |
+| Engine | Unity Editor | **6000.5.8f1** (measured 2026-08-26: `Application.unityVersion` = 6000.5.8f1, `ProjectVersion.txt` = 6000.5.8f1, and 8f1 is the ONLY editor under `C:/Program Files/Unity/Hub/Editor/` — 6f1 is gone). The "DISPUTED" note below is history from 08-25 | `ProjectVersion.txt` says 6000.5.8f1 (changeset 5cb7df797b7d); the only editor INSTALLED and the one actually running is **6000.5.6f1** (measured live 2026-08-25). Drifted 6000.5.4f1 → 6000.5.6f1 → 6000.5.8f1 → back to 6000.5.6f1, each time WITHOUT this table moving. Re-read `ProjectSettings/ProjectVersion.txt` **and** `ls "C:/Program Files/Unity/Hub/Editor/"` — this row is not authoritative and neither source alone is sufficient |
 | Engine | Unity Hub | 3.x | headless CLI broken — install modules via UI |
 | Package | com.unity.ml-agents | **4.1.0** | LOCAL `file:` package with patches. Upgraded from 4.0.0 (release_23) on 2026-08-06 — re-fetching is now a documented procedure, not a prohibition, but it still LOSES the patches below |
 | Package | com.unity.ai.inference | 2.6.1 | auto-dependency of ML-Agents (`Unity.InferenceEngine.ModelAsset`). Was 2.2.1 |
@@ -114,7 +114,7 @@ re-run training locally to recreate that directory.
 | Python | numpy | 1.23.5 | pinned by mlagents |
 | Python | onnx | 1.15.0 | |
 | Python | tensorboard | 2.20.0 | always run during training |
-| Android | Build Support module | **6000.5.6f1** | must match the editor version — so it moves every time the row above does. The 2026-08-15 note here ("only `6000.5.8f1` is installed") is **stale and was measured false on 2026-08-25**: only `6000.5.6f1` is present under `C:/Program Files/Unity/Hub/Editor/`. The installed module therefore matches the RUNNING editor but not the version `ProjectVersion.txt` names — resolve that before trusting an Android build |
+| Android | Build Support module | **6000.5.8f1** (the only installed editor as of 2026-08-26; the 6f1 text below is history) | must match the editor version — so it moves every time the row above does. The 2026-08-15 note here ("only `6000.5.8f1` is installed") is **stale and was measured false on 2026-08-25**: only `6000.5.6f1` is present under `C:/Program Files/Unity/Hub/Editor/`. The installed module therefore matches the RUNNING editor but not the version `ProjectVersion.txt` names — resolve that before trusting an Android build |
 | Android | OpenJDK | 17.0.18+8 | embedded in AndroidPlayer |
 | Android | NDK | r27c | |
 | Android | SDK build-tools | 36.0.0 | |
@@ -1267,7 +1267,10 @@ After any change to the walk lane, assert every walker spawns at `xLocal < -0.3`
   scenes `SCN_*` with training scenes as `SCN_TRAIN_<NAME>`; env builds as
   `Builds/<Name>Env/` matching their scene; configs as `<Name><Phase><NN>.yaml` paired
   1:1 with run-id `<name>_<phase><nn>`; agent assets in `Assets/Agents/<Name>_v<NN>/`
-  with a `MANIFEST.md`; face art as `Assets/Resources/<Name>_{neutral,happy1-3,sad1-3}.png`.
+  with a `MANIFEST.md`; face art as `Assets/Art/Faces/<Name>_{Neutral,Happy_1-3,Sad_1-3}.png`,
+  packed by `Resources/Atlases/FaceAtlas` and loaded through `Systems_FaceArt.Load(name)` —
+  **never put a face back under `Resources/`: a sprite in a Resources folder is never
+  atlased** (measured 2026-08-26, `sprite.packed` false on all 21 while they lived there).
 - `Systems_AcademyLifecycle` (static init) sets `runInBackground = true` — **critical**;
   without it Unity stops simulating on focus loss and the trainer times out — plus
   gravity, solver iterations, and Academy disposal on quit.
@@ -1621,6 +1624,14 @@ is the way to drive the editor: `scene-*`, `gameobject-*`, `script-execute`,
 - Those MCP retries each **re-invoke** the call, so one blocking build actually runs several
   times back-to-back. Harmless for an idempotent build; do not use this pattern for anything
   that appends or increments.
+- **Never edit a `.cs` file while Play mode is running, either — even a comment.** The
+  pending import is picked up on the next refresh/scene load and triggers a **domain
+  reload mid-Play** (measured 2026-08-26: `Domain Reload Profiling: 13122ms` in
+  `Editor.log`). Serialized fields survive it, retained UI Toolkit references do not: the
+  HUD root came back with 0 children, `_scoreDigits`/`_countdown` were null, the referee's
+  "UI not built yet" guard returned every step and the match froze in `Phase.Intro` with
+  no error anywhere. The only console tell is `Undisposed worker found, finalizer called
+  outside main thread`. Confirm with the log line above before hunting a game bug.
 - Never edit a `.cs` file while a player build is running: the recompile aborts the build
   (`BUILD RESULT: Unknown`) and leaves `EditorUtility.scriptCompilationFailed` stuck true.
   `CompilationPipeline.RequestScriptCompilation(CleanBuildCache)` clears the stale flag.
