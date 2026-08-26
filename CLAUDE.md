@@ -764,7 +764,10 @@ Three rules used to be game-only. **Two of them were ported into the training re
 >   **Strictly the head, chosen knowingly**: a fighter landing on the floor on their feet
 >   or back is not out until the head touches. Measured: 4/4 rounds RingOut, 0 errors.
 >   Set it `false` to get the foot rule back. The perf HUD is also hidden by default now,
->   behind a **DBG** chip at the lower-left of the stage (`Systems_PerfHud.Toggle`), and
+>   behind a **DBG** chip in the true lower-left screen corner (on `Systems_HudRoot.Overlay`,
+>   a full-panel layer above the dock; `Systems_PerfHud.Toggle`), shows a per-agent column
+>   each (brain, mode, x/edge, height, uprightness, speed/spin, stamina, adrenaline, torque
+>   multiplier, mean |action|, foot contacts, DOWN/LIMP/FLOOR flags, dominance), and
 >   carries real render counters — note there is no plain "Draw Calls Count" in this
 >   Unity's Render category; it uses "Standard Draw Calls Count" / "SRP Batcher Draw Calls Count".
 > - **No "FIGHT!" / "HAKKEYOI!" banners and no crowd-support meter.** The countdown digit
@@ -961,8 +964,10 @@ The three that matter most here:
   already fixed once.
 
 `Systems_FightHud` is split by whether the fight is happening: an always-on
-**live strip** in the dock (two damage mannequins flanking one DOMINANCE
-tug-of-war bar, ~115pt) and a **detail card** in the stage band, shown on
+**live strip** in the dock (two damage mannequins and the round footer — the DOMINANCE
+tug-of-war bar between them was **removed 2026-08-26** at the player's request;
+`DominanceA/B` are still computed because `Systems_CrowdMomentum` and `Systems_FaceMood`
+read them, and the DBG panel prints them) and a **detail card** in the stage band, shown on
 `RoundEnded`/`MatchEnded` and hidden on `RoundStarted`. It was previously one
 ~484pt table pinned to the dock with no way to hide it — 39% of a 9:16 panel and
 ~52% of a 4:3 tablet in portrait, permanently over the bottom of the dohyo.

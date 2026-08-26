@@ -91,7 +91,6 @@ namespace PoSumo
 
         // Live strip
         private VisualElement _liveCard;
-        private BarPair _dominance;
         private Label _footer;
 
         // Between-rounds detail
@@ -105,7 +104,6 @@ namespace PoSumo
         // twelve interpolated strings, four bar widths and twelve swatch colours
         // on EVERY rendered frame, which is string allocation in a per-frame path
         // on an Android target.
-        private int _shownDomA = int.MinValue, _shownDomB = int.MinValue;
         private int _shownRound = int.MinValue;
         private Color[] _mannShownA, _mannShownB;
 
@@ -230,21 +228,12 @@ namespace PoSumo
             right.Add(figureB);
             right.Add(TeamBase(manager.colorB));
 
+            // The centre used to carry the DOMINANCE tug-of-war bar and its two
+            // numbers. Removed 2026-08-26 at the player's request: the strip is now
+            // the two damage mannequins and the round footer. DominanceA/B are
+            // still computed every step — Systems_CrowdMomentum and
+            // Systems_FaceMood read them — and the DBG panel prints them.
             VisualElement centre = Systems_UiKit.Column().NoPick();
-            centre.Add(Systems_UiKit.Caption("DOMINANCE", Systems_UiKit.FONT_MICRO,
-                                             Systems_UiKit.TextLow, true));
-
-            _dominance = MakeTugBar(14);
-            _dominance.track.style.marginTop = Systems_UiKit.SPACE_1;
-            centre.Add(_dominance.track);
-
-            VisualElement values = Systems_UiKit.Row();
-            values.style.marginTop = Systems_UiKit.SPACE_1;
-            _dominance.valueA = DominanceValue(TextAnchor.MiddleLeft);
-            _dominance.valueB = DominanceValue(TextAnchor.MiddleRight);
-            values.Add(_dominance.valueA);
-            values.Add(_dominance.valueB);
-            centre.Add(values);
 
             _liveCard.Add(Systems_UiKit.Triplet(left, centre, right));
 
@@ -258,15 +247,6 @@ namespace PoSumo
 
             _liveCard.NoPickTree();
             _hud.Dock.Add(_liveCard);
-        }
-
-        private static Label DominanceValue(TextAnchor align)
-        {
-            Label value = Systems_UiKit.Text("—", Systems_UiKit.FONT_LEAD, Systems_UiKit.TextHi, true);
-            value.style.flexGrow = 1;
-            value.style.flexBasis = 0;
-            value.style.unityTextAlign = align;
-            return value;
         }
 
         /// The full aggregate table, shown between rounds in the stage band.
@@ -656,29 +636,6 @@ namespace PoSumo
 
         private void UpdateLiveStrip()
         {
-            int domA = Mathf.RoundToInt(DominanceA);
-            int domB = Mathf.RoundToInt(DominanceB);
-            if (domA != _shownDomA || domB != _shownDomB)
-            {
-                _shownDomA = domA;
-                _shownDomB = domB;
-                _dominance.valueA.text = domA.ToString();
-                _dominance.valueB.text = domB.ToString();
-                // Team colours, NOT a good/bad ramp. These sit directly beside a tug
-                // bar already drawn in colorA/colorB, and a magnitude ramp painted
-                // the leader green and the trailer red — so red meant both "losing"
-                // and "the red fighter". Identity wins; the bar already shows who
-                // leads, and the leader is emphasised by weight instead.
-                _dominance.valueA.style.color = manager.colorA;
-                _dominance.valueB.style.color = manager.colorB;
-                _dominance.valueA.style.unityFontStyleAndWeight =
-                    DominanceA >= DominanceB ? FontStyle.Bold : FontStyle.Normal;
-                _dominance.valueB.style.unityFontStyleAndWeight =
-                    DominanceB > DominanceA ? FontStyle.Bold : FontStyle.Normal;
-                _dominance.fillA.style.width = Length.Percent(Mathf.Clamp01(DominanceA / 100f) * 100f);
-                _dominance.fillB.style.width = Length.Percent(Mathf.Clamp01(DominanceB / 100f) * 100f);
-            }
-
             int round = manager.RoundNumber;
             if (round != _shownRound)
             {

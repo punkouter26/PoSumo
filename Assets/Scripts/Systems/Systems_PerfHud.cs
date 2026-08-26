@@ -54,6 +54,9 @@ namespace PoSumo
         private VisualElement _panel;
         private Button _toggle;
         private Label _frame, _memory, _render, _screen, _sim, _fighters;
+        private Label _agentA, _agentB;
+        private Systems_FightHud _fightHud;
+        private bool _fightHudLookedUp;
 
         // Render statistics straight from the profiler counters. These are live in
         // the Editor and in Development builds — the only places this component is
@@ -70,7 +73,7 @@ namespace PoSumo
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ResetStatic() { s_visible = false; }
 
-        private readonly StringBuilder _sb = new StringBuilder(160);
+        private readonly StringBuilder _sb = new StringBuilder(512);
 
         private float _nextSample;
         private int _framesSinceSample;
@@ -191,11 +194,28 @@ namespace PoSumo
             _panel.Add(_sim);
             _panel.Add(_fighters);
 
+            // Per-agent detail: one column per fighter, refreshed on the same 4 Hz
+            // timer. Everything here is read off state the agents already keep;
+            // nothing is computed for the panel's sake.
+            VisualElement agents = Systems_UiKit.Row(Align.FlexStart).NoPick();
+            agents.style.marginTop = Systems_UiKit.SPACE_1;
+            _agentA = Line();
+            _agentB = Line();
+            _agentA.style.marginRight = Systems_UiKit.SPACE_3;
+            _agentA.style.whiteSpace = WhiteSpace.Normal;
+            _agentB.style.whiteSpace = WhiteSpace.Normal;
+            agents.Add(_agentA);
+            agents.Add(_agentB);
+            _panel.Add(agents);
+
             hud.Stage.Add(_panel);
 
             // The DBG toggle: lower-left of the stage, just above the dock. The
             // stage itself is NoPick, which excludes only the stage element — a
             // child button still receives its own taps.
+            // True lower-left screen corner: on the HudRoot overlay layer, which
+            // sits above the dock. (It was on the stage before, i.e. above the dock
+            // strip rather than in the corner.)
             _toggle = Systems_UiKit.ChipButton("DBG", Toggle, Systems_UiKit.TOUCH_MIN);
             _toggle.name = "DebugToggle";
             _toggle.style.position = Position.Absolute;
@@ -203,7 +223,7 @@ namespace PoSumo
             _toggle.style.bottom = Systems_UiKit.SPACE_2;
             _toggle.style.fontSize = Systems_UiKit.FONT_MICRO;
             _toggle.style.opacity = 0.85f;
-            hud.Stage.Add(_toggle);
+            (hud.Overlay ?? hud.Stage).Add(_toggle);
 
             ApplyVisibility();
         }
@@ -340,6 +360,64 @@ namespace PoSumo
             _sb.Append('/');
             AppendStamina(_bodyB);
             _fighters.text = _sb.ToString();
+
+            if (!_fightHudLookedUp)
+            {
+                _fightHudLookedUp = true;
+                _fightHud = FindAnyObjectByType<Systems_FightHud>();
+            }
+            if (_manager != null)
+            {
+                RefreshAgent(_agentA, _manager.wrestlerA, _bodyA, _fightHud != null ? _fightHud.DominanceA : -1f, _manager.colorA);
+                RefreshAgent(_agentB, _manager.wrestlerB, _bodyB, _fightHud != null ? _fightHud.DominanceB : -1f, _manager.colorB);
+            }
+        }
+
+        /// One fighter's column. Brain, task mode, where it is on the mat, how it
+        /// is standing, how much it has left, and the referee-facing flags — the
+        /// things you want when a fighter is doing something you cannot explain.
+        private void RefreshAgent(Label label, Agent_Biped agent, Agent_BipedBody body, float dominance, Color colour)
+        {
+            if (label == null) return;
+            if (agent == null || body == null)
+            {
+                label.text = "--";
+                return;
+            }
+            label.style.color = colour;
+
+            _sb.Clear();
+            _sb.Append(agent.behaviorName).Append('\n');
+            _sb.Append(agent.useBot ? "brain BOT" : agent.inferenceModel != null ? "brain " + agent.inferenceModel.name : "brain NONE");
+            _sb.Append(" ").Append(agent.mode == Agent_Biped.Mode.Sumo ? "sumo" : "walk").Append('\n');
+
+            Rigidbody2D torso = body.Torso;
+            float x = torso.position.x - agent.arenaCenterX;
+            float edge = agent.ringHalfWidth - Mathf.Abs(x);
+            _sb.Append("x ").Append(x.ToString("F2")).Append(" edge ").Append(edge.ToString("F2")).Append('\n');
+            _sb.Append("y ").Append((torso.position.y - agent.arenaGroundY).ToString("F2"));
+            float upright = body.Chest != null ? Vector2.Dot(body.Chest.transform.up, Vector2.up) : 0f;
+            _sb.Append(" up ").Append(Mathf.RoundToInt(Mathf.Clamp01(upright) * 100f)).Append("%\n");
+            _sb.Append("v ").Append(torso.linearVelocity.magnitude.ToString("F2")).Append("m/s");
+            _sb.Append(" spin ").Append(Mathf.RoundToInt(torso.angularVelocity)).Append("°/s\n");
+
+            _sb.Append("stam ").Append(Mathf.RoundToInt(body.Stamina * 100f));
+            _sb.Append(" adr x").Append(body.adrenaline.ToString("F2"));
+            _sb.Append(" trq x").Append((body.torqueScale).ToString("F2")).Append('\n');
+
+            float actionSum = 0f;
+            float[] actions = agent.LastActions;
+            for (int actionIndex = 0; actionIndex < actions.Length; actionIndex++)
+            {
+                actionSum += Mathf.Abs(actions[actionIndex]);
+            }
+            _sb.Append("act ").Append((actions.Length > 0 ? actionSum / actions.Length : 0f).ToString("F2"));
+            _sb.Append(" feet ").Append(body.FootDownNear ? 'N' : '-').Append(body.FootDownFar ? 'F' : '-').Append('\n');
+
+            _sb.Append(agent.IsDown ? "DOWN " : "").Append(body.IsLimp ? "LIMP " : "").Append(agent.OnFloor ? "FLOOR " : "");
+            if (!agent.actionsEnabled) _sb.Append("NOMOTOR ");
+            if (dominance >= 0f) _sb.Append("dom ").Append(Mathf.RoundToInt(dominance));
+            label.text = _sb.ToString();
         }
 
         /// Thousands separator by hand: `ToString("N0")` allocates a culture lookup

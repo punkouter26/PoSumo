@@ -80,6 +80,10 @@ namespace PoSumo
         /// widest, safest strip of a portrait screen.
         public VisualElement Dock { get; private set; }
 
+        /// Full-panel layer above the dock and the modals, for corner-anchored
+        /// controls. Absolute children resolve against the whole screen.
+        public VisualElement Overlay { get; private set; }
+
         /// Returns the scene's HUD root, building it if this is the first caller.
         /// `settings` is only consulted when the root does not exist yet.
         public static Systems_HudRoot Ensure(Transform owner, PanelSettings settings)
@@ -131,6 +135,12 @@ namespace PoSumo
 
             VisualElement modalSafe = new VisualElement().Fill().NoPick();
             root.Add(modalSafe);
+
+            // Topmost, full-panel, NoPick itself: for controls that must sit in a
+            // true screen CORNER over everything, including the dock (the DBG
+            // toggle). Children position absolutely against the whole panel.
+            Overlay = new VisualElement().Fill().NoPick();
+            root.Add(Overlay);
 
             // One watcher for the whole HUD. Previously the match manager and the
             // graph each attached one and the fight HUD attached none, so its
