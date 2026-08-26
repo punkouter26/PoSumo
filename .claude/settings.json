@@ -39,6 +39,11 @@
         "hooks": [
           {
             "type": "command",
+            "command": ".claude/hooks/require-tensorboard.sh",
+            "timeout": 8000
+          },
+          {
+            "type": "command",
             "command": ".claude/hooks/block-projectsettings.sh",
             "timeout": 3000
           },

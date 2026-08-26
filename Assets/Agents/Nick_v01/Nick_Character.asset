@@ -34,14 +34,14 @@ MonoBehaviour:
   staminaObservation: 1
   inferenceModel: {fileID: 5022602860645237092, guid: 1f15b9a7469d7cc4daafd2020713ebc9, type: 3}
   useBot: 0
-  uprightReward: 0.0008
+  uprightReward: 0.002
   closingReward: 0.0055
   lungeBonus: 0.0072000003
   lungeThreshold: 1
   impactReward: 0.0036666666
   impactCap: 8
   kneeBendReward: 0.0002
-  hipsLowReward: 0.0001
+  hipsLowReward: 5e-05
   cadenceReward: 0.0032
   riseReward: 0.025
   effortPenalty: 0.0015
@@ -51,10 +51,10 @@ MonoBehaviour:
   jerkPenalty: 0.00015
   straightLegEarnFraction: 0.75
   walkForwardReward: 0.004
-  walkStanceFloor: 0.25
+  walkStanceFloor: 0.1
   walkBendReward: 0.0002
-  walkUprightReward: 0.001
-  walkHeightReward: 0.0015
+  walkUprightReward: 0.0025
+  walkHeightReward: 0.0035
   walkCadenceReward: 0.002
   walkEnergyPenalty: 0.0003
   walkStallPenalty: 0.0025

@@ -305,6 +305,21 @@ namespace PoSumo
             return tex;
         });
 
+        /// Back-wall gradient, brightened on 2026-08-25 from (0.09,0.06,0.07) top /
+        /// (0.25,0.17,0.13) bottom.
+        ///
+        /// The old values made the hall read as a black void behind a lit ring, and
+        /// no light setting could rescue it: the wall's own texture was 0.06-0.25,
+        /// so even a global of 1.05 left it under a quarter brightness. A tint
+        /// cannot fix it either — `SpriteRenderer.color` is a multiplier capped at
+        /// 1, and the wall was already tinted ~0.97 white.
+        ///
+        /// Kept clearly darker than the fighters (whose limbs sit around 0.6-0.9)
+        /// so the eye still goes to the bout, and warm rather than neutral so it
+        /// reads as a wooden hall under lantern light.
+        private static readonly Color WALL_TOP = new Color(0.20f, 0.16f, 0.17f);
+        private static readonly Color WALL_BOTTOM = new Color(0.46f, 0.36f, 0.29f);
+
         private static Sprite GradientSprite(Color top, Color bottom) =>
             SourceSprite("WallGradient", 128f, false, new Vector2(0.5f, 0.5f), () =>
         {
@@ -390,15 +405,26 @@ namespace PoSumo
         /// RebindBaked as well as after Build.
         private void ApplyPaintedLightVisibility()
         {
-            if (Systems_ArenaLighting.LightingEffects)
-            {
-                return;
-            }
+            // With the whole effects rig off, ALL painted light goes — see above.
+            bool hideEverything = !Systems_ArenaLighting.LightingEffects;
+            // With the rig on, the two big cones are still gated separately. They
+            // and the key light's volumetric were together the "giant light in the
+            // middle of the scene": 3.4 x 6.2 alpha quads at sortingOrder -2, cast
+            // from a roof the gameplay framing never actually shows, washing out the
+            // mat and the crowd behind them. The five LanternHalo glows stay — they
+            // are small, they sit on the lantern sprites that justify them, and they
+            // are not what was complained about.
+            bool hideCones = hideEverything || !Systems_ArenaLighting.PaintedSpotlights;
+
             foreach (Transform child in transform)
             {
-                if (child.name == "Spotlight" || child.name == "LanternHalo")
+                if (child.name == "Spotlight")
                 {
-                    child.gameObject.SetActive(false);
+                    child.gameObject.SetActive(!hideCones);
+                }
+                else if (child.name == "LanternHalo")
+                {
+                    child.gameObject.SetActive(!hideEverything);
                 }
             }
         }
@@ -443,6 +469,24 @@ namespace PoSumo
                 else if (n == "DohyoPlatform") _platform = child;
                 else if (n == "ClaySurface") _surface = child;
                 else if (n == "DohyoBase") _baseLip = child;
+                // The back wall and the grid carry GENERATED sprites, and the arena
+                // scenes are baked — so a change to WALL_TOP / WALL_BOTTOM or to
+                // GridSprite would otherwise never reach SCN_SUMO, because Build()
+                // does not run there. Re-assigning them here is what makes the
+                // backdrop colours editable in code at all.
+                //
+                // Cheap: SourceSprite caches by name, so this hands back the same
+                // instance every arena and every reload.
+                else if (n == "ArenaWall")
+                {
+                    var wallRenderer = child.GetComponent<SpriteRenderer>();
+                    if (wallRenderer != null) wallRenderer.sprite = GradientSprite(WALL_TOP, WALL_BOTTOM);
+                }
+                else if (n == "Grid")
+                {
+                    var gridRenderer = child.GetComponent<SpriteRenderer>();
+                    if (gridRenderer != null) gridRenderer.sprite = GridSprite();
+                }
             }
         }
 
@@ -525,7 +569,7 @@ namespace PoSumo
                 wall.transform.localPosition = new Vector3(0f, 4.4f, 0f);
                 wall.transform.localScale = new Vector3(floorWidth, 12f, 1f);
                 var wsr = wall.AddComponent<SpriteRenderer>();
-                wsr.sprite = GradientSprite(new Color(0.09f, 0.06f, 0.07f), new Color(0.25f, 0.17f, 0.13f));
+                wsr.sprite = GradientSprite(WALL_TOP, WALL_BOTTOM);
                 wsr.sortingOrder = -12;
             }
 

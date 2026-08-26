@@ -713,7 +713,14 @@ namespace PoSumo
                     head.transform.localPosition = new Vector3(0f, 0.25f / d.h, 0f);
                     var hsr = head.AddComponent<SpriteRenderer>();
                     hsr.sortingOrder = 1;
-                    hsr.sharedMaterial = BodyMaterial;
+                    // UNLIT, unlike every other part. The head carries a photograph
+                    // of a face; the rest of the body is flat tinted primitives that
+                    // need the rig to read as a body at all. Lighting a correctly
+                    // exposed photo with key + global + two rims, and then adding
+                    // the BodyLit rim/wrap/sweat terms on top, clips the highlights
+                    // and washes the facial detail out. See
+                    // Systems_ArenaLighting.UnlitSpriteMaterial.
+                    hsr.sharedMaterial = Systems_ArenaLighting.UnlitSpriteMaterial();
                     float parentW = d.w * widthScale;
                     HeadRenderer = hsr;
 

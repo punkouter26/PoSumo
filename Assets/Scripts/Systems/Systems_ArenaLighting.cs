@@ -42,8 +42,8 @@ namespace PoSumo
         // unshadowed fill, not merely match it. Total exposure is held roughly
         // constant; what changes is which light carries it.
         [Header("Global fill")]
-        [Tooltip("Base illumination everything receives, with no falloff anywhere. Deliberately low: this light can never be shadowed, so every unit of it is a unit that fills in the key's shadows.")]
-        public float globalIntensity = 0.42f;
+        [Tooltip("Base illumination everything receives, with no falloff anywhere.\n\nRaised 0.42 -> 1.05 on 2026-08-25 to light the BACKGROUND. This is the only lever that can: a Global Light2D has no position and no falloff, so it is the sole light reaching the backdrop wall, the crowd and the far dressing. The key is a point light at the ring, and at 0.42 global everything outside its radius fell away to near-black — which is why the arena read as a bright pool in a void.\n\nThe old note said 'deliberately low, because every unit of it fills in the key's shadows'. That trade only mattered while key shadows were ON; keyCastsShadows has been false since the geometry note above, so there are no shadows left to wash out and the fill costs nothing.")]
+        public float globalIntensity = 1.05f;
         public Color globalColor = new Color(1f, 0.97f, 0.93f);
 
         [Header("Key light (above the dohyo) — 0 disables the spotlight look")]
@@ -53,7 +53,12 @@ namespace PoSumo
         // rather than as arena light. The global:key RATIO is what makes the rig
         // read at all, so this is the knob to move for "subtler" — dropping the
         // GLOBAL instead would darken the arena without softening anything.
-        public float keyIntensity = 0.80f;
+        // 0.80 -> 0.40 on 2026-08-25. The global went 0.42 -> 1.05 to light the
+        // background, and the two ADD wherever the key reaches: leaving the key at
+        // 0.80 would have put the middle of the mat at 1.85 and clipped it to white.
+        // Halving it keeps a visible warm centre without the hotspot, and the total
+        // over the ring lands near the 1.45 the old rig delivered there.
+        public float keyIntensity = 0.40f;
         public Color keyColor = new Color(1f, 0.93f, 0.78f);
         public float keyHeight = 5.2f;
         public float keyOuterRadius = 7.5f;
@@ -93,10 +98,13 @@ namespace PoSumo
         public float shadowSoftness = 0.55f;
 
         [Header("Light volumes (god rays)")]
-        [Tooltip("Volumetric glow on the key light — the visible cone under the tsuriyane. This IS the spotlight effect; it reads against the arena haze Systems_ArenaAtmosphere emits.")]
-        [Range(0f, 1f)] public float keyVolumeIntensity = 0.35f;
-        [Tooltip("Wrestlers carve dark shafts out of the cone as they move through it. Costs a second volumetric pass, so it stays well below keyVolumeIntensity.")]
-        [Range(0f, 1f)] public float keyShadowVolumeIntensity = 0.18f;
+        [Tooltip("Volumetric glow on the key light — the visible cone under the tsuriyane. This IS the spotlight effect; it reads against the arena haze Systems_ArenaAtmosphere emits.\n\nOFF (0) since 2026-08-25. At 0.35 it rendered as a large bright blob hanging in the middle of the frame — with the camera framing only the mat and the wall behind it there is no visible roof for a cone to hang FROM, so it read as a light source floating in the air rather than as a beam. Raise it only if the camera ever frames the tsuriyane.")]
+        [Range(0f, 1f)] public float keyVolumeIntensity;
+        [Tooltip("Wrestlers carve dark shafts out of the cone as they move through it. Costs a second volumetric pass, so it stays well below keyVolumeIntensity.\n\nInert while keyVolumeIntensity is 0 — there is no cone to carve.")]
+        [Range(0f, 1f)] public float keyShadowVolumeIntensity;
+
+        [Tooltip("The two painted 'Spotlight' cone sprites over the ring (scenery baked into SCN_SUMO, not lights).\n\nOFF since 2026-08-25: together with the key volumetric they were the 'giant light in the middle of the scene'. They are 3.4 x 6.2 alpha quads sitting at sortingOrder -2, so they wash out the mat and the crowd behind them from a source the framing never shows.\n\nThe five small LanternHalo glows are NOT covered by this — they read as bulbs under the roof line and are the right scale for what they depict.")]
+        public static bool PaintedSpotlights = false;
 
         [Header("Post-processing")]
         public bool enablePost = true;
@@ -213,6 +221,43 @@ namespace PoSumo
 
         /// Shared lit-sprite material. Everything drawn in the arena uses this one
         /// instance so the 2D lights apply and the sprites still batch together.
+        /// Unlit sprite material, shared. Used by ONE thing: the head.
+        ///
+        /// Every other part of a wrestler is a flat tinted primitive that NEEDS the
+        /// rig to read as a body — see the note on LitSpriteMaterial below, and the
+        /// measured failure where handing the whole arena an unlit material
+        /// collapsed the dohyo and crowd into a brown void.
+        ///
+        /// The head is the exception because it is not a tinted primitive: it is a
+        /// PHOTOGRAPH of a face, already correctly exposed. Running it through the
+        /// rig multiplies it by the key (1.25) plus the global (0.42) plus two rims
+        /// and then adds the BodyLit rim/wrap/sweat terms on top, which blows the
+        /// highlights out and takes the facial detail with them. Unlit reproduces
+        /// the art as authored, which for a photo is the correct answer.
+        ///
+        /// Shared and never per-fighter: nothing writes per-instance properties
+        /// into it (Systems_BodySurface writes sweat and clay into the BODY
+        /// material, which the head no longer uses), so one instance keeps the
+        /// heads batching together.
+        private static Material _unlitSprite;
+
+        public static Material UnlitSpriteMaterial()
+        {
+            if (_unlitSprite == null)
+            {
+                Shader shader = Shader.Find("Sprites/Default");
+                if (shader == null)
+                {
+                    // Should not happen — Sprites/Default ships with Unity — but a
+                    // null material renders magenta, and a magenta head is a worse
+                    // outcome than a washed-out one.
+                    return LitSpriteMaterial();
+                }
+                _unlitSprite = new Material(shader) { name = "PoSumo_UnlitSprite" };
+            }
+            return _unlitSprite;
+        }
+
         public static Material LitSpriteMaterial()
         {
             if (_litSprite == null)
@@ -378,9 +423,31 @@ namespace PoSumo
             return _normalMap;
         }
 
+        [Tooltip("What the camera clears to — everything the arena geometry does not cover.\n\nThis is the OTHER half of 'the background is too dark', and the half no light can reach: in deluxe mode the backdrop Grid's fill is fully transparent and the ArenaWall is only as wide as the floor, so a large part of a portrait frame is not geometry at all and was showing the camera's black clear. A Light2D cannot brighten a pixel that nothing draws to.\n\nWarm and dark — it stands in for the unlit far end of the hall, so it has to sit below the wall's own bottom tone or the wall stops reading as a surface.")]
+        public Color arenaBackground = new Color(0.15f, 0.12f, 0.13f);
+
+        /// Points the camera at `arenaBackground` instead of whatever the scene was
+        /// saved with (Skybox, which renders black here).
+        ///
+        /// Done in code rather than on the scene camera because SCN_SUMO, SCN_BOT
+        /// and the training scenes each carry their own camera, and a serialized
+        /// value would have to be fixed in all of them — the same reason every
+        /// other look setting lives on this companion.
+        private void ApplyCameraBackground()
+        {
+            Camera cam = Camera.main;
+            if (cam == null)
+            {
+                return;
+            }
+            cam.clearFlags = CameraClearFlags.SolidColor;
+            cam.backgroundColor = arenaBackground;
+        }
+
         private void Awake()
         {
             Instance = this;
+            ApplyCameraBackground();
             if (!LightingEffects)
             {
                 // One flat, positionless, unshadowable light and nothing else. This

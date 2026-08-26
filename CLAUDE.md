@@ -168,9 +168,34 @@ still or twitches rather than erroring), suspect this before suspecting the brai
 
 ### 24 packages were removed on 2026-08-25 — what went, and how it was decided
 
-`manifest.json` went from 58 dependencies to 34. Each removal had to clear three tests:
-**no namespace reference** anywhere in `Assets/**/*.cs`, **no asset of the type it imports**
-in the project, and **nothing in `packages-lock.json` depending on it**.
+`manifest.json` went 58 → 34 → **39**: five had to go back, and why is the important part.
+
+A removal must clear **four** tests. The first three are obvious and were applied:
+**no namespace reference** in `Assets/**/*.cs`, **no asset of the type it imports**, and
+**nothing in `packages-lock.json` depending on it**.
+
+> **The fourth test is the one that bites: grep the OTHER PACKAGES' OWN SOURCE.**
+> `Library/PackageCache/*/**.cs`, not just `Assets/`.
+>
+> Measured 2026-08-25: removing `com.unity.ugui`, `com.unity.modules.ai`,
+> `com.unity.modules.video` and `com.unity.modules.xr` left
+> `EditorUtility.scriptCompilationFailed` **true** and blocked Play mode entirely, because
+> `com.besty.unity-skills`, `com.coplaydev.unity-mcp` and `com.ivanmurzak.unity.mcp` all
+> reference `UnityEngine.UI`, `EventSystems`, `AI`, `Video` and `XR` **in their own Editor
+> scripts without declaring any of it in their package manifests**. Neither an `Assets/`
+> grep nor the lock file's dependency graph can see that — the lock records what a package
+> DECLARES, and these packages declare nothing.
+>
+> The failure looks like the 2026-08-16 MCP add-on incident and has the same shape: zero
+> errors in project code, everything broken anyway, `Play` unavailable. First diagnostic is
+> the same — check `scriptCompilationFailed`, then group console errors by path. If they
+> are all under `Library/PackageCache/`, it is not your code.
+>
+> `com.unity.collab-proxy` went back for the same class of reason: removing it left
+> `Unity.PlasticSCM.Editor` throwing `TypeLoadException` on a missing `unityplastic`.
+
+**Restored and must stay:** `com.unity.ugui`, `com.unity.modules.ai`,
+`com.unity.modules.video`, `com.unity.modules.xr`, `com.unity.collab-proxy`.
 
 Gone: `visualscripting` (+`ugui`, whose only dependent it was), `2d.animation`,
 `2d.aseprite`, `2d.psdimporter`, `2d.spriteshape`, `2d.tilemap.extras` (+`2d.tilemap`),
@@ -1241,7 +1266,14 @@ delete event-less run directories. It closes the trainer's window rather than ki
 and waits 60 s, because the final-checkpoint write on a large trunk is not instant and
 killing through it truncates the `.pt`.
 
-Doing it by hand instead — TensorBoard must be running alongside training (user rule):
+Doing it by hand instead — TensorBoard must be running alongside training. This is a
+**hard rule with a blocking hook behind it**: `.claude/hooks/require-tensorboard.sh`
+refuses a direct `mlagents-learn` invocation while nothing is listening on 6006. The
+wrappers all start it themselves and are exempt. Full reasoning in
+`.claude/rules/training.md` — the short version is that ELO is the only accept/reject
+signal for a fight run, ELO is a TensorBoard scalar, and mean reward is explicitly the
+wrong criterion, so a run without TensorBoard produces nothing you are allowed to judge
+it by:
 ```powershell
 Training\venv\Scripts\python.exe -m tensorboard.main --logdir Training/results --port 6006 --reload_interval 15
 ```
