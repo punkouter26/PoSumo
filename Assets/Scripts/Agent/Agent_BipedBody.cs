@@ -1465,12 +1465,44 @@ namespace PoSumo
             // Rig geometry is right-facing; left-facing source art flips the
             // other way so every character looks where it is walking.
             HeadRenderer.flipX = _faceArtFacesLeft ? facingSign > 0 : facingSign < 0;
+            // MEASURED 2026-08-26, so nobody re-derives it: the sprite importer
+            // already TIGHT-TRIMS this art. Nick's texture is 576x433 but his
+            // `textureRect` is (137, 0, 304, 409) — i.e. the transparent margin a
+            // background-removed PNG carries is already gone by the time `s.bounds`
+            // is read. An attempt to re-fit against the opaque pixel bounds was
+            // tried here and reverted: it scans every pixel, needs read/write
+            // textures, and returns ~(1,1) because the rect it scans is already the
+            // trimmed one. `s.bounds` is the right thing to fit against.
+            // Fit the SHORTEST side to headDiameter, not the longest.
+            //
+            // The hitbox is a CIRCLE of headDiameter and a face is not circular, so
+            // one of the two axes must disagree with it. Fitting the LONGEST side —
+            // what this did until 2026-08-26 — puts the whole head inside the
+            // circle and leaves a ring of empty space on the short axis: measured on
+            // Nick, a 0.382 m tall head inside a 0.500 m collider, so about 6 cm
+            // above and below the drawn face still registered as a hit. That is the
+            // "large space between collisions" this was reported as.
+            //
+            // Fitting the shortest side inverts which way the error falls: the head
+            // now COVERS the circle, so contact never happens through visibly empty
+            // space. The cost is the opposite error — the long axis overhangs the
+            // hitbox (Nick's by about 1.35x), so two heads can appear to touch
+            // slightly before they collide. That is the better error to have: a hit
+            // that looks early reads as a graze, a hit through thin air reads as a
+            // bug.
+            //
+            // The properly accurate fix is a CapsuleCollider2D on the head matching
+            // the drawn ellipse, exactly as the limbs already have. It is not done
+            // here because it changes the dynamics and needs a corrective training
+            // pass; the four *_assist01 trunks now make that affordable if it is
+            // ever wanted.
             Vector3 spriteSize = s.bounds.size;
-            float longestSide = Mathf.Max(0.0001f, Mathf.Max(spriteSize.x, spriteSize.y));
+            float shortestSide = Mathf.Max(0.0001f, Mathf.Min(spriteSize.x, spriteSize.y));
             HeadRenderer.transform.localScale =
-                new Vector3(headDiameter / (longestSide * _headCellW),
-                            headDiameter / (longestSide * _headCellH), 1f);
+                new Vector3(headDiameter / (shortestSide * _headCellW),
+                            headDiameter / (shortestSide * _headCellH), 1f);
         }
+
 
         /// Per-foot ground contact and the normal force carried through it,
         /// normalised against body weight. Written every physics step from the
