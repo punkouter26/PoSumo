@@ -18,12 +18,6 @@ namespace PoSumo
         [Tooltip("Ortho for the wide establishing shot used by the walk-in and the post-match pull-back. ~14 holds the +/-6 m walk-in start marks at portrait aspect.")]
         public float wideOrtho = 14f;
 
-        [Tooltip("Render the arena into a horizontal BAND instead of the whole screen.\n\northo is a VERTICAL half-height and the visible width is ortho*aspect, so a 9:16 portrait viewport (aspect 0.5625) must buy width with height it has no use for: covering the 7 m mat needs ~28 m of vertical view to show a 1.8 m fighter, and roughly 30% of every frame below the dohyo is pure black.\n\nConfining the camera to a band RAISES the effective aspect, so the same width costs far less height. MEASURED 2026-08-25 at 1080x1920: a 0.20-0.82 band took aspect 0.563 -> 0.907 and the fighters rendered about 2.5x larger with both still in frame.\n\nOFF by default. The area outside the band is not drawn by this camera, so it needs the clear camera this spawns AND arena dressing that reaches the band edges — turn it on and look at it before shipping it.")]
-        public bool enableArenaBand;
-        [Tooltip("Bottom edge of the arena band, 0-1 up the screen. Should clear the HUD dock.")]
-        [Range(0f, 0.5f)] public float arenaBandBottom = 0.20f;
-        [Tooltip("Top edge of the arena band, 0-1 up the screen. Should sit under the scorebug.")]
-        [Range(0.5f, 1f)] public float arenaBandTop = 0.82f;
 
         [Header("Ring")]
         // The ring lives here rather than only on the arena scene because it is
@@ -90,16 +84,12 @@ namespace PoSumo
         public float roundTimeoutSeconds = 0f;
         public float betweenRoundsPause = 2.5f;
         public float graceSeconds = 0.4f;
-        [Tooltip("Non-foot ground contact must persist this long to count as a throw-down.")]
-        public float downGraceSeconds = 0.2f;
-        [Tooltip("Seconds a fighter may lie down before the round is awarded to the opponent. 0 disables it.\n\nNO LONGER GAME-ONLY: ported into Systems_SumoMatchManager on 2026-08-15, so new brains DO train against it. Keep the two in step — that referee does not read this asset, it carries its own copy. Every brain shipped before that date was trained without it.\n\nThis exists because measured play had EVERY round expire on the 30 s clock — five of five across two matches, decided on position, with no ring-out. Once a fighter loses a leg its IsDown test (non-foot ground contact) can never clear again, so roughly half of each round was two motionless bodies waiting out the timer. Long enough that a genuine scramble back to the feet still counts, short enough that a fighter who cannot continue does not stall the round.")]
-        public float downOutSeconds = 3f;
-        [Tooltip("A fighter that loses all four limbs to a single blow loses the round instantly.\n\nGAME-ONLY, like downOutSeconds above: Systems_SumoMatchManager has no equivalent, so no brain has trained against it. Safe for the same reason the rest are — the victim is a limbless torso and could not have continued.\n\nTurning this OFF does not let a gibbed fighter keep going. It falls through to downOutSeconds, which retires it about 3 s later because it can never satisfy the get-up condition again. The only difference is the wait.\n\nHow often it fires is set on Systems_BodyDamage (gibSpeed / gibChance), not here.")]
+        // downGraceSeconds, downOutSeconds, knockdownLoses and headTouchLoses were
+        // DELETED 2026-08-26 from this asset and both referees. The ring-out is
+        // the only losing condition; the shrinking mat (shrinkSeconds) is what
+        // ends a stalemate, squeezing a fighter who stays down off the edge.
+        [Tooltip("A fighter that loses all four limbs to a single blow loses the round instantly.\n\nGAME-ONLY: Systems_SumoMatchManager has no equivalent, so no brain has trained against it. Safe for the same reason the rest are — the victim is a limbless torso and could not have continued.\n\nTurning this OFF does not let a gibbed fighter keep going: the shrinking mat squeezes it off the edge instead. The only difference is the wait.\n\nHow often it fires is set on Systems_BodyDamage (gibSpeed / gibChance), not here.")]
         public bool gibLosesRound = true;
-        [Tooltip("Must stay false and match Systems_SumoMatchManager. Falling is not a loss in either referee — if you change it, change it in BOTH or trained brains face a rule they never saw.")]
-        public bool knockdownLoses = false;
-        [Tooltip("The round is lost the instant a fighter's HEAD touches the mat (2026-08-26). Read through Sensor_HeadContact on the head hitbox, so a shoulder or knee on the clay does not count — that stays governed by knockdownLoses/downOutSeconds. In BOTH referees: Systems_SumoMatchManager carries its own copy (headTouchLoses) and must stay equal. Every brain shipped before this date trained without it.")]
-        public bool headTouchLoses = false;
         [Tooltip("THE RING-OUT RULE (2026-08-26). ON: a fighter is out only when their HEAD lands on the arena floor below the dohyo (Systems_SumoArena.FloorCollider, via Sensor_HeadContact). Feet over the edge no longer end the round — they still cut the motors so the fall plays out (see GoLimp) — and the torso backstop moves to 2 m below the floor. OFF: the old rule, a foot below footOffMatY.\n\nBoth referees carry this; Systems_SumoMatchManager.ringOutOnHeadFloor must stay equal. Strictly the head: a fighter who lands on the floor on their feet or back is NOT out, which was chosen knowingly.")]
         public bool ringOutOnHeadFloor = true;
         [Tooltip("Head knockouts one fighter can suffer before losing the whole match on the spot — boxing's three-knockdown rule. 0 disables it. GAME-ONLY: Systems_SumoMatchManager has no equivalent, so the brains never train against it; it is a spectacle rule layered on top of the sumo rules, not one of them.")]
@@ -126,7 +116,7 @@ namespace PoSumo
         public bool enableFaceMood = true;
         [Tooltip("Per-fighter spoken lines. Fighters with no recorded clips stay silent.")]
         public bool enableVoice = true;
-        [Tooltip("2D light rig plus the post-processing volume.\n\nMUST STAY ON. Systems_ArenaLighting.LightingEffects is false, so the rig currently builds exactly one flat global light and nothing else — but every sprite in the arena uses a LIT material, and with no Light2D at all they render solid black. This switch decides whether there is a rig; that one decides what it builds.")]
+        [Tooltip("2D light rig plus the post-processing volume.\n\nMUST STAY ON. The full rig (key, rims, global, volumetrics) has been on since 2026-08-25 and the old LightingEffects / FlatBodyShading switches on Systems_ArenaLighting were deleted — but every sprite in the arena uses a LIT material, and with no Light2D at all they render solid black. This switch decides whether there is a rig at all.")]
         public bool enableLighting = true;
         [Tooltip("Dust and sweat bursts scaled by hit strength.")]
         public bool enableImpactFx = true;

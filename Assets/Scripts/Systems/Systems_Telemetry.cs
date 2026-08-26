@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -51,6 +52,11 @@ namespace PoSumo
         private readonly StringBuilder _builder = new StringBuilder(1024);
 
         private Agent_Biped[] _agents = System.Array.Empty<Agent_Biped>();
+        /// One TensorBoard key per agent, built once when the agent is first
+        /// sampled. Interpolating `$"Body/{name}/Stamina"` per sample was a fresh
+        /// string twice a second per biped for the whole life of the process.
+        private readonly Dictionary<Agent_Biped, string> _staminaKeys =
+            new Dictionary<Agent_Biped, string>();
         private float _nextSample;
         private float _nextRescan;
         private int _boundPort = -1;
@@ -194,7 +200,12 @@ namespace PoSumo
                 // would otherwise be 10 indistinguishable lines.
                 if (stats != null)
                 {
-                    stats.Add($"Body/{agent.behaviorName}/Stamina", stamina);
+                    if (!_staminaKeys.TryGetValue(agent, out string key))
+                    {
+                        key = "Body/" + agent.behaviorName + "/Stamina";
+                        _staminaKeys.Add(agent, key);
+                    }
+                    stats.Add(key, stamina);
                 }
             }
 

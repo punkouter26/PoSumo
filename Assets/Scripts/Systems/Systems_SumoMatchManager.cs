@@ -5,10 +5,9 @@ namespace PoSumo
 {
     /// Training referee for the sumo env. Mirrors the deployed game's rules:
     /// falling down is NOT an instant loss — a wrestler loses by dropping off the
-    /// dohyo (a foot below footOffMatY, or the torso below fallY as a backstop),
-    /// or by lying down past downOutSeconds. Each round can randomize the
-    /// starting platform width and surface friction so policies train across the
-    /// whole endgame space. Timeout is a draw.
+    /// dohyo (a foot below footOffMatY, or the torso below fallY as a backstop).
+    /// Each round can randomize the starting platform width and surface friction
+    /// so policies train across the whole endgame space. Timeout is a draw.
     ///
     /// Every number here that also exists in Assets/Settings/GameTuning.asset
     /// must equal the value in that asset. This component does NOT read it —
@@ -18,7 +17,7 @@ namespace PoSumo
     /// 1.2 vs 2.5. Corrected 2026-08-15.
     ///
     /// The one shipped rule not reproduced here is the head-KO count; see the
-    /// note beside downOutSeconds for why it cannot be.
+    /// NOT PORTED note below for why it cannot be.
     public sealed class Systems_SumoMatchManager : MonoBehaviour
     {
         public Agent_Biped wrestlerA;
@@ -36,13 +35,14 @@ namespace PoSumo
         // only the scenes were ever right. Anyone adding a fifth training scene
         // inherited the wrong arena silently. Keep this equal to GameTuning.
         public float ringHalfWidth = 3.5f;
-        // 20 s, matching GameTuning.roundTimeoutSeconds. The code default here
-        // was 30 while every training scene serialised 20 — same drift as above.
+        // Episode bound for TRAINING ONLY. The GAME has NO clock any more
+        // (GameTuning.roundTimeoutSeconds is 0 and the timeout-decision path was
+        // deleted 2026-08-26) — this is a deliberate divergence, see CLAUDE.md.
+        // A training episode still needs a bound so a stalemate is interrupted
+        // (a draw, not a terminal) rather than running forever; the shrinking mat
+        // below normally ends a round well before it. The four training scenes
+        // serialize 20.
         public float roundTimeoutSeconds = 20f;
-        [Tooltip("Legacy rule: any non-foot ground contact loses. Off for game parity.")]
-        public bool knockdownLoses = false;
-        [Tooltip("Head on the mat loses the round instantly. Must match GameTuning.headTouchLoses (true since 2026-08-26). Read from Sensor_HeadContact on the head hitbox only — a shoulder or knee does not count.")]
-        public bool headTouchLoses = false;
         [Tooltip("Ring-out = the HEAD lands on the arena floor below the dohyo. Must match GameTuning.ringOutOnHeadFloor (true since 2026-08-26). OFF restores the foot-below-footOffMatY rule. Strictly the head; the torso backstop moves 2 m under the floor.")]
         public bool ringOutOnHeadFloor = true;
         public float fallY = -0.2f;
@@ -50,18 +50,12 @@ namespace PoSumo
         public float footOffMatY = -0.06f;
 
         [Header("Game parity rules")]
-        [Tooltip("Seconds a fighter may lie down before the round is awarded to the opponent. 0 disables it. Must match GameTuning.downOutSeconds.\n\nPorted from Systems_GameMatchManager on 2026-08-15. It had been game-only, so no brain had ever learned that staying down is fatal — and measured play had 57% of rounds decided by exactly this rule. A policy trained without it is optimising for a referee it will never meet.")]
-        // 0 since 2026-08-16, to follow GameTuning.downOutSeconds back to 0. The
-        // rule was removed from the game because the SHRINKING MAT below now does
-        // its job better: a fighter who stays down is squeezed off the edge and
-        // loses a ring-out, which is how sumo ends, instead of being retired by a
-        // count that reads on screen as the game giving up. Measured play after the
-        // change was 4 rounds, 4 ring-outs, no stalls and no draws.
-        //
-        // Do NOT raise this without also removing the shrink, and do not remove the
-        // shrink without restoring this. Either alone brings back the stall the
-        // count was written for: two motionless bodies on a mat that never closes.
-        public float downOutSeconds = 0f;
+        // Down-out, knockdown and head-touch were DELETED from both referees on
+        // 2026-08-26. The SHRINKING MAT below is what ends a stalemate: a fighter
+        // who stays down is squeezed off the edge and loses an honest ring-out.
+        // Do not restore a down count without removing the shrink, and do not
+        // remove the shrink without restoring one — either alone brings back two
+        // motionless bodies on a mat that never closes.
         [Tooltip("Width in metres of the slick band at each rim. Must match GameTuning.tawaraBandWidth. Applied to the arena in Start, so a stale serialized value on Systems_SumoArena is overwritten at runtime exactly like ringHalfWidth is.")]
         public float tawaraBandWidth = 1.2f;
         [Tooltip("Friction inside the tawara band. Must match GameTuning.tawaraFriction.")]
@@ -104,7 +98,6 @@ namespace PoSumo
         public float shrinkSeconds = 12f;
 
         private float _elapsed;
-        private float _downA, _downB;
         private float _startHalf;
         private float _appliedHalf;
         private float _nextShoveTime;
@@ -181,37 +174,16 @@ namespace PoSumo
                 _nextShoveTime = _elapsed + Random.Range(3f, 7f);
             }
 
-            // Down-out, mirroring Systems_GameMatchManager. IsDown is any
-            // non-foot ground contact, so this is a lying-down timer, not a
-            // stumble timer — it only runs while the fighter is actually on the
-            // mat and it resets the instant a knee or an elbow comes off it.
-            if (downOutSeconds > 0f)
-            {
-                _downA = wrestlerA.IsDown ? _downA + Time.fixedDeltaTime : 0f;
-                _downB = wrestlerB.IsDown ? _downB + Time.fixedDeltaTime : 0f;
-            }
-            bool aDownOut = downOutSeconds > 0f && _downA >= downOutSeconds;
-            bool bDownOut = downOutSeconds > 0f && _downB >= downOutSeconds;
-
             TickShrinkingRing();
 
-            bool aOut = Loses(wrestlerA) || aDownOut;
-            bool bOut = Loses(wrestlerB) || bDownOut;
+            // Ring-out is the ONLY losing condition, in both referees (2026-08-26).
+            bool aOut = Loses(wrestlerA);
+            bool bOut = Loses(wrestlerB);
 
             if (aOut || bOut)
             {
                 if (aOut && !bOut) EndRound(winner: wrestlerB, loser: wrestlerA);
                 else if (bOut && !aOut) EndRound(winner: wrestlerA, loser: wrestlerB);
-                // Both down past the count: the one who went down FIRST has the
-                // larger timer and loses. Same tiebreak the game referee uses —
-                // without it a mutual pile-up is a draw and neither policy learns
-                // that getting up sooner wins.
-                else if (aDownOut && bDownOut && !Mathf.Approximately(_downA, _downB))
-                {
-                    bool aLoses = _downA > _downB;
-                    EndRound(winner: aLoses ? wrestlerB : wrestlerA,
-                             loser: aLoses ? wrestlerA : wrestlerB);
-                }
                 else Draw(); // genuinely simultaneous — call it a draw
             }
             else if (_elapsed >= roundTimeoutSeconds)
@@ -237,16 +209,12 @@ namespace PoSumo
         {
             if (arena == null || shrinkStartSeconds <= 0f) return;
 
-            float target = _startHalf;
-            if (shrinkSeconds > 0f && _elapsed > shrinkStartSeconds)
-            {
-                float endHalf = ringHalfWidth > 0f
-                    ? shrinkToHalfWidth * (_startHalf / ringHalfWidth)
-                    : shrinkToHalfWidth;
-                // Unclamped, floored at zero — mirrors the game referee.
-                float progress = (_elapsed - shrinkStartSeconds) / shrinkSeconds;
-                target = Mathf.Max(0f, Mathf.LerpUnclamped(_startHalf, endHalf, progress));
-            }
+            float endHalf = ringHalfWidth > 0f
+                ? shrinkToHalfWidth * (_startHalf / ringHalfWidth)
+                : shrinkToHalfWidth;
+            // Same curve as the game referee, by construction: one shared helper.
+            float target = Systems_RingShrink.ShrinkTarget(_startHalf, endHalf, _elapsed,
+                                                          shrinkStartSeconds, shrinkSeconds);
 
             // 1 cm of hysteresis: below that the contraction is invisible and only
             // costs a collider rebuild, every physics step, on every arena in a
@@ -287,8 +255,6 @@ namespace PoSumo
                 }
                 if (w.Torso.position.y < fallY) return true;   // backstop: thrown clear
             }
-            if (knockdownLoses && w.IsDown) return true;   // legacy instant-loss rule
-            if (headTouchLoses && w.HeadDown) return true; // head on the mat — mirrors the game
             return false;
         }
 
@@ -312,7 +278,6 @@ namespace PoSumo
         private void ResetRound()
         {
             _elapsed = 0f;
-            _downA = _downB = 0f;
             _nextShoveTime = Random.Range(2f, 5f);
 
             // Curriculum lessons override the dials each round.

@@ -241,9 +241,6 @@ namespace PoSumo
         public float TorsoX => Torso.position.x;
         public bool IsDown => NonFootGroundContacts > 0;
 
-        /// The head is on the mat. Read by both referees' headTouchLoses rule.
-        public bool HeadDown => _b.HeadContact != null && _b.HeadContact.Touching;
-
         /// The head is on the arena FLOOR below the dohyo — the ring-out since
         /// 2026-08-26 (ringOutOnHeadFloor in both referees).
         public bool HeadOnFloor => _b.HeadContact != null && _b.HeadContact.TouchingFloor;

@@ -112,7 +112,7 @@ namespace PoSumo
         {
             if (!enableKnockbackCloseUp || _camFollow == null || sensor == null) return;
             if (_slowMoActive || _widePending) return;                  // a bigger shot owns the camera
-            if (_manager == null || !_manager.RoundLive) return;        // not during ceremony or result
+            if (_manager == null || !_manager.RoundActive) return;        // not during ceremony or result
             if (Time.realtimeSinceStartup < _knockbackReadyAt) return;
 
             Agent_BipedBody struck = sensor.owner;

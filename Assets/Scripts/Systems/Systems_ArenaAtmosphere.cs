@@ -30,7 +30,7 @@ namespace PoSumo
         [Header("Atmospheric perspective")]
         [Tooltip("Far layers are tinted toward this and lose saturation, which is what puts air between them and the fighters.")]
         public Color hazeColor = new Color(0.42f, 0.44f, 0.55f);
-        // Lowered 0.28 -> 0.12 when LightingEffects was re-enabled 2026-08-25. With
+        // Lowered 0.28 -> 0.12 when the lighting rig was re-enabled 2026-08-25. With
         // the rig off the haze sat over a near-black backdrop and barely read; with
         // the key light on it washes the upper backdrop into flat grey and eats the
         // depth the rig exists to create. Measured against a live capture, not
@@ -43,15 +43,12 @@ namespace PoSumo
         public float swayHz = 0.45f;
 
         [Header("Light shafts")]
-        // OFF, with the rest of the lighting effects. These are cheap sprite quads,
-        // NOT the key light's volumetric cone — they were the structure (four
-        // discrete beams) laid over the cone's radial falloff. With
-        // Systems_ArenaLighting.LightingEffects off there is no cone and no key
-        // light to fan from, so four bright quads hanging in front of everything at
-        // sorting order 20 read as smears on the lens rather than as light.
-        //
-        // Gated on LightingEffects in Start as well, so this bool and the master
-        // switch cannot disagree; keep both true to get the beams back.
+        // OFF. These are cheap sprite quads, NOT the key light's volumetric cone —
+        // they were the structure (four discrete beams) laid over the cone's radial
+        // falloff. With keyVolumeIntensity at 0 there is no cone to fan from, so
+        // four bright quads hanging in front of everything at sorting order 20 read
+        // as smears on the lens rather than as light. Turn this on together with
+        // the key volumetric, not alone.
         public bool showShafts = false;
         public int shaftCount = 4;
         public float shaftTopY = 6.1f;
@@ -99,7 +96,7 @@ namespace PoSumo
             _camera = Camera.main;
 
             Collect();
-            if (showShafts && Systems_ArenaLighting.LightingEffects)
+            if (showShafts)
             {
                 BuildShafts();
             }

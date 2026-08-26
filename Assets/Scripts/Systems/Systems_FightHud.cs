@@ -86,9 +86,6 @@ namespace PoSumo
         private readonly Agg _aggA = new Agg();
         private readonly Agg _aggB = new Agg();
         private int _samples;
-        private float _sumClash;
-        private int _clashRounds;
-        private bool _clashThisRound;
 
         private Systems_HudRoot _hud;
 
@@ -121,25 +118,49 @@ namespace PoSumo
         public float DominanceA { get; private set; } = 50f;
         public float DominanceB { get; private set; } = 50f;
 
+        // Subscribed in OnEnable / unsubscribed in OnDisable, as every companion
+        // should be. The manager is spawned before this component (it is what
+        // spawns us), but `manager` may still be null on the FIRST OnEnable when
+        // the field was not assigned — Start does the lookup and subscribes then;
+        // a later re-enable finds `manager` set and subscribes here. Unsubscribe
+        // first so a Start-after-OnEnable pair can never double-subscribe.
+        private bool _subscribed;
+
+        private void OnEnable()
+        {
+            Subscribe();
+        }
+
         private void Start()
         {
             if (manager == null) manager = FindAnyObjectByType<Systems_GameMatchManager>();
-            manager.MatchReset += ResetAggregates;
-            manager.RoundStarted += OnRoundStarted;
-            manager.RoundEnded += OnRoundEnded;
-            manager.MatchEnded += OnMatchEnded;
+            Subscribe();
             BuildUi();
         }
 
         private void OnDisable()
         {
-            if (manager != null)
-            {
-                manager.MatchReset -= ResetAggregates;
-                manager.RoundStarted -= OnRoundStarted;
-                manager.RoundEnded -= OnRoundEnded;
-                manager.MatchEnded -= OnMatchEnded;
-            }
+            Unsubscribe();
+        }
+
+        private void Subscribe()
+        {
+            if (manager == null || _subscribed) return;
+            manager.MatchReset += ResetAggregates;
+            manager.RoundStarted += OnRoundStarted;
+            manager.RoundEnded += OnRoundEnded;
+            manager.MatchEnded += OnMatchEnded;
+            _subscribed = true;
+        }
+
+        private void Unsubscribe()
+        {
+            if (manager == null || !_subscribed) return;
+            manager.MatchReset -= ResetAggregates;
+            manager.RoundStarted -= OnRoundStarted;
+            manager.RoundEnded -= OnRoundEnded;
+            manager.MatchEnded -= OnMatchEnded;
+            _subscribed = false;
         }
 
         private void ResetAggregates()
@@ -147,14 +168,10 @@ namespace PoSumo
             _aggA.Reset();
             _aggB.Reset();
             _samples = 0;
-            _sumClash = 0f;
-            _clashRounds = 0;
-            _clashThisRound = false;
         }
 
         private void OnRoundStarted()
         {
-            _clashThisRound = false;
             ShowDetail(false);
         }
 
@@ -450,12 +467,6 @@ namespace PoSumo
                 TrackKnockdown(_aggA, _aggB, a.IsDown, now);
                 TrackKnockdown(_aggB, _aggA, b.IsDown, now);
 
-                if (!_clashThisRound && touching)
-                {
-                    _clashThisRound = true;
-                    _sumClash += manager.RoundElapsed;
-                    _clashRounds++;
-                }
                 _samples++;
             }
 

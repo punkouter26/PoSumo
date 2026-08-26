@@ -115,7 +115,7 @@ namespace PoSumo
         /// calls out for anything that ends up as a force.
         private void FixedUpdate()
         {
-            if (_manager == null || !_manager.RoundLive)
+            if (_manager == null || !_manager.RoundActive)
             {
                 if (Support01 != 0f) ResetSupport();
                 return;

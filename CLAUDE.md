@@ -101,8 +101,8 @@ re-run training locally to recreate that directory.
 | MCP | unity-mcp-cli (npm) | **not installed** | `npm ls -g` is empty and there is no global bin. Every `unity-mcp-cli` invocation in the `.claude/skills/*/SKILL.md` files therefore fails — use `Tools/unity.py` instead |
 | MCP | com.ivanmurzak.unity.mcp | **0.90.0** | measured live 2026-08-25; was 0.88.0. Ships NuGet `McpPlugin` / `McpPlugin.Common` **8.3.0** under `Assets/Plugins/NuGet/` — those move WITH the package, so `.nuget-installed.json` and the two DLLs are part of the same version decision. Upgrading it reverts the plugin `.meta` platform flags — re-run *PoSumo → Fix Plugin Platforms* |
 | MCP | com.ivanmurzak.unity.mcp.animation | 1.2.28 | add-on, resolved against core 0.90.0 |
-| MCP | com.ivanmurzak.unity.mcp.particlesystem | **1.2.30 — BACK, and compiling** | removed 2026-08-16 because 1.2.30 did not match core **0.88.0** (it referenced a namespace `AIGD` that version did not ship) and **the whole project failed to compile**, which blocks Play mode entirely. Under core **0.90.0** the same 1.2.30 resolves as a matched dependency and the console is clean — verified live 2026-08-25. The add-on was never the defect; the *pairing* was |
-| MCP | com.ivanmurzak.unity.mcp.cinemachine | 1.0.14 | likewise back and compiling under 0.90.0, having been dropped for the same mismatch |
+| MCP | com.ivanmurzak.unity.mcp.particlesystem | **NOT INSTALLED** (measured 2026-08-26) | This row said "1.2.30 — BACK, and compiling" as of 2026-08-25; on 2026-08-26 it is in neither `manifest.json` nor `packages-lock.json` and has no `PackageCache` dir. The history is still worth keeping: removed 2026-08-16 because 1.2.30 did not match core **0.88.0** (referenced a namespace `AIGD` that version did not ship) and **the whole project failed to compile**, which blocks Play mode entirely; under core **0.90.0** the same version was measured resolving clean. The add-on was never the defect; the *pairing* was. Re-check the pair if it is ever added back |
+| MCP | com.ivanmurzak.unity.mcp.cinemachine | **NOT INSTALLED** (measured 2026-08-26) | same story as the row above; absent from manifest and lock |
 | MCP | com.coplaydev.unity-mcp | 10.1.0 | |
 | MCP | com.besty.unity-skills | 2.2.1 | HTTP server port 8090 |
 | Python | Python | **3.10.11** | hard range: >=3.10.1, <=3.10.12 |
@@ -843,8 +843,18 @@ there are no `.mat` assets and no Shader Graph files at all. It is a 3-pass copy
 `Sprite-Lit-Default` (all three passes must declare an IDENTICAL `UnityPerMaterial` CBUFFER
 or the SRP Batcher silently drops it) plus four terms: rim, subsurface wrap, sweat and clay.
 
-**`Systems_ArenaLighting.LightingEffects` is `false` (2026-08-02) and is the master
-switch for all of it.** With it off the rig builds exactly **one** `Light2D.LightType.Global`
+> **SUPERSEDED 2026-08-26.** The rig was turned back ON in `7440f2b` (2026-08-25, "lighting
+> rig on") and the three static switches described below — `LightingEffects`,
+> `FlatBodyShading`, `PaintedSpotlights` — were never assigned by anything, so on
+> 2026-08-26 they and every branch they gated (the flat single-light rig,
+> `flatGlobalIntensity`, the flat body material, the painted-cone show path) were
+> **deleted**. The full rig (global + key + two rims, measured as 4 `Light2D`s) is the only
+> path now; `BodyShadingActive` is simply true; the painted `Spotlight`/`LanternHalo` cones
+> stay hidden unconditionally. Everything below about exposure ratios, the shadow geometry
+> and `keyCastsShadows` is still true. The paragraph that follows is kept as history.
+
+**`Systems_ArenaLighting.LightingEffects` was `false` (2026-08-02) and was the master
+switch for all of it — no longer exists, see above.** With it off the rig builds exactly **one** `Light2D.LightType.Global`
 at `flatGlobalIntensity` (1.5) and nothing else: no key, no rims, no volumetrics, no
 shadows, no post-processing volume, no cylinder normal map, and the BodyLit rim/wrap/sweat
 terms zeroed. `Systems_SumoArena` also hides its painted-on `Spotlight` cones and
@@ -1401,7 +1411,18 @@ a headless run.
 `Training/results` **is** the TensorBoard logdir, so treat it as a curated list, not a
 dumping ground. Everything else goes elsewhere —
 
-> **As of the 2026-08-25 purge it holds exactly four runs — `matt_tall04`,
+> **MEASURED 2026-08-26: `Training/results/` DOES NOT EXIST, and neither does
+> `Training/trunks/` or `Training/venv/`.** The four `*_tall04` trunks the next paragraph
+> describes are gone, so `<Name>Obs01.yaml`'s `--initialize-from` has nothing to load and
+> the corrective run is a COLD retrain until someone recreates them. `DeployBrain` was
+> retargeted the same day to scan for the newest run rather than pin a run id, and reports
+> "Training/results absent" instead of failing on a hardcoded path. Also that day: the
+> upstream example project, localized docs, `.yamato`, `colab`, `DevProject`,
+> `PerformanceProject` and `unity-volume` were `git rm`'d from `Training/ml-agents/`
+> (~100 MB of a 211 MB repo); the package, the python trainer/envs and the patches are
+> untouched.
+>
+> **As of the 2026-08-25 purge it held exactly four runs — `matt_tall04`,
 > `standard_tall04`, `nick_tall04`, `kim_tall04` — totalling 65 MB.** These are the
 > warm-start trunks `<Name>Obs01.yaml` initializes from; each keeps its
 > `<Behavior>.onnx`, `<Behavior>/checkpoint.pt`, `configuration.yaml`, `run_logs/` and one

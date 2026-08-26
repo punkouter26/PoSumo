@@ -59,10 +59,36 @@ namespace PoSumo
     ///     shoulder -120 .. 120   symmetric
     ///     elbow    -150 .. 0     flexion NEGATIVE
     ///
-    /// The two signs that could NOT be read off a range — which way the spine and
-    /// shoulder lean toward the opponent — are isolated in LEAN_SIGN and
-    /// ARM_SIGN below so they can be flipped from one place after watching a bout,
-    /// rather than by hunting through the posture tables.
+    /// The one sign that could NOT be read off a range — which way the shoulder
+    /// swings toward the opponent — is isolated in ARM_SIGN below so it can be
+    /// flipped from one place after watching a bout, rather than by hunting
+    /// through the posture tables.
+    ///
+    /// THE BOT ONLY STANDS. It has no gait and no drive: every decision is either
+    /// `Recover` (down) or `Stand` (up). A SIMBICON walk (`Advance`), a
+    /// crouch-and-shove (`Drive`), a lunge timer, a cornered-drive rule and a
+    /// debounced foot-contact filter used to live in this file behind
+    /// `StandUprightThreshold`, and that threshold was set to 2 against an
+    /// `upright` that is `Clamp01`ed — i.e. the gait was deliberately unreachable.
+    /// That was investigated as a bug on 2026-08-07 and measured not to be one, in
+    /// SCN_BOT with refereeing disabled, sampling the longest unbroken stretch of
+    /// `!IsDown && upright > 0.5`:
+    ///
+    ///     gait off         1.35 - 4.16 s     <- best
+    ///     threshold 0.95   0.45 s
+    ///     threshold 0.85   0.43 - 0.89 s
+    ///     threshold 0.70   0.89 s
+    ///     threshold 0.60   0.89 s
+    ///
+    /// With the gait live the BOT walked itself over in under a second: a swing
+    /// leg lifts half the support away, and the gait had never been tuned against
+    /// the current body. Fixing it is a control-engineering job, not a threshold.
+    /// Note the stand loop itself diverges run to run (1.35-4.16 s at fixed gains),
+    /// so any single measurement here is noise — take repeats.
+    ///
+    /// The unreachable code was DELETED on 2026-08-26 rather than kept as a
+    /// half-tuned reference. It lives in git history — commit 058f91f and earlier —
+    /// and anyone reviving it should start from there, not from this file.
     public sealed class Agent_Bot
     {
         // Joint indices. These mirror JOINT_DEFS order exactly; if that table is
@@ -72,10 +98,6 @@ namespace PoSumo
         private const int SPINE_1 = 6, SPINE_2 = 7, SPINE_3 = 8;
         private const int SHOULDER_NEAR = 9, ELBOW_NEAR = 10;
         private const int SHOULDER_FAR = 11, ELBOW_FAR = 12;
-
-        /// +1 means "positive spine jointAngle leans the chest toward the opponent".
-        /// Flip this single constant if the bot is measured leaning away.
-        private const float LEAN_SIGN = 1f;
 
         /// +1 means "positive shoulder jointAngle swings the arm toward the opponent".
         private const float ARM_SIGN = 1f;
@@ -94,133 +116,8 @@ namespace PoSumo
         /// UPPER_SNAKE because they are static fields, not constants.
         internal static float Gain = 2.5f;
 
-        /// Uprightness below which the BOT stops trying to walk and just tries to
-        /// stand. Stepping while already toppling is how the previous version threw
-        /// itself down: the swing leg leaves the ground exactly when the body can
-        /// least afford to lose half its support.
-        ///
-        /// **Any value above 1 DISABLES THE GAIT ENTIRELY, and 2 is deliberate.**
-        /// `upright` is `Mathf.Clamp01(Dot(Chest.up, up))` and so cannot exceed 1,
-        /// which makes `upright < 2f` unconditionally true: `Decide` always takes
-        /// the `Stand` branch and returns, leaving `Advance`, `Drive`, the SIMBICON
-        /// gait, the lunge timer and the cornered-drive logic below as unreachable
-        /// code. That reads exactly like a bug and was investigated as one on
-        /// 2026-08-07 — it is not. Enabling the gait measurably makes the BOT
-        /// worse, so the value stays.
-        ///
-        /// Measured that day in SCN_BOT, refereeing disabled so the window was one
-        /// continuous round rather than one bounded by round end, sampling the
-        /// longest unbroken stretch with `!IsDown && upright > 0.5`:
-        ///
-        ///     gait off (2.0)   1.35 - 4.16 s     <- best
-        ///     0.95             0.45 s
-        ///     0.85             0.43 - 0.89 s
-        ///     0.70             0.89 s
-        ///     0.60             0.89 s
-        ///
-        /// With the gait live the BOT walks itself over in under a second: `dx`
-        /// went from ~0.1 m of drift to +/-1.7 m of travel, and it spent that
-        /// travel falling. The comment above is the reason — a swing leg lifts half
-        /// the support away — and the gait has never been tuned against the current
-        /// body. Fixing it is a control-engineering job, not a threshold.
-        ///
-        /// The ceiling either way is ~4 s, short of a 5 s target, and the stand
-        /// loop itself diverges: run-to-run spread at fixed gains was 1.35-4.16 s,
-        /// so ANY single measurement here is noise. Take repeats. `StandKd` 4 -> 10
-        /// looked like a fix at 4.05 s and did not replicate (1.78, 1.81).
-        ///
-        /// NOT const, for the same reason as `Gain` — it is the first thing to
-        /// sweep, by reflection, when someone next attacks this.
-        internal static float StandUprightThreshold = 2f;
-
-        // Ranges in metres along the mat.
-        private const float ENGAGE_RANGE = 1.30f;   // inside this, stop walking and drive
-        private const float LUNGE_RANGE = 0.75f;    // inside this, commit to the shove
-        private const float EDGE_ALARM = 0.85f;     // this close to our own edge, dig in
-
-        // ── Gait: SIMBICON, not a phase oscillator ───────────────────────────
-        //
-        // The first version of this drove the legs from a blind sine wave. It could
-        // not work and did not: an open-loop gait has no way to notice it is
-        // falling, so any disturbance integrates and the fighter goes down at the
-        // tachiai every single time (measured: a full match, 3-0, both bodies flat,
-        // every round decided by downOutSeconds).
-        //
-        // SIMBICON (Yin, Loken & van de Panne 2007) fixes exactly that with one
-        // term. The swing hip is not driven to a fixed angle but to
-        //
-        //     theta = theta0 + CD * d + CV * v
-        //
-        // where d is the horizontal distance from the centre of mass to the stance
-        // foot and v is the centre-of-mass velocity, both in the facing-local
-        // frame. Falling forward raises d and v, which swings the free leg further
-        // forward, which plants the next foot ahead of the fall and catches it.
-        // That feedback is the whole difference between a walker and a faller, and
-        // it is why a hand-written 2D biped is tractable at all.
-        //
-        // Gains are in degrees per metre and degrees per metre/second because the
-        // joint targets below are in degrees, unlike the paper's radians.
-        private const float SWING_DURATION = 0.30f;
-        private const float CD_DEG_PER_M = 115f;
-        private const float CV_DEG_PER_MPS = 42f;
-        private const float SWING_HIP_BASE_DEG = -10f;  // negative = flexed = thigh forward
-        private const float SWING_KNEE_DEG = 68f;       // lift the foot clear of the mat
-        private const float STANCE_KNEE_DEG = 16f;      // near-extension carries the weight
-        private const float SWING_HIP_MIN_DEG = -95f;   // stay inside the hip's -120..30
-        private const float SWING_HIP_MAX_DEG = 18f;
-
-        /// The stance hip EXTENDS. This is where the propulsion comes from and
-        /// getting it wrong is what made the first SIMBICON pass walk backwards.
-        ///
-        /// MEASURED, not assumed (probe: gravity off, agent disabled, drive hip 0 to
-        /// each rail, read the thigh via pelvis.InverseTransformPoint):
-        ///
-        ///     facing-local jointAngle +31 deg -> thigh x = -0.42  (BEHIND the hip)
-        ///     facing-local jointAngle -121 deg -> thigh x = +0.70  (FORWARD)
-        ///
-        /// So negative is flexion/forward — which the swing target above already had
-        /// right — and POSITIVE is extension. The old stance target of -6 deg held
-        /// the support thigh FORWARD for the whole step, so the planted foot sat
-        /// ahead of the body and pushed it backwards: both fighters drifted outward
-        /// and off the far edge of the dohyo, which is exactly what was measured.
-        /// Rotating the stance thigh backwards against a planted foot is what
-        /// carries the pelvis forward over it.
-        private const float STANCE_HIP_DEG = 20f;
-
-        /// Left at zero deliberately. The ankle's polarity has NOT been measured,
-        /// and an unmeasured sign in the propulsion path is exactly the confounder
-        /// that made the last diagnosis take a probe to resolve. Worth revisiting
-        /// once the gait itself is stable.
-        private const float STANCE_ANKLE_PUSH_DEG = 0f;
-
-        // ── Trunk balance ────────────────────────────────────────────────────
-        //
-        // The missing half of SIMBICON. The paper holds the trunk upright with a
-        // virtual torque and lets the stance hip take the reaction; a constant
-        // stance angle cannot regulate trunk pitch at all, so the body pitches over
-        // however good the swing-leg feedback is. That was measured: with the swing
-        // feedback working and the stance leg finally extending, both fighters still
-        // collapsed in about a second.
-        //
-        // Lean is read as dot(chest.up, facingForward), which needs no probe: it is
-        // 0 upright and positive when the chest has pitched toward the opponent.
-        //
-        // The spine correction sign IS measured (gravity off, agent disabled, drive
-        // joints 6/7/8 to +1, read the chest through pelvis.InverseTransformPoint):
-        //     spine action +1 -> chestLocalX_facing = +0.81, i.e. chest FORWARD.
-        // So countering a forward pitch means a NEGATIVE spine target.
-        //
-        // Note the same probe returned a world-space pitch of 148 deg, which is the
-        // counter-rotation artefact CLAUDE.md warns about — with gravity off the
-        // whole body rotates to conserve angular momentum. The parent-local read is
-        // the trustworthy one, and is why the probe is written that way.
-        private const float TRUNK_SPINE_KP = 46f;   // degrees of spine per unit lean
-        private const float TRUNK_SPINE_KD = 5.5f;  // per rad/s of chest rotation
-        private const float TRUNK_HIP_KP = 38f;     // degrees of extra stance extension per unit lean
-        private const float SPINE_LIMIT_DEG = 18f;  // of the 20 the joint allows
-
-        // Standing balance. Stiffer than the walking correction because there is no
-        // swing leg to place — the ankles and hips are the entire strategy.
+        // Standing balance. Stiff, because there is no swing leg to place — the
+        // ankles and hips are the entire strategy.
         // Measured down from 90/12, which did not merely overshoot — it inverted the
         // fighter. A lean of 1.0 commanded a 90 deg target swing on hips and spine
         // at once; the trunk flipped through up = -0.37 -> +0.45 -> -0.49 in under a
@@ -242,24 +139,9 @@ namespace PoSumo
         /// uncapped one is a fall rather than a walk.
         private const float LEAN_TARGET_LIMIT = 0.13f;
 
-        /// Trunk lean the walker is asked to HOLD while advancing, as a dot product
-        /// (0 = vertical, 1 = horizontal). Small on purpose: this is the entire
-        /// propulsion, and too much is a fall rather than a walk.
-        private const float WALK_LEAN_BIAS = 0.16f;
+        /// Spine correction clamp, per joint, of the 20 deg the joint allows.
+        private const float SPINE_LIMIT_DEG = 18f;
 
-        /// Stance hip while walking. Near neutral — it holds the body up, it does
-        /// not push. See the note at the leanError term.
-        private const float STANCE_HIP_NEUTRAL_DEG = 2f;
-
-        /// Target advance speed, m/s, in the facing-local frame. This is what turns
-        /// the balance feedback into locomotion: without it the gait holds whatever
-        /// velocity it happens to have, including a backward one.
-        private const float WALK_SPEED_MPS = 0.9f;
-
-        /// Nominal hip-to-sole reach of an extended leg, metres, at widthScale 1.
-        /// From JOINT_DEFS: hip anchor 0.964, knee 0.533, ankle 0.10, so thigh and
-        /// shin are ~0.431 and ~0.433. Scaled per fighter by widthScale.
-        private const float LEG_REACH_M = 0.87f;
         private const float STAND_HIP_DEG = -4f;
 
         /// Nearly straight, and that is load-bearing rather than cosmetic. At 22 deg
@@ -269,9 +151,9 @@ namespace PoSumo
         /// term and fatigue take their cut. A near-straight leg carries 69.6 kg on
         /// its own geometry and asks the motor for almost nothing.
         ///
-        /// It costs the sumo crouch, which matters for driving — that is why Drive()
-        /// keeps its own deeper CROUCH_KNEE_DEG. Standing up is the prerequisite;
-        /// crouching is only useful once the body can hold itself at all.
+        /// It costs the sumo crouch, which matters for driving. Standing up is the
+        /// prerequisite; crouching is only useful once the body can hold itself at
+        /// all.
         internal static float StandKneeDeg = 7f;
         /// MEASURED at last (probe: gravity off, agent disabled, drive ankle 2 to
         /// each rail, read the SHIN in the FOOT's frame — with the foot planted that
@@ -291,34 +173,8 @@ namespace PoSumo
         /// polygon the centre of mass has to stay inside.
         internal static float StanceSplitDeg = 20f;
 
-        // Postures, in degrees, in the jointAngle convention documented above.
-        private const float CROUCH_KNEE_DEG = 55f;   // bent: low centre of mass
-        private const float CROUCH_HIP_DEG = -35f;   // negative = flexed = thigh forward
-        private const float DRIVE_KNEE_DEG = 12f;    // near-extension: the push itself
-        private const float DRIVE_HIP_DEG = -8f;
-        private const float LEAN_DEG = 18f;          // per spine joint, of 20 available
-        private const float ARM_REACH_DEG = 62f;
-        private const float ELBOW_BENT_DEG = -55f;
-        private const float ELBOW_PUSH_DEG = -12f;   // straightens into the shove
-        private const float ANKLE_BRACE_DEG = 14f;
-
-        private float _lungeUntil;
-
-        // Gait state. Per-agent, because Agent_Biped owns one Agent_Bot each.
-        private bool _swingLegIsNear = true;
-        private float _swingTimer;
         private float _lastTime;
 
-        /// DEBOUNCED foot contact. Agent_BipedBody.FootDownNear/Far are sampled in
-        /// FixedUpdate from GetContacts and were measured FLICKERING between True
-        /// and False on consecutive frames while the foot demonstrably had contacts
-        /// — so any stance/swing decision reading them directly is reading noise,
-        /// and the gait was only ever swapping legs on its timeout.
-        ///
-        /// Asymmetric hysteresis on purpose: believe a landing quickly (2 frames at
-        /// 50 Hz = 40 ms) but a lift-off slowly (4 frames), because a spurious
-        /// "airborne" reading mid-stance is far more damaging than a late one — it
-        /// hands the balance loop a support leg that it thinks is not there.
         /// Gains are authored against Matt: 69.6 kg at widthScale 1, the documented
         /// baseline. Nick is 57.2 kg at widthScale 0.82 and is NOT the same plant —
         /// a lighter body is accelerated further by the same joint torque, so one
@@ -331,11 +187,6 @@ namespace PoSumo
         /// root — not with weight directly.
         private float _gainScale = 1f;
         private const float BASELINE_MASS_KG = 69.6f;
-
-        private int _downRunNear, _downRunFar;
-        private bool _stableDownNear, _stableDownFar;
-        private const int CONTACT_ON_FRAMES = 2;
-        private const int CONTACT_OFF_FRAMES = 4;
 
         /// Eased joint targets and the timestep they advance on.
         private readonly float[] _smoothTarget = new float[13];
@@ -378,7 +229,6 @@ namespace PoSumo
             if (!_targetsSeeded || rawGap > RESET_GAP_SECONDS || rawGap < 0f)
             {
                 SeedTargets(body);
-                _swingTimer = 0f;
             }
             _lastTime = ctx.Time;
             _gainScale = Mathf.Sqrt(Mathf.Clamp(body.TotalMass / BASELINE_MASS_KG, 0.5f, 2f));
@@ -387,15 +237,10 @@ namespace PoSumo
             // +x regardless of which way this fighter is turned.
             float torsoX = body.Torso.position.x;
             float upright = Mathf.Clamp01(Vector2.Dot(body.Chest.transform.up, Vector2.up));
-            float toOpponent = ctx.HasOpponent ? (ctx.OpponentX - torsoX) * ctx.FacingSign : ENGAGE_RANGE * 2f;
-            float gap = Mathf.Abs(toOpponent);
-            float forward = toOpponent >= 0f ? 1f : -1f;
 
-            // Distance from OUR position to the edge we would be pushed out over —
-            // the one behind us, which is the one that loses the round.
+            // Where we are relative to the ring centre, facing-local: negative while
+            // still on our own side of the mat, rising toward 0 at the centre.
             float offCentre = (torsoX - ctx.ArenaCenterX) * ctx.FacingSign;
-            float edgeBehind = ctx.RingHalfWidth + offCentre;
-            bool cornered = edgeBehind < EDGE_ALARM;
 
             if (upright < 0.35f || body.IsLimp)
             {
@@ -403,175 +248,7 @@ namespace PoSumo
                 return;
             }
 
-            // A cornered fighter drives regardless of range: giving ground to walk
-            // is how a round is lost on position when the clock runs out.
-            bool driving = gap <= ENGAGE_RANGE || cornered;
-            if (gap <= LUNGE_RANGE)
-            {
-                _lungeUntil = ctx.Time + 0.45f;
-            }
-            bool lunging = ctx.Time < _lungeUntil;
-
-            // Balance before locomotion. Both feet stay planted until the trunk is
-            // actually upright — a swing leg lifts half the support away, which is
-            // the last thing a toppling body needs.
-            if (upright < StandUprightThreshold)
-            {
-                Stand(body, actions, offCentre);
-                return;
-            }
-
-            if (driving)
-            {
-                Drive(body, actions, forward, lunging || cornered);
-            }
-            else
-            {
-                Advance(body, actions, forward, ctx.Time);
-            }
-        }
-
-        /// Closing distance, SIMBICON-style: one leg swings on a timer while the
-        /// other carries the weight, and the swing target is corrected every
-        /// decision by how far the body has already fallen.
-        private void Advance(Agent_BipedBody body, ActionSegment<float> actions, float forward, float time)
-        {
-            // Advance the swing timer on wall-clock delta rather than a fixed step:
-            // Heuristic runs once per DecisionRequester period (3 physics steps for
-            // every shipped fighter), so assuming a step here would run the gait at
-            // a third of its intended cadence.
-            _swingTimer += _dt;
-
-            bool nearIsSwing = _swingLegIsNear;
-            bool downNear = Debounce(body.FootDownNear, ref _downRunNear, ref _stableDownNear);
-            bool downFar = Debounce(body.FootDownFar, ref _downRunFar, ref _stableDownFar);
-            bool swingFootDown = nearIsSwing ? downNear : downFar;
-
-            // Swap legs when the swing foot lands, or when the timer expires and it
-            // has not — the timeout is what stops a leg hanging forever when the
-            // foot never makes contact (over an edge, or mid-fall).
-            if ((_swingTimer > SWING_DURATION * 0.55f && swingFootDown) || _swingTimer > SWING_DURATION)
-            {
-                _swingLegIsNear = !_swingLegIsNear;
-                _swingTimer = 0f;
-                nearIsSwing = _swingLegIsNear;
-            }
-
-            Rigidbody2D stanceFoot = nearIsSwing ? body.FootFar : body.FootNear;
-            Vector2 com = CentreOfMass(body, out Vector2 comVelocity);
-
-            // THE feedback term. Both are facing-local, so "forward" is +.
-            float d = stanceFoot != null ? (com.x - stanceFoot.position.x) * body.facingSign : 0f;
-            float v = comVelocity.x * body.facingSign;
-            // THE MISSING TERM: a desired speed. Plain SIMBICON feedback regulates
-            // balance, not velocity — it catches whatever fall is happening, so a
-            // walker that starts drifting backwards is caught by a backward step and
-            // then keeps walking backwards, STABLY and forever. That is exactly what
-            // was measured: both fighters travelling outward at uprightness 0.94-1.00
-            // until they left the dohyo, under every propulsion model tried, with
-            // `forward` verified as +1 so it was never a direction-logic bug.
-            //
-            // Tracking (v - desired) instead of v fixes the sign of the whole gait:
-            // too slow => the term goes negative => the swing foot is placed further
-            // BACK => the body falls forward over it => it accelerates. Placing the
-            // foot behind the centre of mass is how a biped speeds up; placing it in
-            // front is a brake.
-            // ── CAPTURE POINT ──────────────────────────────────────────────
-            //
-            // Replaces the hand-tuned hip angles. Where a foot MUST land to arrest
-            // the body is not a matter of taste — for an inverted pendulum it is
-            //
-            //     x_capture = x_com + v * sqrt(h / g)
-            //
-            // measured from the centre of mass, with h the centre-of-mass height.
-            // Landing there brings the body exactly to rest; landing SHORT of it
-            // leaves residual forward velocity, which is how a walker accelerates,
-            // so the desired speed is expressed as a deliberate shortfall rather
-            // than as another gain to tune.
-            //
-            // The hip angle to put the foot there is then geometry, not a constant:
-            // for a leg of reach L the horizontal offset dx needs asin(dx / L). That
-            // is converted into this project's convention with the MEASURED sign —
-            // negative jointAngle swings the thigh forward — so the whole thing has
-            // exactly one place a sign could be wrong, and it is the one that was
-            // probed.
-            float comHeight = Mathf.Max(0.35f, com.y - (stanceFoot != null ? stanceFoot.position.y : com.y - 0.9f));
-            float capture = v * Mathf.Sqrt(comHeight / 9.81f);
-
-            // Aim SHORT of the capture point by the distance the body should still
-            // be travelling at the end of the step.
-            float desiredShortfall = WALK_SPEED_MPS * forward * Mathf.Sqrt(comHeight / 9.81f);
-            float footOffset = capture - desiredShortfall + d;
-
-            float legReach = Mathf.Max(0.3f, LEG_REACH_M * body.widthScale);
-            float hipGeometric = Mathf.Asin(Mathf.Clamp(footOffset / legReach, -0.95f, 0.95f)) * Mathf.Rad2Deg;
-            float swingHip = Mathf.Clamp(-hipGeometric, SWING_HIP_MIN_DEG, SWING_HIP_MAX_DEG);
-
-            int swingHipJoint = nearIsSwing ? HIP_NEAR : HIP_FAR;
-            int swingKneeJoint = nearIsSwing ? KNEE_NEAR : KNEE_FAR;
-            int swingAnkleJoint = nearIsSwing ? ANKLE_NEAR : ANKLE_FAR;
-            int stanceHipJoint = nearIsSwing ? HIP_FAR : HIP_NEAR;
-            int stanceKneeJoint = nearIsSwing ? KNEE_FAR : KNEE_NEAR;
-            int stanceAnkleJoint = nearIsSwing ? ANKLE_FAR : ANKLE_NEAR;
-
-            // The swing knee flexes to clear the mat, then extends through the back
-            // half of the swing so the foot lands on a straightening leg.
-            float swingProgress = Mathf.Clamp01(_swingTimer / SWING_DURATION);
-            float swingKnee = Mathf.Lerp(SWING_KNEE_DEG, 20f, swingProgress);
-
-            Track(body, actions, swingHipJoint, swingHip);
-            Track(body, actions, swingKneeJoint, swingKnee);
-            Track(body, actions, swingAnkleJoint, 0f);
-
-            // WALKING IS STANDING WITH ONE LEG SWINGING. The previous version of
-            // this REPLACED the balance controller with its own weaker one, so the
-            // moment the gait engaged the fighter lost everything that was keeping
-            // it upright. The stance leg and trunk now run the SAME law that holds
-            // a stand — same gains, same measured ankle, same drift damping — and
-            // the gait's only job is the swing leg above.
-            float lean = TrunkLean(body);
-            float leanRate = body.Chest != null ? body.Chest.angularVelocity * Mathf.Deg2Rad * body.facingSign : 0f;
-            // LOCOMOTION COMES FROM A LEAN, NOT FROM A PUSH. Driving the stance hip
-            // into extension to "push off" pitches the trunk BACKWARD about the
-            // planted foot, and the balance law then steps back to catch it — which
-            // is exactly the outward travel that was measured, with `forward`
-            // verified as +1 for both fighters, so it was never a direction-logic
-            // bug. Walking is controlled falling: hold the trunk a little way
-            // toward the target, let gravity do the work, and let the swing leg
-            // catch it. So the balance controller is given a non-zero setpoint
-            // instead of a push.
-            float leanError = lean - WALK_LEAN_BIAS * forward;
-            // DRIFT TERM IS SUBTRACTED, and the sign follows from the measured hip
-            // convention rather than intuition. Positive hip = thigh backward, so
-            // with the foot planted a positive correction drives the pelvis FORWARD.
-            // To arrest a forward drift the correction must therefore be NEGATIVE.
-            // Adding +KV*v instead made a backward drift produce a negative
-            // correction, which drove the pelvis further backward and fed itself:
-            // measured runaway to -1.5 m/s in the facing-local frame, both fighters,
-            // straight off the back of the dohyo.
-            float correction = (StandKp * leanError + StandKd * leanRate - StandKv * v) * _gainScale;
-
-            // Stance hip near neutral now: its job is to hold, not to shove.
-            Track(body, actions, stanceHipJoint, STANCE_HIP_NEUTRAL_DEG + correction);
-            Track(body, actions, stanceKneeJoint, StandKneeDeg);
-            Track(body, actions, stanceAnkleJoint, Mathf.Clamp(correction * ANKLE_SHARE, -30f, 30f));
-
-            // Spine rights the chest. NEGATIVE opposes a forward pitch, because the
-            // probe showed positive spine angle carries the chest forward. Split
-            // across the three joints since each only has 20 deg to give.
-            // Same term the stand uses, for the same reason — one balance law, not
-            // two that disagree at the moment the gait engages.
-            float spine = Mathf.Clamp(-correction / 3f, -SPINE_LIMIT_DEG, SPINE_LIMIT_DEG);
-            Track(body, actions, SPINE_1, spine);
-            Track(body, actions, SPINE_2, spine);
-            Track(body, actions, SPINE_3, spine);
-
-            // Arms low and slightly forward — the sumo approach, and it keeps them
-            // out of the legs.
-            Track(body, actions, SHOULDER_NEAR, ARM_REACH_DEG * 0.35f * forward * ARM_SIGN);
-            Track(body, actions, SHOULDER_FAR, ARM_REACH_DEG * 0.35f * forward * ARM_SIGN);
-            Track(body, actions, ELBOW_NEAR, ELBOW_BENT_DEG);
-            Track(body, actions, ELBOW_FAR, ELBOW_BENT_DEG);
+            Stand(body, actions, offCentre);
         }
 
         /// Two-footed balance. No swing leg, no stepping — both feet planted, knees
@@ -583,11 +260,10 @@ namespace PoSumo
         /// version went straight to stepping and so never separated the two
         /// failures.
         ///
-        /// Ankles are driven here (unlike the gait, which leaves them at zero
-        /// because their polarity is unmeasured) using the SAME sign convention the
-        /// hip probe established for the leg chain: a positive facing-local angle
-        /// rotates the child backwards. Leaning forward therefore wants a positive
-        /// ankle to push the shin back upright over the foot.
+        /// Ankles are driven using the SAME sign convention the hip probe
+        /// established for the leg chain: a positive facing-local angle rotates the
+        /// child backwards. Leaning forward therefore wants a positive ankle to push
+        /// the shin back upright over the foot.
         private void Stand(Agent_BipedBody body, ActionSegment<float> actions, float offCentre)
         {
             float lean = TrunkLean(body);
@@ -651,6 +327,11 @@ namespace PoSumo
             Track(body, actions, ANKLE_NEAR, Mathf.Clamp(correction * ANKLE_SHARE, -30f, 30f));
             Track(body, actions, ANKLE_FAR, Mathf.Clamp(correction * ANKLE_SHARE, -30f, 30f));
 
+            // Spine rights the chest. NEGATIVE opposes a forward pitch, because the
+            // probe (gravity off, agent disabled, joints 6/7/8 driven to +1, chest
+            // read through pelvis.InverseTransformPoint) showed positive spine angle
+            // carries the chest forward. Split across the three joints since each
+            // only has 20 deg to give.
             float spine = Mathf.Clamp(-correction / 3f, -SPINE_LIMIT_DEG, SPINE_LIMIT_DEG);
             Track(body, actions, SPINE_1, spine);
             Track(body, actions, SPINE_2, spine);
@@ -661,19 +342,6 @@ namespace PoSumo
             Track(body, actions, SHOULDER_FAR, 25f * ARM_SIGN);
             Track(body, actions, ELBOW_NEAR, -20f);
             Track(body, actions, ELBOW_FAR, -20f);
-        }
-
-        /// Hysteresis filter for one foot. Returns the debounced state.
-        private static bool Debounce(bool raw, ref int run, ref bool stable)
-        {
-            run = raw == stable ? 0 : run + 1;
-            int need = raw ? CONTACT_ON_FRAMES : CONTACT_OFF_FRAMES;
-            if (run >= need)
-            {
-                stable = raw;
-                run = 0;
-            }
-            return stable;
         }
 
         /// Trunk pitch: 0 upright, positive when the chest has pitched toward the
@@ -720,40 +388,6 @@ namespace PoSumo
             }
             velocity = weightedVelocity / total;
             return weighted / total;
-        }
-
-        /// In contact. Crouch to get under the opponent, then extend the legs to
-        /// convert that into forward drive while the arms push.
-        ///
-        /// The crouch/extend split is the whole idea: pushing from straight legs
-        /// just transmits the shove into the mat, and a measured sustained push
-        /// here is only 71-500 N against a friction wall of ~376 N, so the drive
-        /// has to come from leg extension rather than from leaning alone.
-        private void Drive(Agent_BipedBody body, ActionSegment<float> actions, float forward, bool committing)
-        {
-            float kneeTarget = committing ? DRIVE_KNEE_DEG : CROUCH_KNEE_DEG;
-            float hipTarget = committing ? DRIVE_HIP_DEG : CROUCH_HIP_DEG;
-
-            Track(body, actions, HIP_NEAR, hipTarget);
-            Track(body, actions, HIP_FAR, hipTarget);
-            Track(body, actions, KNEE_NEAR, kneeTarget);
-            Track(body, actions, KNEE_FAR, kneeTarget);
-
-            // Ankles brace against the mat so the leg drive pushes the OPPONENT
-            // rather than sliding our own feet backwards.
-            Track(body, actions, ANKLE_NEAR, ANKLE_BRACE_DEG * forward);
-            Track(body, actions, ANKLE_FAR, ANKLE_BRACE_DEG * forward);
-
-            float lean = LEAN_DEG * forward * LEAN_SIGN;
-            Track(body, actions, SPINE_1, lean);
-            Track(body, actions, SPINE_2, lean);
-            Track(body, actions, SPINE_3, lean);
-
-            Track(body, actions, SHOULDER_NEAR, ARM_REACH_DEG * forward * ARM_SIGN);
-            Track(body, actions, SHOULDER_FAR, ARM_REACH_DEG * forward * ARM_SIGN);
-            float elbow = committing ? ELBOW_PUSH_DEG : ELBOW_BENT_DEG;
-            Track(body, actions, ELBOW_NEAR, elbow);
-            Track(body, actions, ELBOW_FAR, elbow);
         }
 
         /// Knocked over. Tuck the legs under the body and push the arms down; the

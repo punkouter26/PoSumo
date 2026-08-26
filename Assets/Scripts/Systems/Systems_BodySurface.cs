@@ -56,14 +56,11 @@ namespace PoSumo
 
         private void Start()
         {
-            // Flat shading zeroes the rim/wrap/sweat terms on purpose and never
-            // assigns the normal map, so a sweat highlight written here would sit
-            // on an unshaded tube and read as a stripe. Respect the flag rather
-            // than half-enabling the look behind its back.
-            //
-            // BodyShadingActive also covers the master switch: with
-            // LightingEffects off the body material is a stock UNLIT sprite that
-            // has neither _Sweat nor _Dirt at all.
+            // Only write sweat and clay into a material that carries the shaded
+            // treatment (normal map + rim/wrap/sweat terms); on an unshaded tube a
+            // sweat highlight reads as a stripe. Always true since the flat-body
+            // path was removed, but the gate stays so a future flat look cannot
+            // half-enable this behind its back.
             if (!Systems_ArenaLighting.BodyShadingActive)
             {
                 enabled = false;
@@ -94,21 +91,36 @@ namespace PoSumo
             }
 
             _manager = FindAnyObjectByType<Systems_GameMatchManager>();
-            if (_manager != null)
-            {
-                _manager.MatchReset += OnMatchReset;
-            }
+            SubscribeMatchReset();
         }
 
-        private void OnEnable() => Sensor_Impact.AnyImpact += OnImpact;
+        // The manager is only known after Start's lookup, so the first OnEnable
+        // cannot subscribe; Start does, and any later re-enable finds _manager set
+        // and subscribes here. The flag keeps a Start-after-OnEnable pair from
+        // subscribing twice.
+        private bool _resetSubscribed;
+
+        private void OnEnable()
+        {
+            Sensor_Impact.AnyImpact += OnImpact;
+            SubscribeMatchReset();
+        }
 
         private void OnDisable()
         {
             Sensor_Impact.AnyImpact -= OnImpact;
-            if (_manager != null)
+            if (_manager != null && _resetSubscribed)
             {
                 _manager.MatchReset -= OnMatchReset;
+                _resetSubscribed = false;
             }
+        }
+
+        private void SubscribeMatchReset()
+        {
+            if (_manager == null || _resetSubscribed) return;
+            _manager.MatchReset += OnMatchReset;
+            _resetSubscribed = true;
         }
 
         /// A fresh match is a fresh wrestler: dry, and clean of the last bout's clay.

@@ -252,25 +252,6 @@ namespace PoSumo
             Save();
         }
 
-        /// Wins-losses of `fighter` against one specific opponent.
-        public static void HeadToHead(string fighter, string opponent, out int wins, out int losses)
-        {
-            wins = 0;
-            losses = 0;
-            Record r = Get(fighter);
-            if (r == null)
-            {
-                return;
-            }
-            int index = r.vsNames.IndexOf(opponent);
-            if (index < 0)
-            {
-                return;
-            }
-            wins = r.vsWins[index];
-            losses = r.vsLosses[index];
-        }
-
         public static void ResetAll()
         {
             _data = new SaveFile();

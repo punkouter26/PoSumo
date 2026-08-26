@@ -397,11 +397,13 @@ namespace PoSumo
         /// five "LanternHalo" glows under the roof. They are scenery, not lights —
         /// soft alpha quads that stand in for a beam and a bulb bloom.
         ///
-        /// Hidden while Systems_ArenaLighting.LightingEffects is off, because that
-        /// is precisely what they are: a lighting effect. With the key light, the
-        /// volumetric cone and the post stack all gone, a live capture showed the
-        /// two cones as a pair of grey smudges hanging over the dohyo with nothing
-        /// in the scene to justify them.
+        /// The two Spotlight cones are RETIRED — hidden unconditionally, the rig's
+        /// real lights replace them. Together with the key volumetric they were the
+        /// "giant light in the middle of the scene": 3.4 x 6.2 alpha quads at
+        /// sortingOrder -2, cast from a roof the gameplay framing never actually
+        /// shows, washing out the mat and the crowd behind them. The five
+        /// LanternHalo glows stay — they are small, they sit on the lantern sprites
+        /// that justify them, and they are not what was complained about.
         ///
         /// Disabled rather than destroyed, and matched by NAME rather than by a
         /// flag, because the arena scenes are BAKED: these children are saved into
@@ -410,26 +412,16 @@ namespace PoSumo
         /// RebindBaked as well as after Build.
         private void ApplyPaintedLightVisibility()
         {
-            // With the whole effects rig off, ALL painted light goes — see above.
-            bool hideEverything = !Systems_ArenaLighting.LightingEffects;
-            // With the rig on, the two big cones are still gated separately. They
-            // and the key light's volumetric were together the "giant light in the
-            // middle of the scene": 3.4 x 6.2 alpha quads at sortingOrder -2, cast
-            // from a roof the gameplay framing never actually shows, washing out the
-            // mat and the crowd behind them. The five LanternHalo glows stay — they
-            // are small, they sit on the lantern sprites that justify them, and they
-            // are not what was complained about.
-            bool hideCones = hideEverything || !Systems_ArenaLighting.PaintedSpotlights;
-
             foreach (Transform child in transform)
             {
                 if (child.name == "Spotlight")
                 {
-                    child.gameObject.SetActive(!hideCones);
+                    // Retired painted cones — see above. Never shown.
+                    child.gameObject.SetActive(false);
                 }
                 else if (child.name == "LanternHalo")
                 {
-                    child.gameObject.SetActive(!hideEverything);
+                    child.gameObject.SetActive(true);
                 }
             }
         }

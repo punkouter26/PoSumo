@@ -103,9 +103,6 @@ namespace PoSumo
         [Tooltip("Wrestlers carve dark shafts out of the cone as they move through it. Costs a second volumetric pass, so it stays well below keyVolumeIntensity.\n\nInert while keyVolumeIntensity is 0 — there is no cone to carve.")]
         [Range(0f, 1f)] public float keyShadowVolumeIntensity;
 
-        [Tooltip("The two painted 'Spotlight' cone sprites over the ring (scenery baked into SCN_SUMO, not lights).\n\nOFF since 2026-08-25: together with the key volumetric they were the 'giant light in the middle of the scene'. They are 3.4 x 6.2 alpha quads sitting at sortingOrder -2, so they wash out the mat and the crowd behind them from a source the framing never shows.\n\nThe five small LanternHalo glows are NOT covered by this — they read as bulbs under the roof line and are the right scale for what they depict.")]
-        public static bool PaintedSpotlights = false;
-
         [Header("Post-processing")]
         public bool enablePost = true;
         // Lowered 0.85 -> 0.45 -> 0.22. Bloom over a lit backdrop compounds with the
@@ -120,53 +117,27 @@ namespace PoSumo
         public float saturation = 10f;
         public float grain = 0.18f;
 
-        /// MASTER SWITCH for every lighting EFFECT in the arena, and the single
-        /// place to flip the look. FALSE (shipped) means:
-        ///   - no key light, no rim lights — so no direction, no falloff, no
-        ///     shaping anywhere,
-        ///   - no volumetric cone and no shadows,
-        ///   - no post-processing volume (bloom, vignette, grain, split toning),
-        ///   - no cylinder normal map and no rim/subsurface/sweat terms on the
-        ///     wrestlers: every part is one solid tinted shape.
+        /// The full rig is always built: key light, rims, volumetrics, post, the
+        /// cylinder normal map and the rim/wrap/sweat/clay terms in `PoSumo_BodyLit`.
+        /// The flat-rig and flat-body master switches that used to gate all of
+        /// this (plus the flat global-light intensity they read) were static flags
+        /// nothing ever assigned, and were deleted on 2026-08-26 along with their
+        /// dead branches.
         ///
-        /// What it does NOT do is remove light altogether, and that distinction is
-        /// the whole design of this switch. A single `Light2D.LightType.Global` has
-        /// no position and no falloff, so it cannot shade anything — it is a flat
-        /// exposure multiplier and nothing more. But it is still the only thing
-        /// standing between a URP 2D LIT sprite and solid black.
-        ///
-        /// Handing every sprite an unlit material instead was tried first and is
-        /// the trap: it renders, but at 1.0x where the old rig delivered roughly
-        /// 1.7x across the middle of the mat, and the arena art is authored dark on
-        /// the assumption of that gain. A live capture showed the dohyo, the crowd
-        /// and the backdrop all collapse into an unreadable brown void with the
-        /// fighters floating in it. Keep the materials lit and keep one flat light.
-        ///
-        /// Systems_GameMatchManager must therefore go on spawning this component
-        /// when the switch is false — it is not dead weight, it carries the only
-        /// light in the scene.
-        /// **Re-enabled 2026-08-25.** It was false, which zeroed a complete and
-        /// debugged rig: key light, rims, volumetrics, post-processing, the cylinder
-        /// normal map, and the rim/wrap/sweat/clay terms in `PoSumo_BodyLit`. It
-        /// also left `Systems_BodySurface` inert, since that reads
-        /// `BodyShadingActive` before writing sweat and clay.
-        ///
-        /// The warning above still stands and is why this is not a naive flip: the
-        /// trap is handing everything an unlit material, which renders at 1.0x where
+        /// One lesson from that flat path is still worth keeping: NEVER hand the
+        /// arena an unlit material to "turn lighting off". It renders at 1.0x where
         /// the shaped rig delivers ~1.7x across the middle of the mat, and the arena
-        /// art is authored dark on that assumption. Exposure is balanced for shaded
-        /// bodies at `globalIntensity` 0.42 / `keyIntensity` 1.25; `flatGlobalIntensity`
-        /// 1.5 is the OFF-path value and must not be read as a target for this path.
-        public static bool LightingEffects = true;
+        /// art is authored dark on that assumption — a live capture showed the
+        /// dohyo, crowd and backdrop collapse into an unreadable brown void. Any
+        /// future "flat" look must still be a LIT material under at least one
+        /// Global Light2D (a positionless, falloff-free exposure), which is also
+        /// why `GameTuning.enableLighting` must stay on: with no Light2D at all,
+        /// every lit sprite renders solid black.
 
-        [Tooltip("Intensity of the single flat global light used when LightingEffects is off. Approximates what the old rig delivered across the middle of the mat (global 0.42 + key 1.25 + two rims), so turning the effects off changes the SHAPING without darkening the arena.")]
-        public float flatGlobalIntensity = 1.5f;
-
-        /// True when the wrestlers should get the shaped, normal-mapped treatment:
-        /// the rig is on AND flat shading has not been asked for. Systems_BodySurface
-        /// reads this before writing sweat and clay into a material whose terms are
-        /// all zeroed and whose normal map was never assigned.
-        public static bool BodyShadingActive => LightingEffects && !FlatBodyShading;
+        /// True when the wrestlers get the shaped, normal-mapped treatment — always,
+        /// now that the flat-body path is gone. Kept as a property because
+        /// Systems_BodySurface reads it before writing sweat and clay.
+        public static bool BodyShadingActive => true;
 
         private static Material _litSprite;
         private static Shader _bodyShader;
@@ -271,15 +242,6 @@ namespace PoSumo
                 }
                 _litSprite = new Material(shader) { name = "PoSumo_LitSprite" };
 
-                if (!LightingEffects)
-                {
-                    // Flat: no normal map, so the one global light falls on an even
-                    // surface and every sprite takes a single solid colour. The
-                    // material is still LIT — that global is the only light there
-                    // is, and an unlit material would ignore it and render dark.
-                    return _litSprite;
-                }
-
                 // A cylindrical normal map turns every flat quad into a rounded
                 // tube under the 2D lights: limbs and torso pick up a highlight
                 // down the middle and fall off at the edges, which is what makes
@@ -330,19 +292,6 @@ namespace PoSumo
 
             var material = new Material(_bodyShader) { name = materialName };
 
-            if (FlatBodyShading || !LightingEffects)
-            {
-                // FLAT: no cylinder normal map, so the 2D lights see an even
-                // surface and each part takes one solid tinted colour — the look
-                // this project shipped with. The rim, subsurface and sweat terms
-                // are zeroed rather than compiled out so the shader stays a single
-                // variant and the look can be switched back at runtime.
-                SetIfPresent(material, RimStrengthId, 0f);
-                SetIfPresent(material, WrapWarmId, 0f);
-                SetIfPresent(material, SweatId, 0f);
-                return material;
-            }
-
             if (material.HasProperty(NormalMapId))
             {
                 material.SetTexture(NormalMapId, CylinderNormalMap());
@@ -369,26 +318,7 @@ namespace PoSumo
         }
 
         private static readonly int NormalMapId = Shader.PropertyToID("_NormalMap");
-        private static readonly int RimStrengthId = Shader.PropertyToID("_RimStrength");
-        private static readonly int WrapWarmId = Shader.PropertyToID("_WrapWarm");
-        private static readonly int SweatId = Shader.PropertyToID("_Sweat");
         private static Texture2D _normalMap;
-
-        /// True renders wrestlers as FLAT tinted shapes — no cylindrical shading,
-        /// no rim light, no subsurface warmth, no sweat highlight. False is the
-        /// rounded, shaded treatment, and is what the exposure above is balanced
-        /// for (globalIntensity 0.78 / keyIntensity 0.7); raising those back
-        /// toward 1.35 / 0 while this is false blows the lit centreline out to
-        /// white and the bodies read as chrome.
-        public static bool FlatBodyShading = false;
-
-        private static void SetIfPresent(Material material, int propertyId, float value)
-        {
-            if (material.HasProperty(propertyId))
-            {
-                material.SetFloat(propertyId, value);
-            }
-        }
 
         /// Normal map of a horizontal cylinder: normals sweep from pointing left at
         /// the sprite's left edge, through straight out at the middle, to right at
@@ -448,18 +378,6 @@ namespace PoSumo
         {
             Instance = this;
             ApplyCameraBackground();
-            if (!LightingEffects)
-            {
-                // One flat, positionless, unshadowable light and nothing else. This
-                // is not a reduced rig, it is an exposure: a Global Light2D applies
-                // the same value to every pixel on its target layers, which is
-                // exactly "no lighting effect" while still keeping the lit sprites
-                // out of black. No key, no rims, no volumetrics, no post.
-                GlobalLight = CreateLight("Light_Flat", Light2D.LightType.Global, Color.white,
-                                          flatGlobalIntensity, Vector3.zero, 0f, 0f);
-                DisableShadows(GlobalLight);
-                return;
-            }
             BuildLights();
             if (enablePost)
             {
@@ -554,7 +472,7 @@ namespace PoSumo
         /// reads as a bug rather than as drama. Hence `unscaledTime`.
         private void Update()
         {
-            if (!_driftReady || !LightingEffects || KeyLight == null)
+            if (!_driftReady || KeyLight == null)
             {
                 return;
             }

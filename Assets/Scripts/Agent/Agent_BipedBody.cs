@@ -99,25 +99,10 @@ namespace PoSumo
         // that grouping the body interior fills with self-shadow and the wrestler
         // reads as a dark blob instead of a lit figure.
         [Header("Dressing (visual only — cannot invalidate a trained brain)")]
-        /// Soft-tissue wobble on the torso art. OFF, and a const rather than the
-        /// serialized bool it used to be.
-        ///
-        /// It is off because it is the one thing in the build that deliberately
-        /// draws a body part somewhere its collider is not: the wobble slides the
-        /// Art child up to 0.055 * widthScale * sqrt(massScale) metres off the
-        /// rigidbody it rides, which on an 0.18 m pelvis is a third of the segment.
-        /// Everything else here follows the rule that the drawn edge IS the
-        /// colliding edge, and a shove that connects a visible gap early is the
-        /// exact complaint that rule exists to answer.
-        ///
-        /// A const and not a public field because Agent_BipedBody sits on scene
-        /// GameObjects: a public bool is SERIALIZED, so the four training scenes
-        /// and SCN_SUMO each carry their own `enableJiggle: 1` and changing a code
-        /// default would have done nothing at all. The stale scene values are now
-        /// inert — the same reason Systems_TournamentBracket.ARENA_SCENE is a const.
-        /// Flip this to true to get the wobble back; Systems_SoftBodyJiggle is
-        /// untouched and still does its job.
-        private const bool ENABLE_JIGGLE = false;
+        // The soft-tissue torso wobble (Systems_SoftBodyJiggle) was DELETED
+        // 2026-08-26. It was the one thing that drew a body part somewhere its
+        // collider was not, and it had been off behind a const since 2026-08-02.
+        // Scenes may still serialize a stale `enableJiggle: 1`; nothing reads it.
 
         [Tooltip("Cast 2D shadows onto the dohyo. Needs Systems_ArenaLighting.keyCastsShadows on as well — casters with no casting light do nothing, and a casting light with no casters still allocates a shadow render texture every frame. OFF because measured captures showed no visible shadow at gameplay framing; see the note in Systems_ArenaLighting.")]
         public bool castShadows = false;
@@ -698,18 +683,6 @@ namespace PoSumo
 
                 Parts[index] = rb;
                 if (d.name.StartsWith("Thigh")) thighs.Add(rb);
-
-                // Soft-tissue lag on the trunk. Lives on the Art child, which
-                // carries no collider, so this is pure rendering: the physics body
-                // it reads from is never written back to.
-                if (ENABLE_JIGGLE && IsTorsoPart(d.name))
-                {
-                    var jiggle = art.AddComponent<Systems_SoftBodyJiggle>();
-                    jiggle.source = rb;
-                    // Bulk wobbles: a heavyweight at massScale 1.45 moves nearly
-                    // twice as much meat as the baseline build.
-                    jiggle.amplitude = 0.055f * widthScale * Mathf.Sqrt(massScale);
-                }
 
                 if (index == 0) Torso = rb; // pelvis: root mass, ring-out tracking
 

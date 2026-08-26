@@ -13,50 +13,104 @@ namespace PoSumo.EditorTools
     /// silently break those references.
     public static class DeployBrain
     {
-        // Run ids below are the runs that currently back each deployed brain —
-        // re-deploying from them reproduces exactly what ships in Assets/Agents.
+        private const string RESULTS_DIR = "Training/results";
+
+        // The menu items no longer pin a run id. They used to hold string literals
+        // (*_unified01 -> *_stamina01 -> ...) that rotted every time the campaign
+        // moved on: nothing checked them until a human clicked the menu, and the
+        // runs they named were pruned long before anyone did. Training/results is
+        // gitignored and absent from a fresh clone, so a literal can never be
+        // right there either.
+        //
+        // Each item now resolves the NEWEST finished run for its fighter — the
+        // most recently written `<name>_*/<Behavior>.onnx` under Training/results,
+        // case-insensitive on the run prefix — by write time, for the same reason
+        // DeployLatestCheckpoint picks by write time: a `--force` that TensorBoard
+        // blocked leaves an older run's files beside the new one's, and a name
+        // sort would happily ship the stale run.
         //
         // These are the UNIFIED runs: since the walk and fight brains were merged
-        // there is one run and one ONNX per fighter, not two. The pre-merge
-        // *_sumo0N and *_walk0N runs are retired and their checkpoints no longer
-        // fit the 45-slot observation vector.
-        //
-        // RETARGETED 2026-08-16 to the *_stamina01 runs, which are what actually
-        // back the shipped ONNX files. These four entries had still pointed at
-        // *_unified01/02 — runs that no longer exist in Training/results at all, so
-        // every menu item failed with "no ONNX at Training/results/<run>/<X>.onnx"
-        // and the only way to ship a brain was to call Deploy() by hand.
-        //
-        // That is the failure mode to expect whenever the campaign moves on: the
-        // run ids live here as string literals and nothing checks them until a
-        // human clicks the menu. When you start a new campaign, change these in the
-        // same commit that retires the old run, or this rots again.
-        //
-        // stamina01 is the 46-observation generation: staminaObservation is ON in
-        // every character asset, so a pre-stamina checkpoint no longer fits the
-        // input layer and cannot be deployed here even if the folder survived.
+        // there is one run and one ONNX per fighter, not two.
         [MenuItem("PoSumo/Deploy Matt Brain")]
         public static void DeployMatt()
         {
-            Deploy("matt_stamina01", "Matt", "Assets/Agents/Matt_v01");
+            DeployNewest("Matt", "Assets/Agents/Matt_v01");
         }
 
         [MenuItem("PoSumo/Deploy Standard Brain")]
         public static void DeployStandard()
         {
-            Deploy("standard_stamina01", "Standard", "Assets/Agents/Standard_v01");
+            DeployNewest("Standard", "Assets/Agents/Standard_v01");
         }
 
         [MenuItem("PoSumo/Deploy Nick Brain")]
         public static void DeployNick()
         {
-            Deploy("nick_stamina01", "Nick", "Assets/Agents/Nick_v01");
+            DeployNewest("Nick", "Assets/Agents/Nick_v01");
         }
 
         [MenuItem("PoSumo/Deploy Kim Brain")]
         public static void DeployKim()
         {
-            Deploy("kim_stamina01", "Kim", "Assets/Agents/Kim_v01");
+            DeployNewest("Kim", "Assets/Agents/Kim_v01");
+        }
+
+        /// Deploys the newest finished run whose id starts with `<behavior>_`
+        /// (case-insensitive) and holds a final `<Behavior>.onnx` export.
+        public static void DeployNewest(string behaviorName, string agentFolder)
+        {
+            string runId = ResolveNewestRun(behaviorName);
+            if (runId == null)
+            {
+                return;   // ResolveNewestRun already logged the DEPLOY RESULT line
+            }
+            Deploy(runId, behaviorName, agentFolder);
+        }
+
+        /// Newest run directory under Training/results for `behaviorName`, judged
+        /// by the write time of its final ONNX export. Null (after logging a
+        /// DEPLOY RESULT failure) when the results directory is absent or holds no
+        /// finished run for that fighter.
+        private static string ResolveNewestRun(string behaviorName)
+        {
+            if (!Directory.Exists(RESULTS_DIR))
+            {
+                Debug.LogError($"DEPLOY RESULT: Failed — {RESULTS_DIR} absent. It is gitignored: re-run " +
+                               "training locally to recreate it, or copy a run in from elsewhere.");
+                return null;
+            }
+
+            string prefix = behaviorName + "_";
+            string newestRun = null;
+            System.DateTime newestWrite = System.DateTime.MinValue;
+
+            foreach (string runDir in Directory.GetDirectories(RESULTS_DIR))
+            {
+                string runId = Path.GetFileName(runDir);
+                if (!runId.StartsWith(prefix, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+                string onnx = Path.Combine(runDir, behaviorName + ".onnx");
+                if (!File.Exists(onnx))
+                {
+                    continue;
+                }
+                System.DateTime write = File.GetLastWriteTimeUtc(onnx);
+                if (newestRun == null || write > newestWrite)
+                {
+                    newestWrite = write;
+                    newestRun = runId;
+                }
+            }
+
+            if (newestRun == null)
+            {
+                Debug.LogError($"DEPLOY RESULT: Failed — no run under {RESULTS_DIR} named {prefix}* holds a " +
+                               $"finished {behaviorName}.onnx. The run must have finished (or been stopped) " +
+                               "so the trainer exported it.");
+            }
+            return newestRun;
         }
 
         /// Ships all four in one click. Added because deploying the roster was four
@@ -92,7 +146,7 @@ namespace PoSumo.EditorTools
         /// exports two checkpoints in the same instant on shutdown) break by step.
         public static void DeployLatestCheckpoint(string runId, string behaviorName, string agentFolder)
         {
-            string dir = $"Training/results/{runId}/{behaviorName}";
+            string dir = $"{RESULTS_DIR}/{runId}/{behaviorName}";
             if (!Directory.Exists(dir))
             {
                 Debug.LogError($"DEPLOY RESULT: Failed — no checkpoint directory at {dir}.");
@@ -144,7 +198,7 @@ namespace PoSumo.EditorTools
         /// trainer writes. agentFolder: destination under Assets/Agents.
         public static void Deploy(string runId, string behaviorName, string agentFolder)
         {
-            string source = $"Training/results/{runId}/{behaviorName}.onnx";
+            string source = $"{RESULTS_DIR}/{runId}/{behaviorName}.onnx";
             if (!File.Exists(source))
             {
                 Debug.LogError($"DEPLOY RESULT: Failed — no ONNX at {source}. " +
@@ -189,9 +243,7 @@ namespace PoSumo.EditorTools
                 return;
             }
 
-            {
-                character.inferenceModel = model;
-            }
+            character.inferenceModel = model;
             EditorUtility.SetDirty(character);
             AssetDatabase.SaveAssets();
 

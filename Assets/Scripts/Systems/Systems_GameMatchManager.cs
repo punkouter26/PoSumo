@@ -40,27 +40,20 @@ namespace PoSumo
         // own copy, which is why the asset is the one that matters.
         public float ringHalfWidth = 5.5f;
         public float fallY = -1.5f;
-        // MUST match Systems_SumoMatchManager.knockdownLoses, which is false. This
-        // defaulted true while the training referee defaulted false: every shipped
-        // arena scene serializes 0 so nothing was live, but a NEW arena scene would
-        // have silently given the game a losing condition no brain was trained
-        // against. That divergence has bitten this project before.
-        public bool knockdownLoses = false;
-        // Head on the mat loses on the spot. MUST match Systems_SumoMatchManager.headTouchLoses.
-        public bool headTouchLoses = false;
         // Ring-out = head on the arena floor. MUST match Systems_SumoMatchManager.ringOutOnHeadFloor.
         public bool ringOutOnHeadFloor = true;
         [Tooltip("Head knockouts one fighter can suffer before losing the match outright — boxing's three-knockdown rule. 0 disables it. Copied from GameTuning in Start.")]
         public int knockoutsToLoseMatch = 3;
         [Tooltip("Realtime seconds from the deciding knockout to the result card, so the KO slow-motion plays out first. Copied from GameTuning in Start.")]
         public float knockoutAnnounceSeconds = 2.2f;
-        public float roundTimeoutSeconds = 30f;
+        // Copied from GameTuning in Start. 0 = NO CLOCK: the game has no round
+        // timer any more (the timeout-decision path was deleted 2026-08-26) and
+        // the shrinking mat is what ends a stalemate. The field is kept only
+        // because the tuning asset carries it and MatchTestHarness reads it.
+        public float roundTimeoutSeconds = 0f;
         public float betweenRoundsPause = 2.5f;
         public float graceSeconds = 0.4f;
-        public float downGraceSeconds = 0.2f;
-        [Tooltip("Seconds a fighter may lie down before the round goes to the opponent. GAME-ONLY — the training referee has no equivalent. 0 disables it.")]
-        public float downOutSeconds = 3f;
-        [Tooltip("Losing all four limbs to one blow ends the round immediately. GAME-ONLY, like downOutSeconds above. Turning it off does NOT let a gibbed fighter keep going — downOutSeconds still retires it about 3 s later, since it can never satisfy the get-up condition. Copied from GameTuning in Start.")]
+        [Tooltip("Losing all four limbs to one blow ends the round immediately. GAME-ONLY. Turning it off leaves a gibbed fighter to be squeezed off the mat by the shrinking ring instead. Copied from GameTuning in Start.")]
         public bool gibLosesRound = true;
         /// Shrinking ring. Defaults mirror Systems_GameTuning; the ASSET wins.
         public float shrinkStartSeconds = 8f;
@@ -73,7 +66,7 @@ namespace PoSumo
         private float _appliedHalfWidth = -1f;
         public PanelSettings panelSettings;
         public Systems_GameTuning tuning;
-        // Companion spawn toggles and knockdownLoses now live on GameTuning.asset
+        // Companion spawn toggles now live on GameTuning.asset
         // (copied in Start), so all three arena scenes share one set instead of
         // each carrying its own serialized copy. Only mirrorPitchScale stays here
         // because it is a per-match presentation detail, not a global rule.
@@ -94,8 +87,6 @@ namespace PoSumo
         private bool enablePerfHud = true;
         [Tooltip("Round-opening countdown length; physics and brains are held until it finishes.")]
         public int countdownSeconds = 3;
-        [Tooltip("Camera ortho when the countdown punches in on a fighter's head.")]
-        public float countdownHeadOrtho = 0.85f;
         [Tooltip("Half the gap between the fighters' neutral stand-off positions during the countdown.")]
         public float neutralGapHalf = 0.9f;
 
@@ -104,7 +95,7 @@ namespace PoSumo
         public bool enableWalkIn = true;
         [Tooltip("Length of the opening ceremony countdown, in seconds. The camera takes ONE beat per digit — in on A, out, in on B, out — so four is the shortest count that fits a full in-and-out on both faces. Raise it in steps of two or the last fighter looked at is left zoomed when the count ends.")]
         public int introCountdownSeconds = 4;
-        [Tooltip("Camera ortho for the ceremony face shots. Looser than countdownHeadOrtho because this one is actually REACHED: ortho is a half-HEIGHT and portrait aspect is ~0.46, so 0.85 is a 0.78 m-wide frame that the foreground crowd row fills and that throws the head off-screen on the slightest blend lag. 1.2 frames head and chest with margin to spare.")]
+        [Tooltip("Camera ortho for the ceremony face shots. Deliberately loose: ortho is a half-HEIGHT and portrait aspect is ~0.46, so 0.85 (the old countdown head ortho, deleted 2026-08-26) was a 0.78 m-wide frame that the foreground crowd row fills and that throws the head off-screen on the slightest blend lag. 1.2 frames head and chest with margin to spare.")]
         public float introFaceOrtho = 1.2f;
         [Tooltip("Platform half-width during the walk-in. The mat contracts back to ringHalfWidth before the fight, so the FIGHTING ring is unchanged and the fight brains never see a size they were not trained on.")]
         public float walkInHalfWidth = 4f;
@@ -118,10 +109,6 @@ namespace PoSumo
         public float minSettleSeconds = 1f;
         [Tooltip("Motor authority the fight brains get on the first frame of a round, ramped to 1 over minSettleSeconds. Low = the fighters visibly settle before committing.")]
         [Range(0.05f, 1f)] public float openingActionScale = 0.3f;
-        [Tooltip("Settle a timed-out round on position instead of calling it a draw. Without this nothing breaks a stalemate, so cagey matchups draw forever.")]
-        public bool timeoutDecidesOnPosition = true;
-        [Tooltip("Centre-distance difference (m) below which a timeout is still a genuine draw.")]
-        public float timeoutDeadHeat = 0.15f;
         [Tooltip("Seconds the loser flops as a limp ragdoll before the winner is announced.")]
         public float limpBeforeAnnounce = 1.2f;
         [Tooltip("A foot dropping below this height (mat top is y=0) counts as stepping off the mat — an instant loss, sumo's stepping-out rule.")]
@@ -129,15 +116,14 @@ namespace PoSumo
 
         private int _scoreA, _scoreB;
         private int _koA, _koB;                 // head knockouts SUFFERED, this match
-        private float _elapsed, _phaseLeft, _downA, _downB;
-        // Set by OnGibbed, cleared at every round reset alongside _downA/_downB.
+        private float _elapsed, _phaseLeft;
+        // Set by OnGibbed, cleared at every round reset.
         // Needed because a gib and the ring-out check RACE: the gib takes the body
         // apart inside a collision callback, and the loose parts are off the mat by
         // the time this component's FixedUpdate evaluates OutOfRing. Whichever runs
         // first would otherwise decide the round, and a gib was being scored
         // "DOUBLE OUT — DRAW" instead of a win for the fighter still standing.
         private bool _gibbedA, _gibbedB;
-        private int _lastShownSeconds = -1;
         private float _countdownLeft;
         private int _lastCountdownDigit = -1;
         private Phase _phase = Phase.Fighting;
@@ -211,9 +197,6 @@ namespace PoSumo
 
         public int ScoreA => _scoreA;
         public int ScoreB => _scoreB;
-        /// Head knockouts each fighter has SUFFERED this match.
-        public int KnockoutsA => _koA;
-        public int KnockoutsB => _koB;
         /// True when the last match ended on the three-knockdown rule rather than
         /// on rounds. Read by Systems_TournamentReporter, whose return-to-bracket
         /// delay has to outlast whichever announce delay the result card used.
@@ -222,9 +205,6 @@ namespace PoSumo
         public int MatchWinsB { get; private set; }
         public float RoundElapsed => _elapsed;
         public float LongestRound { get; private set; }
-        /// How many rounds were settled by the timeout tiebreak rather than a
-        /// ring-out. Zero over a long session means the tiebreak is unreachable.
-        public int TimeoutDecisions { get; private set; }
 
         /// How a round finished. Exists so every exit from a round is NAMED and
         /// logged, not just the one that happened to have a Debug.Log in it.
@@ -235,14 +215,18 @@ namespace PoSumo
         /// down-out branches were silent. That makes the single most important
         /// question about this game (is anyone actually being pushed out of the
         /// ring?) unanswerable from a log, which is how the ring stayed mistuned.
+        /// DownOut, Knockdown, TimeoutDecision and TimeoutDraw were RETIRED
+        /// 2026-08-26 (down-out, knockdown, head-touch and the round clock are all
+        /// gone from both referees) but stay as members: Systems_Kimarite still
+        /// classifies them and KimariteTests walks the whole enum.
         public enum RoundOutcome
         {
             RingOut,          // a foot left the mat — the real sumo win
-            DownOut,          // lay down past downOutSeconds (game-only rule)
-            Knockdown,        // knockdownLoses is on and the grace expired
+            DownOut,          // retired 2026-08-26, still classifier-covered
+            Knockdown,        // retired 2026-08-26, still classifier-covered
             DoubleOut,        // both finished in the same physics step
-            TimeoutDecision,  // clock expired, settled on position
-            TimeoutDraw,      // clock expired, too close to call
+            TimeoutDecision,  // retired 2026-08-26, still classifier-covered
+            TimeoutDraw,      // retired 2026-08-26, still classifier-covered
             Gibbed,           // lost all four limbs to one blow (game-only rule)
         }
 
@@ -302,9 +286,6 @@ namespace PoSumo
         /// about the centre line and the sample counts for neither of them.
         public bool ScoringLive => _phase == Phase.Fighting && _countdownLeft <= 0f;
 
-        /// True while a round is actually being contested. Unlike ScoringLive this
-        /// includes the countdown, because what it answers is "may something hand
-        /// a body back to its brain" — Systems_BodyDamage's expiring knockout.
         /// How the most recent round ended. Exposed so a companion can read it in
         /// its `RoundEnded` handler without a fifth match event — four events are
         /// the entire coupling surface between this referee and ~15 companions, and
@@ -312,7 +293,10 @@ namespace PoSumo
         /// Set in `EndRound` BEFORE `RoundEnded` fires.
         public RoundOutcome LastOutcome { get; private set; }
 
-        public bool RoundLive => _phase == Phase.Fighting;
+        /// The referee for the loaded arena, set in Awake and cleared in OnDestroy.
+        /// Companions that look the manager up may read this instead of
+        /// FindAnyObjectByType; the existing lookups were left in place.
+        public static Systems_GameMatchManager Instance { get; private set; }
 
         /// True while the pause card is up. Read by Systems_MatchPresentation,
         /// whose slow-motion timer is REALTIME and so keeps running behind the
@@ -328,7 +312,7 @@ namespace PoSumo
         /// Fired when a rematch resets the scores (HUD aggregates restart here).
         public event System.Action MatchReset;
         private Systems_HudRoot _hud;
-        private Label _scoreDigits, _banner, _clock, _countdown;
+        private Label _scoreDigits, _banner, _countdown;
         private Label _resultTitle, _resultScore;
         private VisualElement _pauseCard, _resultCard;
         private VisualElement _scoreBug;   // hidden while the result card is up
@@ -356,11 +340,7 @@ namespace PoSumo
                 roundTimeoutSeconds = tuning.roundTimeoutSeconds;
                 betweenRoundsPause = tuning.betweenRoundsPause;
                 graceSeconds = tuning.graceSeconds;
-                downGraceSeconds = tuning.downGraceSeconds;
-                downOutSeconds = tuning.downOutSeconds;
                 gibLosesRound = tuning.gibLosesRound;
-                knockdownLoses = tuning.knockdownLoses;
-                headTouchLoses = tuning.headTouchLoses;
                 ringOutOnHeadFloor = tuning.ringOutOnHeadFloor;
                 knockoutsToLoseMatch = tuning.knockoutsToLoseMatch;
                 shrinkStartSeconds = tuning.shrinkStartSeconds;
@@ -389,12 +369,11 @@ namespace PoSumo
                 enablePerfHud = tuning.enablePerfHud;
             }
 
-            // NOT ANDed with Systems_ArenaLighting.LightingEffects, and that is
-            // deliberate. With the effects off that component still builds the one
-            // flat global light the arena is lit by, so skipping it would leave
-            // every LIT sprite in the scene with no light at all — solid black.
-            // The effects switch shapes what the rig builds; this decides whether
-            // there is a rig, and the answer has to stay yes.
+            // enableLighting decides whether there is a light rig at all, and the
+            // answer has to stay yes: every sprite in the arena uses a LIT material,
+            // so with no Light2D anywhere they render solid black. (The old
+            // LightingEffects/FlatBodyShading switches were deleted 2026-08-26 —
+            // the full rig is the only path now.)
 
             ResolveWrestlers();
             _bodyA = wrestlerA.GetComponent<Agent_BipedBody>();
@@ -474,8 +453,14 @@ namespace PoSumo
         /// stat panel while the scoreboard was already correct.
         private void Awake()
         {
+            Instance = this;
             ResolveWrestlers();
             AdoptCharacterIdentity();
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this) Instance = null;
         }
 
         // Systems_BodyDamage.Knockout is a static event: a missed unsubscribe
@@ -779,7 +764,6 @@ namespace PoSumo
             _braceStarted = Time.time;
             _phase = Phase.Fighting;
             _elapsed = 0f;
-            _downA = _downB = 0f;
             _gibbedA = _gibbedB = false;
             _countdownLeft = 0f;   // contact IS the start; no freeze, no reposition
             BeginSimulation();
@@ -993,12 +977,6 @@ namespace PoSumo
 
             _scoreBug.Add(NamePlate(nameB, colorB));
             _hud.TopBarCentre.Add(_scoreBug);
-
-            _clock = Systems_UiKit.Text("", Systems_UiKit.FONT_LEAD, Systems_UiKit.TextMid, true);
-            _clock.style.marginTop = Systems_UiKit.SPACE_1;
-            _clock.style.unityTextAlign = TextAnchor.MiddleCenter;
-            _clock.style.textShadow = Systems_UiKit.Outline;
-            _hud.TopBarCentre.Add(_clock);
         }
 
         private static Label NamePlate(string fighterName, Color teamColor)
@@ -1126,12 +1104,11 @@ namespace PoSumo
             _pauseCard.Add(_muteButton);
             RefreshMuteButton();
 
-            // Nothing in the game ever explained how a round is won. The three
-            // ways out are not guessable from watching — especially the 3-second
-            // down-out, which ends most rounds and looks like the game giving up.
+            // Nothing in the game ever explained how a round is won. There is
+            // exactly one way out now: the ring-out, with the mat closing in to
+            // force it.
             Label rules = Systems_UiKit.Text(
-                "PUSH YOUR OPPONENT OUT OF THE RING, PUT THEM DOWN FOR "
-                + $"{Mathf.RoundToInt(downOutSeconds)}s, OR LEAD ON POSITION WHEN THE CLOCK ENDS."
+                "PUSH YOUR OPPONENT OUT OF THE RING — THE MAT CLOSES IN UNTIL SOMEONE GOES."
                 // `pointsToWin` already carries the right value for this bout:
                 // Start copies tournamentPointsToWin over it for a bracket match
                 // and pointsToWin for an exhibition, so there is nothing to pick
@@ -1396,18 +1373,6 @@ namespace PoSumo
             _hud.HideCentre(_countdown);
         }
 
-        private void UpdateClock()
-        {
-            if (roundTimeoutSeconds <= 0f) return;   // no clock: the label stays blank
-            int remaining = Mathf.Max(0, Mathf.CeilToInt(roundTimeoutSeconds - _elapsed));
-            if (remaining != _lastShownSeconds)
-            {
-                _lastShownSeconds = remaining;
-                _clock.text = remaining.ToString();
-                _clock.style.color = remaining <= 5 ? Systems_UiKit.Bad : Systems_UiKit.TextMid;
-            }
-        }
-
         private void Update()
         {
             if (_openingRoundPending)
@@ -1461,7 +1426,7 @@ namespace PoSumo
             // A physics step can land before Start() has built the UI and set the
             // opening phase. Scoring a round in that window dereferences UI that
             // does not exist yet, so nothing runs until the match is actually set up.
-            if (_clock == null) return;
+            if (_scoreDigits == null) return;
 
             switch (_phase)
             {
@@ -1480,7 +1445,6 @@ namespace PoSumo
                         wrestlerA.EndEpisode();   // resets poses via OnEpisodeBegin
                         wrestlerB.EndEpisode();
                         HoldUpright();
-                        _downA = _downB = 0f;
                         _gibbedA = _gibbedB = false;
                         _hud.HideCentre(_banner);
                         _phase = Phase.Grace;
@@ -1503,7 +1467,6 @@ namespace PoSumo
                         }
                         _phase = Phase.Fighting;
                         _elapsed = 0f;
-                        _downA = _downB = 0f;
                         _gibbedA = _gibbedB = false;
                         StartCountdown();
                         RoundStarted?.Invoke();
@@ -1557,7 +1520,7 @@ namespace PoSumo
                     {
                         bool stalled = _walkInStallLeft <= 0f && _walkInLeft > 0f;
                         float spent = walkInTimeout - Mathf.Max(0f, _walkInLeft);
-                        Debug.LogWarning($"WALK-IN RESULT: {(stalled ? "STALLED" : "timed out")} after " +
+                        Systems_Log.Info($"WALK-IN RESULT: {(stalled ? "STALLED" : "timed out")} after " +
                                          $"{spent:F1}s with no contact — " +
                                          $"surfaceGap={gap:F2} (need <= {walkInTouchGap:F2}), " +
                                          $"bestGap={_walkInBestGap:F2}, " +
@@ -1608,7 +1571,6 @@ namespace PoSumo
                         _braceStarted = Time.time;
                         _phase = Phase.Fighting;
                         _elapsed = 0f;
-                        _downA = _downB = 0f;
                         _gibbedA = _gibbedB = false;
                         // HoldUpright froze them; BeginSimulation is what puts the
                         // physics and the fight brains back, exactly as the contact
@@ -1636,16 +1598,6 @@ namespace PoSumo
             TickActionRamp();
 
             _elapsed += Time.fixedDeltaTime;
-            UpdateClock();
-
-            // Accumulated whenever ANY rule reads them — the instant knockdown rule
-            // (off in the shipping config, kept in step with the training referee)
-            // or the game-only down-out below.
-            if (knockdownLoses || downOutSeconds > 0f)
-            {
-                _downA = wrestlerA.IsDown ? _downA + Time.fixedDeltaTime : 0f;
-                _downB = wrestlerB.IsDown ? _downB + Time.fixedDeltaTime : 0f;
-            }
 
             TickShrinkingRing();
 
@@ -1661,21 +1613,11 @@ namespace PoSumo
             bool aOffMat = ringOutOnHeadFloor ? (wrestlerA.HeadOnFloor || BelowFloor(wrestlerA)) : aFootOff;
             bool bOffMat = ringOutOnHeadFloor ? (wrestlerB.HeadOnFloor || BelowFloor(wrestlerB)) : bFootOff;
 
-            // Down-out is GAME-ONLY and deliberately diverges from
-            // Systems_SumoMatchManager. Every other losing condition is mirrored
-            // there; this one is a spectacle rule in the same category as
-            // knockoutsToLoseMatch. Without it a dismembered fighter can never
-            // satisfy IsDown again and the round always runs the clock out.
-            bool aDownOut = downOutSeconds > 0f && _downA >= downOutSeconds;
-            bool bDownOut = downOutSeconds > 0f && _downB >= downOutSeconds;
-
-            // Head on the mat: instant, no grace. Reported as a Knockdown outcome
-            // (the kimarite classifier already names a fall) with its own note.
-            bool aHead = headTouchLoses && wrestlerA.HeadDown;
-            bool bHead = headTouchLoses && wrestlerB.HeadDown;
-
-            bool aOut = aOffMat || (knockdownLoses && _downA >= downGraceSeconds) || aDownOut || aHead;
-            bool bOut = bOffMat || (knockdownLoses && _downB >= downGraceSeconds) || bDownOut || bHead;
+            // The ring-out is the ONLY losing condition (2026-08-26). Down-out,
+            // knockdown and head-touch were all deleted from both referees; the
+            // shrinking mat squeezes a fighter who stays down off the edge instead.
+            bool aOut = aOffMat;
+            bool bOut = bOffMat;
 
             // A GIB OUTRANKS EVERY OTHER LOSING CONDITION, and is checked before
             // them. A fighter taken apart has parts scattered across and off the
@@ -1692,33 +1634,15 @@ namespace PoSumo
 
             if (aOut && bOut)
             {
-                // Both finished in the same step. The one that went down FIRST
-                // stayed down longer, so award it against them rather than calling
-                // a draw that neither earned.
-                if (aDownOut && bDownOut && !Mathf.Approximately(_downA, _downB))
-                {
-                    EndRound(_downA > _downB ? wrestlerB : wrestlerA, RoundOutcome.DownOut,
-                             null, "COULD NOT CONTINUE");
-                }
-                else
-                {
-                    EndRound(null, RoundOutcome.DoubleOut, "DOUBLE OUT — DRAW");
-                }
+                // Both finished in the same physics step.
+                EndRound(null, RoundOutcome.DoubleOut, "DOUBLE OUT — DRAW");
             }
-            // The outcome is picked apart rather than collapsed into one label,
-            // because "a foot left the mat" and "lay there until the clock said so"
-            // are the two ends of whether this game works and were indistinguishable
-            // in the log before.
-            else if (aOut) EndRound(wrestlerB, OutcomeFor(aOffMat, aDownOut), null,
-                                    aDownOut ? "COULD NOT CONTINUE" : (aHead && !aOffMat ? "HEAD ON THE MAT" : null));
-            else if (bOut) EndRound(wrestlerA, OutcomeFor(bOffMat, bDownOut), null,
-                                    bDownOut ? "COULD NOT CONTINUE" : (bHead && !bOffMat ? "HEAD ON THE MAT" : null));
-            // roundTimeoutSeconds <= 0 means there is NO clock: the mat keeps
-            // closing (TickShrinkingRing runs it past shrinkToHalfWidth to zero)
-            // until somebody is stood on nothing. Every round then ends on a
-            // ring-out, which is the sport's own result — requested 2026-08-26
-            // after 3 of 8 bracket rounds were still going to a position decision.
-            else if (roundTimeoutSeconds > 0f && _elapsed >= roundTimeoutSeconds) DecideOnTimeout();
+            else if (aOut) EndRound(wrestlerB, RoundOutcome.RingOut, null);
+            else if (bOut) EndRound(wrestlerA, RoundOutcome.RingOut, null);
+            // There is NO clock: the mat keeps closing (TickShrinkingRing runs it
+            // past shrinkToHalfWidth to zero) until somebody is stood on nothing.
+            // Every round therefore ends on a ring-out, which is the sport's own
+            // result — the timeout-decision path was deleted 2026-08-26.
         }
 
         /// Closes the mat in as the round clock runs down, so a stalemate finishes
@@ -1744,12 +1668,8 @@ namespace PoSumo
             // same rate all the way to zero, so with the timeout off a round still
             // cannot last forever — at 3.5 -> 1.8 over 12 s that is ~0.14 m/s and
             // the floor is gone about 33 s in.
-            float target = ringHalfWidth;
-            if (shrinkSeconds > 0f && _elapsed > shrinkStartSeconds)
-            {
-                float progress = (_elapsed - shrinkStartSeconds) / shrinkSeconds;
-                target = Mathf.Max(0f, Mathf.LerpUnclamped(ringHalfWidth, shrinkToHalfWidth, progress));
-            }
+            float target = Systems_RingShrink.ShrinkTarget(ringHalfWidth, shrinkToHalfWidth,
+                                                          _elapsed, shrinkStartSeconds, shrinkSeconds);
 
             // 1 cm of hysteresis: below that the contraction is invisible and only
             // costs a collider rebuild.
@@ -1760,50 +1680,6 @@ namespace PoSumo
             // the original radius and the contracted mat has full grip right up to
             // a cliff — which is the one thing the tawara exists to prevent.
             _arena.EnsureTawaraBands(target);
-        }
-
-        /// Ring-out takes precedence: a fighter can satisfy both in the same step
-        /// (lying down AND over the edge) and the edge is the sumo rule.
-        private static RoundOutcome OutcomeFor(bool offMat, bool downOut)
-        {
-            if (offMat) return RoundOutcome.RingOut;
-            return downOut ? RoundOutcome.DownOut : RoundOutcome.Knockdown;
-        }
-
-        /// The shrinking ring used to force stalemates to resolve; with it gone,
-        /// a timeout is settled the way a real bout goes to the judges — whoever
-        /// held nearer the centre pushed the other toward the edge and takes the
-        /// round. Only a near dead heat is still a draw.
-        private void DecideOnTimeout()
-        {
-            if (!timeoutDecidesOnPosition)
-            {
-                EndRound(null, RoundOutcome.TimeoutDraw, "TIME — DRAW");
-                return;
-            }
-            float centerX = transform.position.x;
-            float distanceA = Mathf.Abs(wrestlerA.TorsoX - centerX);
-            float distanceB = Mathf.Abs(wrestlerB.TorsoX - centerX);
-            if (Mathf.Abs(distanceA - distanceB) < timeoutDeadHeat)
-            {
-                EndRound(null, RoundOutcome.TimeoutDraw, "TIME — DRAW");
-                return;
-            }
-            bool aWins = distanceA < distanceB;
-            Agent_Biped winner = aWins ? wrestlerA : wrestlerB;
-            string label = WrapName(aWins ? nameA : nameB, aWins ? colorA : colorB);
-            TimeoutDecisions++;
-            // WINNER's distance first, then the loser's. It used to print distanceA
-            // then distanceB unconditionally, so every round wrestlerB won read as
-            // "<B> held the centre (1.53m vs 0.45m)" — the winner apparently FARTHER
-            // from the middle. The rule above was always right; the sentence was
-            // not, and six of ten lines in a played tournament looked like a
-            // game-breaking inversion that did not exist.
-            Systems_Log.Info($"[MATCH] timeout decision #{TimeoutDecisions}: " +
-                      $"{(aWins ? nameA : nameB)} held the centre at " +
-                      $"{(aWins ? distanceA : distanceB):F2}m vs " +
-                      $"{(aWins ? distanceB : distanceA):F2}m");
-            EndRound(winner, RoundOutcome.TimeoutDecision, null, $"TIME — {label} DECISION");
         }
 
         /// Cut a fighter's motors so it flops lifelessly off the edge instead of
@@ -1928,8 +1804,6 @@ namespace PoSumo
             bool limpFlop = IsLimp(wrestlerA) || IsLimp(wrestlerB);
             long announceDelayMs = limpFlop ? (long)(limpBeforeAnnounce * 1000f) : 0L;
 
-            _clock.text = "";
-            _lastShownSeconds = -1;
             _countdownLeft = 0f;
             HideCountdown();
 
@@ -1987,7 +1861,7 @@ namespace PoSumo
         /// A fighter lost all four limbs to one blow — the round is over immediately.
         ///
         /// This is a GAME-ONLY rule with no equivalent in Systems_SumoMatchManager,
-        /// like downOutSeconds and knockoutsToLoseMatch. No brain has trained against
+        /// like knockoutsToLoseMatch. No brain has trained against
         /// it, which is fine: it is spectacle layered on the sumo rules, and the
         /// victim could not have kept fighting anyway.
         ///
@@ -2057,8 +1931,6 @@ namespace PoSumo
             GoLimp(loser);
             winner.actionsEnabled = true;
 
-            _clock.text = "";
-            _lastShownSeconds = -1;
             _countdownLeft = 0f;
             HideCountdown();
             _hud.HideCentre(_banner);
@@ -2211,7 +2083,6 @@ namespace PoSumo
             wrestlerA.EndEpisode();
             wrestlerB.EndEpisode();
             HoldUpright();
-            _downA = _downB = 0f;
             _gibbedA = _gibbedB = false;
             _phase = Phase.Grace;
             _phaseLeft = graceSeconds;

@@ -330,7 +330,7 @@ namespace PoSumo
                .Append(Time.timeScale.ToString("F1"));
             if (_manager != null)
             {
-                _sb.Append(' ').Append(_manager.RoundLive ? "live" : "idle");
+                _sb.Append(' ').Append(_manager.RoundActive ? "live" : "idle");
             }
             _sim.text = _sb.ToString();
 

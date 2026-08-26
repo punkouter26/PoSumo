@@ -189,10 +189,6 @@ namespace PoSumo
         public float RegionDamage01(Region region) =>
             Mathf.Clamp01(_regionDamage[(int)region] / Mathf.Max(0.01f, regionRedAt));
 
-        /// UNCLAMPED region damage. RegionDamage01 saturates at 1.0, which hid how
-        /// close the head actually was to its detach gate.
-        public float RegionDamageRaw(Region region) => _regionDamage[(int)region];
-
         /// True once this region has been torn off. The head is not a jointed
         /// part, so it answers from its own flag.
         public bool RegionDetached(Region region)
@@ -453,7 +449,7 @@ namespace PoSumo
                 // loser climbed back to his feet under the SCORES! banner.
                 // Skipping it is safe: the next round's ResetPose calls
                 // RestoreMotors anyway.
-                if (_manager != null && !_manager.RoundLive)
+                if (_manager != null && !_manager.RoundActive)
                 {
                     return;
                 }

@@ -78,7 +78,7 @@ namespace PoSumo
         /// whatever is holding them. Systems_SumoMatchManager has none of those
         /// phases — a training round is live from the first physics step — so the
         /// gate is simply absent there rather than faked.
-        private bool RoundLive => _training ? true : _manager != null && _manager.RoundLive;
+        private bool RoundLive => _training ? true : _manager != null && _manager.RoundActive;
 
         /// Rigidbody list per body. Rebuilt only when a body is first seen —
         /// GetComponentsInChildren allocates, and this runs inside a collision
