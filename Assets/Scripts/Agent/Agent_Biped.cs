@@ -229,7 +229,13 @@ namespace PoSumo
                 _contactSensors[sensorIndex].Clear();
             }
             NonFootGroundContacts = 0;
-            if (_b.HeadContact != null) _b.HeadContact.Clear();
+            if (_b.FloorSensors != null)
+            {
+                for (int floorIndex = 0; floorIndex < _b.FloorSensors.Length; floorIndex++)
+                {
+                    _b.FloorSensors[floorIndex].Clear();
+                }
+            }
             _pendingImpact = 0f;
             _lastTorsoY = _b.Torso.position.y;
             _cadence.Reset();
@@ -241,15 +247,33 @@ namespace PoSumo
         public float TorsoX => Torso.position.x;
         public bool IsDown => NonFootGroundContacts > 0;
 
-        /// The head is on the arena FLOOR below the dohyo — the ring-out since
-        /// 2026-08-26 (ringOutOnHeadFloor in both referees).
-        public bool HeadOnFloor => _b.HeadContact != null && _b.HeadContact.TouchingFloor;
-
-        /// Referees call this once the arena is known, so the head sensor can tell
-        /// the floor from the mat.
-        public void BindArenaFloor(Collider2D floor)
+        /// ANY body part is on the arena floor below the dohyo — the ring-out since
+        /// 2026-08-26 (ringOutOnFloorContact in both referees). A plain loop over
+        /// 15 sensors, called once per fighter per physics step.
+        public bool OnFloor
         {
-            if (_b.HeadContact != null) _b.HeadContact.floor = floor;
+            get
+            {
+                Sensor_FloorContact[] sensors = _b.FloorSensors;
+                if (sensors == null) return false;
+                for (int floorIndex = 0; floorIndex < sensors.Length; floorIndex++)
+                {
+                    if (sensors[floorIndex].TouchingFloor) return true;
+                }
+                return false;
+            }
+        }
+
+        /// Referees call this once the arena is known: contacts below `floorLevelY`
+        /// (world) count as the floor.
+        public void BindArenaFloor(float floorLevelY)
+        {
+            Sensor_FloorContact[] sensors = _b.FloorSensors;
+            if (sensors == null) return;
+            for (int floorIndex = 0; floorIndex < sensors.Length; floorIndex++)
+            {
+                sensors[floorIndex].floorLevelY = floorLevelY;
+            }
         }
 
         /// Called by Sensor_Impact when a body part hits the opponent.

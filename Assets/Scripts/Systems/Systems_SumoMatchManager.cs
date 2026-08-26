@@ -43,8 +43,10 @@ namespace PoSumo
         // below normally ends a round well before it. The four training scenes
         // serialize 20.
         public float roundTimeoutSeconds = 20f;
-        [Tooltip("Ring-out = the HEAD lands on the arena floor below the dohyo. Must match GameTuning.ringOutOnHeadFloor (true since 2026-08-26). OFF restores the foot-below-footOffMatY rule. Strictly the head; the torso backstop moves 2 m under the floor.")]
-        public bool ringOutOnHeadFloor = true;
+        [Tooltip("Ring-out = ANY body part touches the arena floor below the dohyo (a static contact more than FLOOR_MARGIN under the mat top). Must match GameTuning.ringOutOnFloorContact (true since 2026-08-26). OFF restores the foot-below-footOffMatY rule. The torso backstop is 2 m under the floor.")]
+        [UnityEngine.Serialization.FormerlySerializedAs("ringOutOnHeadFloor")]
+        public bool ringOutOnFloorContact = true;
+        private const float FLOOR_MARGIN = 0.3f;   // must match Systems_GameMatchManager
         public float fallY = -0.2f;
         [Tooltip("Game parity: a foot dropping below this height loses the bout (stepping out). Must match Systems_GameMatchManager.footOffMatY.")]
         public float footOffMatY = -0.06f;
@@ -149,8 +151,8 @@ namespace PoSumo
             _bodyB = wrestlerB.GetComponent<Agent_BipedBody>();
             if (arena != null)
             {
-                wrestlerA.BindArenaFloor(arena.FloorCollider);
-                wrestlerB.BindArenaFloor(arena.FloorCollider);
+                wrestlerA.BindArenaFloor(transform.position.y - FLOOR_MARGIN);
+                wrestlerB.BindArenaFloor(transform.position.y - FLOOR_MARGIN);
             }
             _startHalf = ringHalfWidth;
             ResetRound();
@@ -233,12 +235,12 @@ namespace PoSumo
             // mat surface has gone over the edge. Training previously used only
             // the torso test, so policies never learned that a stray foot is
             // fatal — the rules had silently diverged.
-            if (ringOutOnHeadFloor)
+            if (ringOutOnFloorContact)
             {
-                // Mirrors Systems_GameMatchManager: head on the floor below, with a
-                // torso backstop 2 m under that floor. fallY would trip on a body
+                // Mirrors Systems_GameMatchManager: any part on the floor below, with
+                // a torso backstop 2 m under that floor. fallY would trip on a body
                 // merely lying on the floor, so it is not used in this mode.
-                if (w.HeadOnFloor) return true;
+                if (w.OnFloor) return true;
                 float floorTop = arena != null && arena.FloorCollider != null
                     ? arena.FloorCollider.bounds.max.y
                     : transform.position.y - 1f;

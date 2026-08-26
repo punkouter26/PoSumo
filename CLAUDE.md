@@ -745,7 +745,17 @@ Three rules used to be game-only. **Two of them were ported into the training re
 >   It was tried ON for one bracket and **decided every round in 1.4-3.2 s before contact**
 >   (6/6 "went down unaided") because the crawl gait faceplants at the bell. Switched off
 >   the same day in favour of the rule below.
-> - **THE RING-OUT IS NOW "HEAD ON THE ARENA FLOOR"** — `ringOutOnHeadFloor` (GameTuning
+> - **SUPERSEDED THE SAME DAY: the ring-out is now "ANY BODY PART ON THE ARENA FLOOR"**
+>   (`ringOutOnFloorContact`, renamed from `ringOutOnHeadFloor` with
+>   `FormerlySerializedAs`). Strict-head stalled a bracket forever: match 2, mat fully
+>   shrunk (`half=0.009`), both fighters limp and resting on each other with neither head
+>   on the floor collider, `elapsed=170 s` and climbing. `Sensor_FloorContact` now sits on
+>   all 14 parts plus the head hitbox and counts any static contact **more than 0.3 m below
+>   the mat top** (so the platform's lower face counts, the mat and tawara do not),
+>   evaluated from `OnCollisionStay2D` every step. `Agent_Biped.OnFloor` /
+>   `BindArenaFloor(floorLevelY)`. `Sensor_HeadContact` is gone. The paragraph below is
+>   the head-only design it replaced.
+> - **THE RING-OUT WAS "HEAD ON THE ARENA FLOOR"** — `ringOutOnHeadFloor` (GameTuning
 >   + a copy on `Systems_SumoMatchManager`, both `true`). `Systems_SumoArena.FloorCollider`
 >   is handed to each fighter's `Sensor_HeadContact` via `Agent_Biped.BindArenaFloor`, and
 >   `HeadOnFloor` is the loss. A foot below `footOffMatY` no longer ends the round — it

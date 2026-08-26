@@ -40,8 +40,15 @@ namespace PoSumo
         // own copy, which is why the asset is the one that matters.
         public float ringHalfWidth = 5.5f;
         public float fallY = -1.5f;
-        // Ring-out = head on the arena floor. MUST match Systems_SumoMatchManager.ringOutOnHeadFloor.
-        public bool ringOutOnHeadFloor = true;
+        // Ring-out = any body part on the arena floor. MUST match
+        // Systems_SumoMatchManager.ringOutOnFloorContact.
+        [UnityEngine.Serialization.FormerlySerializedAs("ringOutOnHeadFloor")]
+        public bool ringOutOnFloorContact = true;
+
+        /// How far below the mat top a static contact has to be to count as "the
+        /// floor". The mat top and the tawara bands sit at 0..-0.08; the platform
+        /// face runs to -0.6 and the floor is at -0.6, so 0.3 splits them cleanly.
+        private const float FLOOR_MARGIN = 0.3f;
         [Tooltip("Head knockouts one fighter can suffer before losing the match outright — boxing's three-knockdown rule. 0 disables it. Copied from GameTuning in Start.")]
         public int knockoutsToLoseMatch = 3;
         [Tooltip("Realtime seconds from the deciding knockout to the result card, so the KO slow-motion plays out first. Copied from GameTuning in Start.")]
@@ -341,7 +348,7 @@ namespace PoSumo
                 betweenRoundsPause = tuning.betweenRoundsPause;
                 graceSeconds = tuning.graceSeconds;
                 gibLosesRound = tuning.gibLosesRound;
-                ringOutOnHeadFloor = tuning.ringOutOnHeadFloor;
+                ringOutOnFloorContact = tuning.ringOutOnFloorContact;
                 knockoutsToLoseMatch = tuning.knockoutsToLoseMatch;
                 shrinkStartSeconds = tuning.shrinkStartSeconds;
                 shrinkToHalfWidth = tuning.shrinkToHalfWidth;
@@ -397,9 +404,10 @@ namespace PoSumo
             if (_arena != null)
             {
                 // The head sensor needs to know which static collider is the FLOOR
-                // (ringOutOnHeadFloor); every other static contact is "the mat".
-                wrestlerA.BindArenaFloor(_arena.FloorCollider);
-                wrestlerB.BindArenaFloor(_arena.FloorCollider);
+                // (ringOutOnFloorContact): anything below the mat top by more than
+                // FLOOR_MARGIN. Everything above that line is "the mat".
+                wrestlerA.BindArenaFloor(transform.position.y - FLOOR_MARGIN);
+                wrestlerB.BindArenaFloor(transform.position.y - FLOOR_MARGIN);
             }
             if (_arena != null && tuning != null)
             {
@@ -1603,15 +1611,17 @@ namespace PoSumo
 
             // Anyone off the mat goes limp the instant a foot dips below it, so
             // the ragdoll flop plays out before the result is announced. Under
-            // ringOutOnHeadFloor that is NOT yet the loss: the round ends when the
-            // head lands on the floor below (or, backstop, the torso falls 2 m past
-            // it — off the edge of the world, not merely off the dohyo).
+            // ringOutOnFloorContact that is NOT yet the loss: the round ends when
+            // ANY part of the body lands on the floor below (or, backstop, the
+            // torso falls 2 m past it — off the edge of the world). "Any part"
+            // replaced "the head" on 2026-08-26 after a bracket stalled forever
+            // on two limp fighters resting on each other with no head down.
             bool aFootOff = OutOfRing(wrestlerA, _bodyA);
             bool bFootOff = OutOfRing(wrestlerB, _bodyB);
             if (aFootOff) GoLimp(wrestlerA);
             if (bFootOff) GoLimp(wrestlerB);
-            bool aOffMat = ringOutOnHeadFloor ? (wrestlerA.HeadOnFloor || BelowFloor(wrestlerA)) : aFootOff;
-            bool bOffMat = ringOutOnHeadFloor ? (wrestlerB.HeadOnFloor || BelowFloor(wrestlerB)) : bFootOff;
+            bool aOffMat = ringOutOnFloorContact ? (wrestlerA.OnFloor || BelowFloor(wrestlerA)) : aFootOff;
+            bool bOffMat = ringOutOnFloorContact ? (wrestlerB.OnFloor || BelowFloor(wrestlerB)) : bFootOff;
 
             // The ring-out is the ONLY losing condition (2026-08-26). Down-out,
             // knockdown and head-touch were all deleted from both referees; the
@@ -1717,7 +1727,7 @@ namespace PoSumo
             return w.Torso.position.y < fallY;
         }
 
-        /// Backstop for ringOutOnHeadFloor: the torso is 2 m under the arena floor,
+        /// Backstop for ringOutOnFloorContact: the torso is 2 m under the arena floor,
         /// i.e. the body left the world, not just the mat. fallY (-0.2) cannot be
         /// used here — the floor itself is ~0.6 m below the mat, so a fighter LYING
         /// on it would trip fallY before the head rule ever got its say.

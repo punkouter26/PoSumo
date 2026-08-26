@@ -132,8 +132,9 @@ namespace PoSumo
         /// this. Exposed for Systems_BodyDamage's head-KO check.
         public CircleCollider2D HeadCollider { get; private set; }
 
-        /// Head-only ground contact, for the head-on-the-mat losing rule.
-        public Sensor_HeadContact HeadContact { get; private set; }
+        /// One floor-contact sensor per collider (14 parts + the head hitbox), for
+        /// the any-part-on-the-floor ring-out. Filled by Build().
+        public Sensor_FloorContact[] FloorSensors { get; private set; }
 
         /// Unit-scale transform riding on the head, immune to face-art rescaling.
         /// Parent head decals here, never to HeadRenderer.transform — local units
@@ -589,6 +590,7 @@ namespace PoSumo
             ArtRenderers = new SpriteRenderer[n];
             BodyMaterial = Systems_ArenaLighting.CreateBodyMaterial($"PoSumo_Body_{name}");
             var thighs = new List<Rigidbody2D>();
+            var floorSensors = new List<Sensor_FloorContact>(16);
 
             // One caster group for the whole wrestler. ShadowCasterGroup2DManager
             // walks up from each ShadowCaster2D to the nearest ShadowCasterGroup2D
@@ -783,12 +785,15 @@ namespace PoSumo
                     hc.sharedMaterial = _bodyMat;
                     AllColliders.Add(hc);
                     HeadCollider = hc;
-                    HeadContact = headHit.AddComponent<Sensor_HeadContact>();
+                    floorSensors.Add(headHit.AddComponent<Sensor_FloorContact>());
                 }
                 // (Chest rb mass already includes the head via the def table.)
 
                 // Ground-contact reporter on every non-foot part.
                 if (!d.isFoot) go.AddComponent<Sensor_BodyPartContact>();
+                // Floor-contact reporter on EVERY part, feet included: a foot on
+                // the arena floor is as out as a head on it.
+                floorSensors.Add(go.AddComponent<Sensor_FloorContact>());
 
                 // Impact reporter (audio/FX) on every part, feet included.
                 var impact = go.AddComponent<Sensor_Impact>();
@@ -796,6 +801,7 @@ namespace PoSumo
                 impact.isFoot = d.isFoot;
             }
             _thighs = thighs.ToArray();
+            FloorSensors = floorSensors.ToArray();
 
             // Joints
             Joints = new HingeJoint2D[JOINT_DEFS.Length];
