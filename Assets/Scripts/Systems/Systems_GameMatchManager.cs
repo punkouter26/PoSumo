@@ -20,10 +20,10 @@ namespace PoSumo
     // of this class rather than a type of its own.
     public sealed partial class Systems_GameMatchManager : MonoBehaviour
     {
-        // WalkInPark is appended rather than inserted next to WalkIn: `_phase` is not
-        // serialized, but Phase values are compared in several places and keeping the
-        // existing members at their existing ordinals costs nothing.
-        private enum Phase { Fighting, RoundEnded, Grace, Intro, WalkIn, MatchOver, WalkInPark }
+        // Phase.WalkInPark (a glide onto the stand-off marks after a failed walk-in)
+        // was the last member until 2026-08-26; a stalled approach now engages the
+        // fight brains in place, so it went. Keep the remaining ordinals as they are.
+        private enum Phase { Fighting, RoundEnded, Grace, Intro, WalkIn, MatchOver }
 
         public Agent_Biped wrestlerA;           // teamId 0
         public Agent_Biped wrestlerB;           // teamId 1
@@ -139,13 +139,15 @@ namespace PoSumo
         /// before "no progress" gives up on it. See the stall check in FixedUpdate.
         private float _walkInBestGap;
         private float _walkInStallLeft;
-        /// Seconds of no meaningful closing before the walk-in is abandoned.
-        /// Comfortably longer than a stumble-and-recover, far shorter than the 12 s
-        /// hard cap that produced twelve seconds of dead air in measured play.
-        private const float WALKIN_STALL_SECONDS = 2.5f;
-        /// Metres of closing that count as progress. Below this it is jitter — the
-        /// fighters sway on the spot even when they are going nowhere.
-        private const float WALKIN_PROGRESS_EPSILON = 0.05f;
+        /// Seconds without meaningful closing before the fight brains take over
+        /// in place. Was 2.5 s with a 5 cm progress threshold, which read a slow
+        /// crawl (the shipped gait) as a stall and cut the approach short on every
+        /// bout; 4 s / 8 cm lets a pair that is still edging together keep coming.
+        /// "Abandoned" no longer means parked — see the stall branch in FixedUpdate.
+        private const float WALKIN_STALL_SECONDS = 4f;
+        /// Metres of NEW closing that count as progress. Below this it is jitter —
+        /// the fighters sway on the spot even when they are going nowhere.
+        private const float WALKIN_PROGRESS_EPSILON = 0.08f;
         /// How long a single camera beat is held, in realtime seconds. Slightly
         /// over the one second a countdown digit lasts, so a beat covers its whole
         /// digit and the blend has landed before the next beat overrides it.
@@ -660,55 +662,6 @@ namespace PoSumo
                 SetSimulated(body, true);
             }
             w.actionsEnabled = true;
-        }
-
-        /// Seconds spent gliding a failed walk-in onto the stand-off marks. Short
-        /// enough not to add dead air to an opening that has already wasted several
-        /// seconds, long enough to read as movement rather than a teleport.
-        private const float WALKIN_PARK_SECONDS = 0.45f;
-
-        private float _parkLeft;
-        private float _parkFromAx, _parkFromBx;
-
-        /// Starts the glide onto the stand-off marks after a failed approach.
-        /// Physics is already frozen by the HoldUpright at the call site, so this
-        /// only has to move transforms.
-        private void BeginWalkInPark()
-        {
-            _parkFromAx = wrestlerA != null ? wrestlerA.TorsoX : transform.position.x;
-            _parkFromBx = wrestlerB != null ? wrestlerB.TorsoX : transform.position.x;
-            _parkLeft = WALKIN_PARK_SECONDS;
-            _phase = Phase.WalkInPark;
-        }
-
-        /// Advances the glide. Returns true on the step it completes, which is when
-        /// the caller opens the round.
-        ///
-        /// Smoothstep rather than a straight lerp: the fighters are already at rest
-        /// when this starts and are at rest when it ends, so a linear slide begins
-        /// and finishes with a visible jerk at both ends.
-        private bool TickWalkInPark()
-        {
-            _parkLeft -= Time.fixedDeltaTime;
-            float t = Mathf.Clamp01(1f - _parkLeft / WALKIN_PARK_SECONDS);
-            t = t * t * (3f - 2f * t);
-
-            float centreX = transform.position.x;
-            MoveTo(wrestlerA, Mathf.Lerp(_parkFromAx, centreX - neutralGapHalf, t));
-            MoveTo(wrestlerB, Mathf.Lerp(_parkFromBx, centreX + neutralGapHalf, t));
-            return _parkLeft <= 0f;
-        }
-
-        /// Slides a frozen fighter's whole ragdoll to an absolute x, keeping its
-        /// pose. The root is moved by the DELTA from the torso rather than being set
-        /// outright: the torso is the part the stand-off is measured from, and the
-        /// root transform is not necessarily on top of it once the body has walked.
-        private void MoveTo(Agent_Biped w, float targetTorsoX)
-        {
-            if (w == null) return;
-            float delta = targetTorsoX - w.TorsoX;
-            Vector3 p = w.transform.position;
-            w.transform.position = new Vector3(p.x + delta, p.y, p.z);
         }
 
         /// True once the two fighters' bodies actually meet.
@@ -1536,59 +1489,22 @@ namespace PoSumo
                                          $"B={(_walkInColsB == null ? -1 : _walkInColsB.Length)}, " +
                                          $"Ax={wrestlerA.TorsoX:F2} Bx={wrestlerB.TorsoX:F2} " +
                                          $"startGapHalf={walkInStartGapHalf:F1} — " +
-                                         "parking at the stand-off and starting the fight anyway");
-                        // They never made contact. Put them on the stand-off marks
-                        // and open the round ON THE SPOT — no second countdown. The
-                        // ceremony count has already played, so re-running it would
-                        // count the same round in twice; and a policy that cannot
-                        // close 3 m of empty mat is a training problem, not
-                        // something the referee should paper over with more dead air.
-                        // ...but GLIDE onto the marks rather than snapping to them.
-                        //
-                        // MEASURED 2026-08-25: this path fires on EVERY match, not
-                        // occasionally — a full 7-match bracket stalled 7 times
-                        // (3.3 s, 4.5 s, ...) because the shipped gait cannot cross
-                        // the opening gap at all. That makes it the normal opening of
-                        // every bout rather than the rare backstop it was written as,
-                        // and a hard snap from wherever they gave up straight onto
-                        // the marks is the most visible glitch in the game.
-                        //
-                        // Presentation only: the destination is identical and the
-                        // fight starts from the same marks, WALKIN_PARK_SECONDS
-                        // later. It gives the ceremony a readable ending without
-                        // pretending the walk worked. Delete it the day a policy can
-                        // actually walk in.
-                        //
-                        // Recorded BEFORE HoldUpright, which is itself a teleport
-                        // onto the marks — capturing after it would read the
-                        // destination and glide from the mark to the mark.
-                        BeginWalkInPark();
-                        HoldUpright();
+                                         "engaging the fight brains where they stand");
+                        // They never closed the last of the gap. The fight brains
+                        // take over WHERE THEY STAND — no glide back to the
+                        // stand-off marks, no second countdown, no camera widening.
+                        // Requested 2026-08-26: a pair still edging together was
+                        // being yanked apart onto the marks (the "restart") the
+                        // moment the old 2.5 s stall clock ran out, and the follow
+                        // camera pulled wide to frame the new 5 m gap. The park
+                        // (Phase.WalkInPark, a 0.45 s smoothstep onto the marks)
+                        // was deleted with this; EngageFromWalkIn is the same
+                        // handoff the contact path uses.
+                        EngageFromWalkIn();
                         return;
                     }
                     return;
 
-                case Phase.WalkInPark:
-                    if (TickWalkInPark())
-                    {
-                        EndWalkInPhase();
-                        RestoreFightRing();
-                        // Drop the wide ceremony shot so the camera settles back
-                        // onto the pair for the fight.
-                        if (_camFollow != null) _camFollow.ClearShots();
-                        _braceStarted = Time.time;
-                        _phase = Phase.Fighting;
-                        _elapsed = 0f;
-                        _gibbedA = _gibbedB = false;
-                        // HoldUpright froze them; BeginSimulation is what puts the
-                        // physics and the fight brains back, exactly as the contact
-                        // path does. Zeroed so the Fighting branch does not fall
-                        // into TickCountdown on the next step.
-                        _countdownLeft = 0f;
-                        BeginSimulation();
-                        RoundStarted?.Invoke();
-                    }
-                    return;
             }
 
             // Phase.Fighting — the round clock and scoring hold until the

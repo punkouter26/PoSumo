@@ -18,9 +18,6 @@ MonoBehaviour:
   horizontalMargin: 0.8
   smoothing: 4
   wideOrtho: 14
-  enableArenaBand: 0
-  arenaBandBottom: 0.2
-  arenaBandTop: 0.82
   ringHalfWidth: 3.5
   neutralGapHalf: 2.5
   surfaceFriction: 0.55
@@ -33,17 +30,14 @@ MonoBehaviour:
   walkInHalfWidth: 3.5
   walkInStartGapHalf: 2.5
   walkInTouchGap: 0.6
-  walkInTimeout: 9
+  walkInTimeout: 30
   pointsToWin: 3
   tournamentPointsToWin: 2
   roundTimeoutSeconds: 0
   betweenRoundsPause: 2.5
   graceSeconds: 0.4
-  downGraceSeconds: 0.2
-  downOutSeconds: 0
   gibLosesRound: 1
-  knockdownLoses: 0
-  headTouchLoses: 0
+  ringOutOnFloorContact: 1
   knockoutsToLoseMatch: 2
   knockoutAnnounceSeconds: 2.2
   enablePresentation: 1

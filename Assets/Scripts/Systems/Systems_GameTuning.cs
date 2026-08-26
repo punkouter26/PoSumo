@@ -72,8 +72,8 @@ namespace PoSumo
         // Fixing the gait itself is a training problem with four failed runs behind
         // it (see CLAUDE.md); this makes the presentation work with the gait we have.
         public float walkInTouchGap = 0.6f;
-        [Tooltip("Hard cap on the walk-in, in seconds. Must cover the full approach: roughly walkInStartGapHalf metres each at the measured ~1.4 m/s, plus margin for a stumble. On timeout the fighters are parked at the stand-off and the round opens with the normal countdown instead.")]
-        public float walkInTimeout = 12f;
+        [Tooltip("Hard cap on the walk-in, in seconds. 30 since 2026-08-26 (was 9): a pair that is still edging together is left to edge together, and on the cap — or after 4 s without 8 cm of new closing — the fight brains simply take over where they stand. Nothing is parked or re-counted any more.")]
+        public float walkInTimeout = 30f;
 
         [Header("Match")]
         [Tooltip("Round wins needed in a standalone exhibition match.")]

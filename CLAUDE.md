@@ -1726,7 +1726,15 @@ because holding more than they show is their job.
   `Agent_Biped.displayNameOverride` (both `[NonSerialized]`, both presentation only —
   `behaviorName` must keep matching the YAML key or that fighter has no brain).
 
-### The walk-in stalls on EVERY match, and the referee now glides out of it
+### The walk-in stalls on EVERY match — and since 2026-08-26 it no longer "restarts"
+
+> **SUPERSEDED 2026-08-26.** The park described below is DELETED. A stalled or timed-out
+> approach now hands both bodies to the fight brains **where they stand**
+> (`EngageFromWalkIn`, the same handoff as contact) — no glide back to the stand-off
+> marks, no camera widening. The stall clock is 4 s / 8 cm of new closing (was 2.5 s /
+> 5 cm, which read the shipped crawl as a stall on every bout) and `walkInTimeout` is
+> **30 s** in `GameTuning.asset` (was 9), so a pair still edging together is left to
+> edge together. Requested by the player; the section below is history.
 
 `Phase.WalkInPark` was added 2026-08-25. The stall path was written as a rare
 backstop; measured, it fires **every single bout** (7 stalls in a 7-match bracket,
