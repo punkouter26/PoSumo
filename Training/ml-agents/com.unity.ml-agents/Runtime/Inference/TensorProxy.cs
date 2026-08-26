@@ -75,9 +75,16 @@ namespace Unity.MLAgents.Inference
 
         void Dispose()
         {
+            // PoSumo local patch 5 (2026-08-26): upstream dereferences `data` before
+            // the null-conditional below, so the finalizer throws for every proxy
+            // whose tensor was never created (six NREs per brain load on Android).
+            if (data == null || data.dataOnBackend == null)
+            {
+                return;
+            }
             if (data.dataOnBackend.backendType != BackendType.CPU)
             {
-                data?.Dispose();
+                data.Dispose();
             }
         }
     }

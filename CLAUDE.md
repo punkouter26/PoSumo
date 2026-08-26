@@ -264,6 +264,15 @@ older commits and notes.
    target ever exercises this**, so verify an Android build after any ml-agents re-fetch
    rather than trusting a green console.
 
+5. `Runtime/Inference/TensorProxy.cs::Dispose` — null-guard `data` before reading
+   `data.dataOnBackend`. Upstream 4.1.0 dereferences it first and only null-checks on the
+   next line, so the finalizer (`~TensorProxy`) throws `NullReferenceException` for every
+   proxy whose tensor was never created. Measured on the Pixel 9 Pro on 2026-08-26: six
+   `TensorProxy.Finalize` NREs in one burst at brain load in a release APK — harmless
+   (a finalizer exception is swallowed) but it is the first thing `logcat -s Unity:E`
+   shows, and it is the same finalizer noise the Editor prints as
+   "Undisposed worker found". Added 2026-08-26.
+
 4. `mlagents_envs/environment.py::_check_communication_compatibility` — `StrictVersion`
    replaced with a manual tuple parse; the original crashes worker auto-restarts. **Still
    required at 4.1.0**, which still does `from distutils.version import StrictVersion`.
