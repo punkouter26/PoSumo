@@ -40,7 +40,7 @@ MonoBehaviour:
   ringOutOnFloorContact: 1
   knockoutsToLoseMatch: 2
   knockoutAnnounceSeconds: 2.2
-  enableArenaBand: 1
+  enableArenaBand: 0
   arenaBandBottom: 0.2
   arenaBandTop: 0.88
   enablePresentation: 1
@@ -58,3 +58,4 @@ MonoBehaviour:
   enablePerfHud: 1
   enableShockwave: 1
   enableFeelFx: 1
+  enableRingSqueezeCue: 1

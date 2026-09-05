@@ -21,6 +21,17 @@ namespace PoSumo
 
         private Systems_GameMatchManager _manager;
         private bool _returning;
+        /// Realtime stamp the bracket is loaded at, or negative when idle.
+        ///
+        /// This was `Invoke(nameof(ReturnToBracket), ...)`, which counts in SCALED
+        /// time. Everything it is waiting on counts in REALTIME: the result card is
+        /// raised by the UI Toolkit scheduler, and the slow motion in front of it
+        /// ends on `Time.realtimeSinceStartup`. So a knockout finish — the one case
+        /// with a deep, long `timeScale` drop — stretched this wait well past the
+        /// `resultPause` it was asked for, and the card sat there. An accumulator in
+        /// Update is also the project's rule for deferred work; there are no
+        /// coroutines here and Invoke was the last thing behaving like one.
+        private float _returnAtReal = -1f;
 
         private void Start()
         {
@@ -35,11 +46,21 @@ namespace PoSumo
             {
                 _manager.pointsToWin = roundsToWinMatchFallback;
             }
-            // This bout's result goes to the bracket and the scene change is
-            // scheduled the moment it is decided, so the result card must not
-            // offer a rematch it cannot honour.
-            _manager.MarkBracketBout();
+            // MarkBracketBout is NOT called here any more. This bout's result goes
+            // to the bracket and the scene change is scheduled the moment it is
+            // decided, so the result card must not offer a rematch it cannot
+            // honour — but this Start is not ordered against the manager's, and
+            // the flag was only reliably set by the time a match had been decided.
+            // Systems_MatchRoster, which spawns this component at execution order
+            // -500, sets it before any Awake runs.
             _manager.MatchEnded += OnMatchEnded;
+        }
+
+        private void Update()
+        {
+            if (_returnAtReal < 0f || Time.realtimeSinceStartup < _returnAtReal) return;
+            _returnAtReal = -1f;
+            ReturnToBracket();
         }
 
         private void OnDisable()
@@ -71,11 +92,20 @@ namespace PoSumo
             float announceDelay = _manager.EndedByKnockout
                 ? _manager.knockoutAnnounceSeconds
                 : _manager.limpBeforeAnnounce;
-            Invoke(nameof(ReturnToBracket), resultPause + announceDelay);
+            _returnAtReal = Time.realtimeSinceStartup + resultPause + announceDelay;
         }
 
         private void ReturnToBracket()
         {
+            // Time.timeScale is GLOBAL and survives a scene load. A knockout finish
+            // leaves it at koSlowMoScale until Systems_MatchPresentation's realtime
+            // deadline expires, and its OnDisable only restores what it applied —
+            // so a return that lands inside that window carried ~0.25x speed into
+            // SCN_TOURNAMENT. The other two exits from a decided bout
+            // (Systems_BotLadderReporter.Return and the CONTINUE button's
+            // ContinueToBracket) both clear it; this one did not, and was the odd
+            // one of the three.
+            Time.timeScale = 1f;
             SceneManager.LoadScene(bracketScene);
         }
     }

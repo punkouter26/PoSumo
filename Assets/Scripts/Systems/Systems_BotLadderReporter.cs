@@ -16,6 +16,11 @@ namespace PoSumo
 
         private Systems_GameMatchManager _manager;
         private bool _returning;
+        /// Realtime stamp the return fires at, or negative when idle. See the same
+        /// field on Systems_TournamentReporter: this was an `Invoke`, which counts
+        /// in SCALED time while everything it waits on — the result card's
+        /// scheduler, the slow-motion deadline — counts in realtime.
+        private float _returnAtReal = -1f;
 
         private void Start()
         {
@@ -23,9 +28,17 @@ namespace PoSumo
             if (_manager == null) return;
             // Same treatment as a bracket bout: no REMATCH, a CONTINUE that goes back
             // to the tournament screen, and best-of-three (the manager reads
-            // tournamentPointsToWin while the ladder is active).
-            _manager.MarkBracketBout();
+            // tournamentPointsToWin while the ladder is active). MarkBracketBout is
+            // set by Systems_MatchRoster at execution order -500, which is what
+            // spawns this component — see the note there.
             _manager.MatchEnded += OnMatchEnded;
+        }
+
+        private void Update()
+        {
+            if (_returnAtReal < 0f || Time.realtimeSinceStartup < _returnAtReal) return;
+            _returnAtReal = -1f;
+            Return();
         }
 
         private void OnDisable()
@@ -49,7 +62,7 @@ namespace PoSumo
             float announceDelay = _manager.EndedByKnockout
                 ? _manager.knockoutAnnounceSeconds
                 : _manager.limpBeforeAnnounce;
-            Invoke(nameof(Return), resultPause + announceDelay);
+            _returnAtReal = Time.realtimeSinceStartup + resultPause + announceDelay;
         }
 
         private void Return()

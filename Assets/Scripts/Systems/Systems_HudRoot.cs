@@ -138,7 +138,9 @@ namespace PoSumo
 
             // Topmost, full-panel, NoPick itself: for controls that must sit in a
             // true screen CORNER over everything, including the dock (the DBG
-            // toggle). Children position absolutely against the whole panel.
+            // toggle). Children position absolutely against the whole panel — and
+            // therefore against this layer's PADDING box, which is exactly what
+            // makes the safe-area inset below work for them.
             Overlay = new VisualElement().Fill().NoPick();
             root.Add(Overlay);
 
@@ -146,7 +148,14 @@ namespace PoSumo
             // graph each attached one and the fight HUD attached none, so its
             // panels sat under the notch and the gesture bar on every device that
             // has them.
-            Systems_SafeArea.Attach(transform, content, modalSafe);
+            //
+            // Overlay is inset too, and was not. Its whole purpose is to put things
+            // in a true screen CORNER, which is precisely where a notch, a
+            // punch-hole and a gesture bar live — measured at 1440x3088 the DBG
+            // toggle resolved to y=1490 h=44 in a 1544pt panel, i.e. 10pt off the
+            // bottom edge and under the Android gesture bar. The scrim between the
+            // layers still gets no inset, for the reason above.
+            Systems_SafeArea.Attach(transform, content, modalSafe, Overlay);
 
             VisualElement column = new VisualElement().Fill().NoPick();
             column.style.flexDirection = FlexDirection.Column;

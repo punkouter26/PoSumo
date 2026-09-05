@@ -52,6 +52,9 @@ namespace PoSumo
 
         public float feetDrop = 0.95f;
         public float horizontalMargin = 0.5f;
+
+        [Tooltip("How close (m) a fighter has to get to the CURRENT mat edge before the camera widens to keep that edge in frame. 0 restores the old pair-only framing exactly.\n\nRing-out is the only losing condition, so the rim is the thing a viewer needs to read — but framing the whole mat all round would throw away the tight follow. This buys the edge only when it is about to matter. Deliberately not on GameTuning: it is a framing detail of this component, and adding it to the asset would give it a second place to go stale.")]
+        public float edgeAwareness = 1.1f;
         public float smoothing = 4f;
 
         // ---- impact shake ---------------------------------------------------
@@ -340,6 +343,39 @@ namespace PoSumo
             float halfDist = Mathf.Abs(ax - bx) * 0.5f;
 
             float halfWidthNeeded = halfDist + horizontalMargin;
+
+            // KEEP THE RIM THAT DECIDES THE ROUND ON SCREEN.
+            //
+            // Ring-out is the only losing condition in this game, and the mat
+            // closes under the fighters as the round runs — so the single most
+            // important thing in frame is how much clay is left behind whoever is
+            // going backwards. The follow above frames only the PAIR: measured in
+            // a live bracket at 1440x3088 it sat at ortho 2.47 (the minOrtho
+            // floor), showing +/-1.69 m of a +/-3.5 m mat, with the edge a fighter
+            // was two steps from entirely out of shot.
+            //
+            // This widens ONLY when someone is actually inside `edgeAwareness` of
+            // an edge, so the tight follow in the middle of the mat — which is
+            // most of a round, and the reason the follow is tight at all — is
+            // untouched. It reads the LIVE half-width, not the full one: the whole
+            // point is the edge that is currently there.
+            if (_manager != null && edgeAwareness > 0f)
+            {
+                float ringCentreX = _manager.transform.position.x;
+                float ringHalfNow = _manager.CurrentRingHalfWidth;
+                float aOff = ax - ringCentreX;
+                float bOff = bx - ringCentreX;
+                // Whichever fighter is furthest from the centre is the one in
+                // trouble, and his rim is the one worth showing.
+                float lead = Mathf.Abs(aOff) >= Mathf.Abs(bOff) ? aOff : bOff;
+                if (Mathf.Abs(lead) > ringHalfNow - edgeAwareness)
+                {
+                    float rimX = ringCentreX + Mathf.Sign(lead == 0f ? 1f : lead) * ringHalfNow;
+                    halfWidthNeeded = Mathf.Max(halfWidthNeeded,
+                                                Mathf.Abs(rimX - mid) + horizontalMargin);
+                }
+            }
+
             float orthoNeeded = halfWidthNeeded / _cam.aspect;
             float targetOrtho = Mathf.Clamp(orthoNeeded, minOrtho, MaxOrthoForAspect());
 
@@ -418,7 +454,12 @@ namespace PoSumo
         /// this can only ever open the framing up, never tighten it.
         private float MaxOrthoForAspect()
         {
-            float ringHalf = _manager != null ? _manager.ringHalfWidth
+            // The LIVE half-width, not the full one. This is a floor under the cap
+            // — it exists so a wide enough mat can never be un-framable — and the
+            // mat the camera has to be able to hold is the one that is there now.
+            // With maxOrtho at 9.1 this has never actually bound at any aspect the
+            // game runs at; reading the live value keeps it honest if it ever does.
+            float ringHalf = _manager != null ? _manager.CurrentRingHalfWidth
                            : tuning != null ? tuning.ringHalfWidth
                            : 3.5f;
             float aspect = Mathf.Max(0.01f, _cam.aspect);

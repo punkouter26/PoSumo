@@ -214,7 +214,15 @@ the presentation spawning would be a welcome refactor; growing the file further 
 
 There is no lint step. The verification tools are:
 
-- `MatchTestHarness.Run(n)` in Play mode → a `HARNESS RESULT:` win/loss tally,
+- `MatchTestHarness.Run(n)` in Play mode → a `HARNESS RESULT:` win/loss tally. It stays
+  inside ONE arena scene, so it proves nothing about the loop,
+- `BracketTestHarness.Run()` in Play mode **on SCN_TOURNAMENT** → a
+  `BRACKET HARNESS RESULT:` PASS/FAIL over a full 7-match bracket. This is the only check
+  that crosses a `LoadScene`, which is where the static bracket, the reporter handover, the
+  roster re-seed and `Time.timeScale` all have to survive,
+- `python Tools/ref_audit.py` → every asset reference resolves, or exit 1. It indexes all
+  THREE meta roots (`Assets/`, `Library/PackageCache/`, and the `file:` package at
+  `Training/ml-agents/`); a scan missing any one of them invents broken references,
 - the Game-view screenshot flow (`python Tools/unity.py shot ...`),
 - `Tools/unity.py errors` / `console-get-logs` for the console,
 - the EditMode unit suite in `Assets/Tests/EditMode` — run it with

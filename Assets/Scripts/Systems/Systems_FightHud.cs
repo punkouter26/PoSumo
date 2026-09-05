@@ -92,6 +92,13 @@ namespace PoSumo
         // Live strip
         private VisualElement _liveCard;
         private Label _footer;
+        private Label _matCaption;
+        private VisualElement _matTrack;
+        private VisualElement _matFill;
+        /// Last mat fraction actually written to the bar. UI Toolkit style writes
+        /// are not free and this is refreshed every frame, so the bar is only
+        /// touched when it has moved a percentage point.
+        private float _shownMat01 = -1f;
 
         // Between-rounds detail
         private VisualElement _detailCard;
@@ -248,11 +255,44 @@ namespace PoSumo
             right.Add(TeamBase(manager.colorB));
 
             // The centre used to carry the DOMINANCE tug-of-war bar and its two
-            // numbers. Removed 2026-08-26 at the player's request: the strip is now
-            // the two damage mannequins and the round footer. DominanceA/B are
+            // numbers. Removed 2026-08-26 at the player's request: DominanceA/B are
             // still computed every step — Systems_CrowdMomentum and
             // Systems_FaceMood read them — and the DBG panel prints them.
-            VisualElement centre = Systems_UiKit.Column().NoPick();
+            //
+            // It was then left as an EMPTY column inside the Triplet, which still
+            // reserves COL_CENTRE of the strip's width: a wide dead gap between the
+            // two mannequins, visible in any capture of a live bout.
+            //
+            // It now carries the MAT meter, which is the one number this game was
+            // not showing and badly needed. Measured over 17 logged rounds, 16 of
+            // them ran past `shrinkStartSeconds` and were decided by the mat
+            // closing rather than by a push — mean round 18.0 s against a shrink
+            // that starts at 8 s. The contraction was the actual referee and
+            // nothing on screen said so, so a round read as two fighters milling
+            // about until one inexplicably fell off. Telling the player how much
+            // clay is left turns that into visible, rising pressure.
+            VisualElement centre = Systems_UiKit.Column(Align.Center).NoPick();
+            _matCaption = Systems_UiKit.Caption("MAT", Systems_UiKit.FONT_MICRO,
+                                                Systems_UiKit.TextLow);
+            centre.Add(_matCaption);
+            _matTrack = new VisualElement();
+            _matTrack.style.height = 6;
+            _matTrack.style.width = Length.Percent(100f);
+            _matTrack.style.backgroundColor = Systems_UiKit.Track;
+            _matTrack.Round(3);
+            _matTrack.style.marginTop = Systems_UiKit.SPACE_1;
+            _matTrack.style.overflow = Overflow.Hidden;
+            // The fill is centred and shrinks from BOTH ends, because that is what
+            // the mat itself does — a bar that empties from one side would read as
+            // a clock, which is the one thing this is not.
+            _matTrack.style.alignItems = Align.Center;
+            _matFill = new VisualElement();
+            _matFill.style.height = 6;
+            _matFill.style.width = Length.Percent(100f);
+            _matFill.style.backgroundColor = Systems_UiKit.Good;
+            _matFill.Round(3);
+            _matTrack.Add(_matFill);
+            centre.Add(_matTrack);
 
             _liveCard.Add(Systems_UiKit.Triplet(left, centre, right));
 
@@ -670,6 +710,32 @@ namespace PoSumo
 
             PaintMannequin(_mannA, _mannShownA, _bodyA);
             PaintMannequin(_mannB, _mannShownB, _bodyB);
+            UpdateMatMeter();
+        }
+
+        /// How much clay is left, as a share of the mat the round opened on.
+        ///
+        /// Green while there is room, amber as the tawara comes in, red once the
+        /// mat is past half gone — the same three-stop ramp as the damage
+        /// mannequins beside it, so the strip reads as one instrument rather than
+        /// two unrelated ones. The bar shrinks from both ends because the mat does.
+        private void UpdateMatMeter()
+        {
+            if (_matFill == null) return;
+
+            float full = Mathf.Max(0.01f, manager.ringHalfWidth);
+            float mat01 = Mathf.Clamp01(manager.CurrentRingHalfWidth / full);
+            if (Mathf.Abs(mat01 - _shownMat01) < 0.01f) return;
+            _shownMat01 = mat01;
+
+            _matFill.style.width = Length.Percent(mat01 * 100f);
+            _matFill.style.backgroundColor = mat01 > 0.5f
+                ? Color.Lerp(Systems_UiKit.Warn, Systems_UiKit.Good, (mat01 - 0.5f) * 2f)
+                : Color.Lerp(Systems_UiKit.Bad, Systems_UiKit.Warn, mat01 * 2f);
+            // Metres, not a percentage: the fighters are about 0.4 m wide, so
+            // "MAT 1.8m" is something a viewer can measure the bodies against.
+            _matCaption.text = $"MAT {manager.CurrentRingHalfWidth * 2f:F1}m";
+            _matCaption.style.color = mat01 > 0.5f ? Systems_UiKit.TextLow : Systems_UiKit.TextHi;
         }
 
         private void RefreshDetail()

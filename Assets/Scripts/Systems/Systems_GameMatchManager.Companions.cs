@@ -80,6 +80,7 @@ namespace PoSumo
             // the same contacts except during a genuine slam, which is exactly
             // when both are wanted.
             SpawnCompanion<Systems_ShockwaveFx>(enableShockwave, "ShockwaveFx");
+            SpawnCompanion<Systems_RingSqueezeCue>(enableRingSqueezeCue, "RingSqueezeCue");
             // ANDed with the build type, not left to the flag alone. `enablePerfHud`
             // defaults TRUE in code and is ABSENT from GameTuning.asset, so the code
             // default is what actually runs — and Systems_PerfHud carries no guard of

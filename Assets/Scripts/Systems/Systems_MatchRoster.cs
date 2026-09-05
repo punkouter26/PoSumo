@@ -89,6 +89,23 @@ namespace PoSumo
                 go.transform.SetParent(transform, false);
                 go.AddComponent<Systems_BotLadderReporter>();
             }
+
+            // The two reporters used to each call this from their own Start, and
+            // nothing ordered those Starts against the manager's. Whoever spawns a
+            // reporter is the component that KNOWS this is not an exhibition, and
+            // this one runs at -500 — before every Awake and every Start in the
+            // scene — so setting it here makes `_bracketBout` true from the first
+            // frame instead of "reliably by the time a match has been decided".
+            // Both `Update`'s tap-to-continue and the result card's buttons can
+            // therefore trust it unconditionally.
+            if (tournament || ladder)
+            {
+                var manager = FindAnyObjectByType<Systems_GameMatchManager>();
+                if (manager != null)
+                {
+                    manager.MarkBracketBout();
+                }
+            }
         }
 
         private static void Apply(Agent_Biped agent, Agent_CharacterDefinition character)
