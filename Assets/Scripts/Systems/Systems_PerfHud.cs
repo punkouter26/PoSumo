@@ -45,6 +45,17 @@ namespace PoSumo
         /// Frame-time thresholds in milliseconds. The Android target is 60 FPS
         /// (16.7 ms), so amber starts where a 60 FPS budget is already gone and red
         /// where the frame has missed 30 FPS as well.
+        /// Bars in the rolling frame-time graph. At the 0.25 s sample interval
+        /// this is 12 seconds of history — long enough to see a hitch land and
+        /// still be on screen while you look away and back.
+        private const int GRAPH_BARS = 48;
+        /// Graph ceiling in milliseconds. A bar at full height is a 50 ms frame
+        /// (20 FPS); anything worse clamps rather than rescaling the whole graph,
+        /// because an auto-scaling graph makes a good run and a terrible one look
+        /// identical.
+        private const float GRAPH_MAX_MS = 50f;
+        private const int GRAPH_HEIGHT = 22;
+
         private const float MS_GOOD = 16.7f;
         private const float MS_WARN = 33.3f;
 
@@ -54,6 +65,13 @@ namespace PoSumo
         private VisualElement _panel;
         private Button _toggle;
         private Label _frame, _memory, _render, _screen, _sim, _fighters;
+        private Label _assets;
+        /// Rolling frame-time history. Retained bars whose HEIGHT is rewritten
+        /// per sample — never rebuilt, which would be UI Toolkit's equivalent of
+        /// a full Canvas rebuild inside the thing measuring the frame.
+        private VisualElement[] _graphBars;
+        private readonly float[] _graphMs = new float[GRAPH_BARS];
+        private int _graphHead;
         private Label _agentA, _agentB;
         private Systems_FightHud _fightHud;
         private bool _fightHudLookedUp;
@@ -187,11 +205,15 @@ namespace PoSumo
             _sim = Line();
             _fighters = Line();
 
+            _assets = Line();
+
             _panel.Add(_frame);
+            _panel.Add(BuildGraph());
             _panel.Add(_memory);
             _panel.Add(_render);
             _panel.Add(_screen);
             _panel.Add(_sim);
+            _panel.Add(_assets);
             _panel.Add(_fighters);
 
             // Per-agent detail: one column per fighter, refreshed on the same 4 Hz
@@ -226,6 +248,118 @@ namespace PoSumo
             (hud.Overlay ?? hud.Stage).Add(_toggle);
 
             ApplyVisibility();
+        }
+
+        /// The rolling frame-time graph: GRAPH_BARS thin columns in a bottom-
+        /// aligned row. Built once; only `height` and `backgroundColor` are
+        /// written afterwards.
+        private VisualElement BuildGraph()
+        {
+            VisualElement graph = Systems_UiKit.Row(Align.FlexEnd);
+            graph.style.height = GRAPH_HEIGHT;
+            graph.style.marginTop = 2;
+            graph.style.marginBottom = 2;
+
+            _graphBars = new VisualElement[GRAPH_BARS];
+            for (int barIndex = 0; barIndex < GRAPH_BARS; barIndex++)
+            {
+                var bar = new VisualElement();
+                bar.style.width = 3;
+                bar.style.marginRight = 1;
+                bar.style.height = 1;
+                bar.style.backgroundColor = Systems_UiKit.Good;
+                _graphBars[barIndex] = bar;
+                graph.Add(bar);
+            }
+            return graph.NoPickTree();
+        }
+
+        /// Pushes one sample and repaints the bars. The history is a ring buffer,
+        /// so the OLDEST sample is drawn leftmost and the newest rightmost without
+        /// shuffling the array every sample.
+        private void PushGraphSample(float worstMs)
+        {
+            if (_graphBars == null) return;
+
+            _graphMs[_graphHead] = worstMs;
+            _graphHead = (_graphHead + 1) % GRAPH_BARS;
+
+            for (int barIndex = 0; barIndex < GRAPH_BARS; barIndex++)
+            {
+                float ms = _graphMs[(_graphHead + barIndex) % GRAPH_BARS];
+                VisualElement bar = _graphBars[barIndex];
+                if (ms <= 0f)
+                {
+                    bar.style.height = 1;
+                    bar.style.backgroundColor = Systems_UiKit.Track;
+                    continue;
+                }
+                float fill = Mathf.Clamp01(ms / GRAPH_MAX_MS);
+                bar.style.height = Mathf.Max(1f, fill * GRAPH_HEIGHT);
+                bar.style.backgroundColor = ms > MS_WARN ? Systems_UiKit.Bad
+                                          : ms > MS_GOOD ? Systems_UiKit.Warn
+                                          : Systems_UiKit.Good;
+            }
+        }
+
+        /// Scene-load-scoped caches for the asset row. Re-scanned on a slow timer
+        /// rather than every sample: these are FindObjectsByType calls, and the one
+        /// thing a performance overlay must not do is become the cost it reports.
+        private AudioSource[] _audioSources;
+        private ParticleSystem[] _particleSystems;
+        private int _lightCount = -1;
+        private float _nextRescan;
+
+        /// Pressure on the three budgets that fail SILENTLY in this project.
+        ///
+        /// Each of these has a real failure mode with no error attached: the blood
+        /// particle budget is sized against two simultaneous wounds and simply
+        /// STARVES when exceeded (the pour thins instead of erroring), audio voices
+        /// past the platform limit are dropped without a log line, and a Light2D
+        /// count that creeps up costs a pass per light on an Android target. None
+        /// of the three shows up in frame time until it is already bad.
+        private void RefreshAssets()
+        {
+            if (_assets == null) return;
+
+            // 5 s rescan. Companions are spawned in Start and particle systems are
+            // built once, so the counts only change on a scene load — but a rescan
+            // is what makes this correct across the bouts of a bracket without
+            // needing to subscribe to anything.
+            if (Time.unscaledTime >= _nextRescan)
+            {
+                _nextRescan = Time.unscaledTime + 5f;
+                _audioSources = FindObjectsByType<AudioSource>(FindObjectsSortMode.None);
+                _particleSystems = FindObjectsByType<ParticleSystem>(FindObjectsSortMode.None);
+                _lightCount = FindObjectsByType<UnityEngine.Rendering.Universal.Light2D>(
+                    FindObjectsSortMode.None).Length;
+            }
+
+            int voices = 0;
+            if (_audioSources != null)
+            {
+                for (int sourceIndex = 0; sourceIndex < _audioSources.Length; sourceIndex++)
+                {
+                    AudioSource source = _audioSources[sourceIndex];
+                    if (source != null && source.isPlaying) voices++;
+                }
+            }
+
+            int particles = 0;
+            if (_particleSystems != null)
+            {
+                for (int systemIndex = 0; systemIndex < _particleSystems.Length; systemIndex++)
+                {
+                    ParticleSystem system = _particleSystems[systemIndex];
+                    if (system != null) particles += system.particleCount;
+                }
+            }
+
+            _sb.Clear();
+            _sb.Append("voices ").Append(voices)
+               .Append(" parts ").Append(particles)
+               .Append(" lights ").Append(_lightCount);
+            _assets.text = _sb.ToString();
         }
 
         private Label Line()
@@ -353,6 +487,9 @@ namespace PoSumo
                 _sb.Append(' ').Append(_manager.RoundActive ? "live" : "idle");
             }
             _sim.text = _sb.ToString();
+
+            PushGraphSample(_worstMsThisWindow);
+            RefreshAssets();
 
             _sb.Clear();
             _sb.Append("stam ");

@@ -62,6 +62,15 @@ namespace PoSumo
 
         private const int LEVELS = 5;
 
+        // Matches Systems_MatchAudio's SFX bus exactly. 22 kHz is effectively
+        // open; 900 Hz is underwater. Duplicated as constants rather than read
+        // across from that companion, because a companion must not reach into
+        // another companion — they subscribe to the same events instead.
+        private const float LPF_OPEN = 22000f;
+        private const float LPF_SLOWMO = 900f;
+
+        private AudioLowPassFilter _lowPass;
+
         private Systems_VoiceGains _gains;
         private AudioClip[] _happy;
         private AudioClip[] _sad;
@@ -139,6 +148,19 @@ namespace PoSumo
             // 2D with manual pan, matching Systems_MatchAudio: true 3D falloff
             // pumps with the follow camera's zoom in an orthographic game.
             _source.spatialBlend = 0f;
+
+            // The voice used to be the ONE sound in the game with no arena send
+            // and no filter. Systems_MatchAudio's two buses carry both, so during
+            // a slow-mo finish the entire mix went dark and wet — and the spoken
+            // line stayed bone-dry and full-bandwidth, sitting in front of the
+            // room instead of inside it. An AudioReverbFilter applies to every
+            // source on its own GameObject, and this source is the only one here,
+            // so the filters go on this GameObject directly rather than needing a
+            // shared bus. The room itself is Systems_AudioMix's, so it cannot
+            // drift from the one the bodies and the crowd are in.
+            Systems_AudioMix.AddArenaReverb(gameObject);
+            _lowPass = gameObject.AddComponent<AudioLowPassFilter>();
+            _lowPass.cutoffFrequency = LPF_OPEN;
 
             _manager.RoundEnded += OnRoundEnded;
             _manager.MatchEnded += OnMatchEnded;
@@ -267,6 +289,18 @@ namespace PoSumo
 
         private void Update()
         {
+            // Deliberately ABOVE the early returns below. Systems_MatchPresentation
+            // owns Time.timeScale and a slow-mo finish is precisely the moment
+            // `_matchDecided` is true, so filtering inside the guarded section
+            // would leave the voice unfiltered for the one sequence the filter
+            // exists for. Same curve as Systems_MatchAudio's SFX bus.
+            if (_lowPass != null)
+            {
+                float scale = Mathf.Clamp01(Time.timeScale);
+                float slow = 1f - Mathf.Clamp01(Mathf.InverseLerp(0.2f, 0.85f, scale));
+                _lowPass.cutoffFrequency = Mathf.Lerp(LPF_OPEN, LPF_SLOWMO, slow);
+            }
+
             if (_manager == null || _matchDecided)
             {
                 return;
@@ -368,7 +402,8 @@ namespace PoSumo
             // so a flat volume made one fighter mumble and the other shout.
             // Missing entries return 1, so an unmeasured clip is uncorrected
             // rather than silent.
-            _source.volume = volume * (_gains != null ? _gains.GainFor(clip.name) : 1f);
+            _source.volume = volume * (_gains != null ? _gains.GainFor(clip.name) : 1f)
+                           * Systems_AudioMix.VoiceLevel;
             _source.Play();
         }
 

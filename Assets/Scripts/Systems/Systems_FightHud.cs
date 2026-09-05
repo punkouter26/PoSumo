@@ -224,7 +224,10 @@ namespace PoSumo
         /// without reading — two figures changing colour and a bar leaning one way.
         private void BuildLiveStrip()
         {
-            _liveCard = Systems_UiKit.Card(Systems_UiKit.Panel).NoPick();
+            // Raised, not Overlay: the live strip is docked furniture that is
+            // always on screen, so it belongs to the page rather than floating
+            // over it. The result card below is the one that floats.
+            _liveCard = Systems_UiKit.ElevatedCard(Systems_UiKit.Elevation.Raised).NoPick();
             _liveCard.Pad(Systems_UiKit.SPACE_4, Systems_UiKit.SPACE_2);
             _liveCard.style.marginBottom = Systems_UiKit.SPACE_2;
 
@@ -268,7 +271,10 @@ namespace PoSumo
         /// The full aggregate table, shown between rounds in the stage band.
         private void BuildDetailCard()
         {
-            _detailCard = Systems_UiKit.Card(Systems_UiKit.Ink, Systems_UiKit.RADIUS_LG).NoPick();
+            // Overlay: this card appears over the dohyo on RoundEnded and has to
+            // read as being in front of the fight, not part of the dock.
+            _detailCard = Systems_UiKit
+                .ElevatedCard(Systems_UiKit.Elevation.Overlay, Systems_UiKit.RADIUS_LG).NoPick();
             _detailCard.Pad(Systems_UiKit.SPACE_4, Systems_UiKit.SPACE_3);
             _detailCard.style.width = Length.Percent(92);
             _detailCard.style.maxWidth = 520;

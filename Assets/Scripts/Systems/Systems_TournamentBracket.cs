@@ -454,7 +454,8 @@ namespace PoSumo
             // edge-to-edge against the panel while the bracket beside them sat
             // inset in surfaces, which read as unfinished rather than as a
             // different kind of content.
-            VisualElement card = Systems_UiKit.Card(Systems_UiKit.Surface, Systems_UiKit.RADIUS_SM);
+            VisualElement card = Systems_UiKit.ElevatedCard(
+                Systems_UiKit.Elevation.Raised, Systems_UiKit.RADIUS_SM);
             card.style.paddingTop = Systems_UiKit.SPACE_1;
             card.style.paddingBottom = Systems_UiKit.SPACE_1;
             card.NoPick();
@@ -662,7 +663,8 @@ namespace PoSumo
             header.style.marginBottom = Systems_UiKit.SPACE_1;
             _content.Add(header);
 
-            VisualElement card = Systems_UiKit.Card(Systems_UiKit.Surface, Systems_UiKit.RADIUS_MD);
+            VisualElement card = Systems_UiKit.ElevatedCard(
+                Systems_UiKit.Elevation.Raised, Systems_UiKit.RADIUS_MD);
             card.Pad(Systems_UiKit.SPACE_3, Systems_UiKit.SPACE_3);
             // The last row's own bottom margin supplies the card's bottom padding,
             // so a round with one row and a round with four are inset identically.

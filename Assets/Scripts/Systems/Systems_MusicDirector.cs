@@ -262,7 +262,13 @@ namespace PoSumo
                 ? fadeSeconds
                 : fadeSeconds * releaseMultiplier;
             layer.current = Mathf.MoveTowards(layer.current, layer.target, dt / Mathf.Max(0.01f, seconds));
-            layer.source.volume = layer.current * layer.ceiling * musicVolume;
+            // The mix level multiplies in here, on the per-frame fade write, so a
+            // player moving the music slider hears it on the next frame. The four
+            // stems are started once with a single PlayScheduled and never
+            // retriggered, so applying it at Play would only take effect on the
+            // next scene load.
+            layer.source.volume = layer.current * layer.ceiling * musicVolume
+                                * Systems_AudioMix.MusicLevel;
         }
     }
 }

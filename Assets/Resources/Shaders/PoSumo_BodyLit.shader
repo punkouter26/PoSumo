@@ -8,6 +8,15 @@
 //   wrap       - warm subsurface-ish bounce through the middle of the tube
 //   sweat      - specular band + sparkle down the lit centreline, driven by exertion
 //   dirt       - clay staining that accumulates from the bottom of the part up
+//   wet        - sheet-water darkening plus a tighter spec than sweat's
+//   flash      - white-hot pulse on the frame a limb is struck
+//   backlight  - broad warm silhouette wrap that separates two clinched bodies
+//   detail     - procedural muscle banding along the limb's long axis
+//
+// The last four were added 2026-09-05. `detail` is procedural rather than a
+// texture on purpose: it costs no extra fetch, and body detail here can ONLY be
+// shading — the drawn edge is the colliding edge, and touching a collider
+// invalidates all four brains with no trunk on disk to recover from.
 //
 // All four read the SAME cylindrical normal map Systems_ArenaLighting builds, so
 // they cost one extra texture fetch: none. _Sweat and _Dirt are written per
@@ -42,6 +51,21 @@ Shader "PoSumo/BodyLit"
         [Header(Clay)]
         _DirtColor("Clay Colour", Color) = (0.58, 0.46, 0.32, 1)
         _Dirt("Clay Dirt", Range(0, 1)) = 0
+
+        [Header(Wetness)]
+        _Wet("Wetness", Range(0, 1)) = 0
+
+        [Header(Hit Flash)]
+        _FlashColor("Flash Colour", Color) = (1, 0.93, 0.82, 1)
+        _Flash("Flash", Range(0, 1)) = 0
+
+        [Header(Back Light)]
+        _BackLightColor("Back Light Colour", Color) = (1.0, 0.72, 0.42, 1)
+        _BackLight("Back Light", Range(0, 2)) = 0.35
+
+        [Header(Muscle Detail)]
+        _Detail("Detail Strength", Range(0, 1)) = 0.35
+        _DetailScale("Detail Scale", Range(0.5, 8)) = 1.6
 
         // Legacy properties, kept so materials can fall back to the sprite shader.
         [HideInInspector] _Color("Tint", Color) = (1,1,1,1)
@@ -95,11 +119,18 @@ Shader "PoSumo/BodyLit"
                 half4 _WarmColor;
                 half4 _SweatColor;
                 half4 _DirtColor;
+                half4 _FlashColor;
+                half4 _BackLightColor;
                 half _RimStrength;
                 half _RimPower;
                 half _WrapWarm;
                 half _Sweat;
                 half _Dirt;
+                half _Wet;
+                half _Flash;
+                half _BackLight;
+                half _Detail;
+                half _DetailScale;
             CBUFFER_END
 
             // Cheap hash for grit and sweat sparkle. Deterministic per texel, so
@@ -133,6 +164,30 @@ Shader "PoSumo/BodyLit"
                 half dirtMask = saturate(1.0h - input.uv.y * 1.7h) * _Dirt;
                 dirtMask = saturate(dirtMask * (0.6h + 0.8h * grit));
                 main.rgb = lerp(main.rgb, _DirtColor.rgb, dirtMask * 0.8h);
+
+                // Muscle definition. Every part is a plain ellipse sprite over a
+                // unit capsule, and the drawn edge MUST stay the colliding edge —
+                // changing a collider invalidates all four brains and there is no
+                // trunk on disk to warm-start a correction from. So body detail
+                // can only ever be shading, never geometry, and this is where it
+                // lives. Bands run ALONG the limb (uv.y is the long axis) and are
+                // gated by the facing term so they fade out at the silhouette,
+                // where the cylinder is edge-on and a band would read as a hard
+                // painted line rather than as form.
+                // NOTE the frequency DOUBLING: abs() folds the negative lobe, so
+                // this produces 2 * _DetailScale bellies along the limb, not
+                // _DetailScale of them. The first pass shipped a scale of 7 and
+                // therefore drew FOURTEEN bands per part, which read as caterpillar
+                // segmentation rather than as muscle — visible on a live close-up.
+                // A limb has two or three bellies, so the useful range is ~1-2.
+                half band = 1.0h - abs(sin(input.uv.y * _DetailScale * 6.2831h));
+                half facingDetail = 1.0h - saturate(abs(normalTS.x));
+                half muscle = (band - 0.5h) * facingDetail * facingDetail * _Detail * 0.16h;
+                main.rgb = saturate(main.rgb * (1.0h + muscle));
+
+                // Wetness darkens and deepens the albedo the way wet skin does.
+                // The specular half of the effect is added after lighting, below.
+                main.rgb *= lerp(1.0h, 0.78h, _Wet);
 
                 SurfaceData2D surfaceData;
                 InputData2D inputData;
@@ -173,6 +228,28 @@ Shader "PoSumo/BodyLit"
                 lit.rgb += _SweatColor.rgb * (spec * 0.85h + sparkle * 0.3h) * _Sweat * main.a
                          * (0.35h + 0.65h * headroom);
 
+                // Back light: a broad warm wrap on the silhouette whose job is
+                // SEPARATION, not shaping. In a clinch the two fighters overlap at
+                // similar luminance and merge into one unreadable shape; this is
+                // what pulls the near body off the far one. Broader than the rim
+                // (edge squared rather than edge^_RimPower) and given less
+                // headroom suppression, because it has to survive on an already
+                // brightly lit limb, which is exactly where the merge happens.
+                lit.rgb += _BackLightColor.rgb * (edge * edge * _BackLight * 0.28h) * main.a
+                         * (0.5h + 0.5h * headroom);
+
+                // Wet specular: a tighter, brighter band than sweat's. Sweat is
+                // beads; this is a sheet of water, so it is narrower and it does
+                // not sparkle.
+                half wetSpec = pow(saturate(normalTS.z), 34.0h) * _Wet;
+                lit.rgb += _SweatColor.rgb * wetSpec * 0.6h * main.a * (0.3h + 0.7h * headroom);
+
+                // Hit flash: a whole-part pulse biased toward the edge, so it reads
+                // as the limb being struck rather than as its material changing.
+                // Deliberately NOT headroom-scaled — a flash that politely refuses
+                // to clip is not a flash. Driven per fighter by Systems_ImpactFx.
+                lit.rgb += _FlashColor.rgb * (_Flash * (0.55h + 0.45h * edge)) * main.a;
+
                 return lit;
             }
             ENDHLSL
@@ -212,11 +289,18 @@ Shader "PoSumo/BodyLit"
                 half4 _WarmColor;
                 half4 _SweatColor;
                 half4 _DirtColor;
+                half4 _FlashColor;
+                half4 _BackLightColor;
                 half _RimStrength;
                 half _RimPower;
                 half _WrapWarm;
                 half _Sweat;
                 half _Dirt;
+                half _Wet;
+                half _Flash;
+                half _BackLight;
+                half _Detail;
+                half _DetailScale;
             CBUFFER_END
 
             Varyings NormalsRenderingVertex(Attributes input)
@@ -272,11 +356,18 @@ Shader "PoSumo/BodyLit"
                 half4 _WarmColor;
                 half4 _SweatColor;
                 half4 _DirtColor;
+                half4 _FlashColor;
+                half4 _BackLightColor;
                 half _RimStrength;
                 half _RimPower;
                 half _WrapWarm;
                 half _Sweat;
                 half _Dirt;
+                half _Wet;
+                half _Flash;
+                half _BackLight;
+                half _Detail;
+                half _DetailScale;
             CBUFFER_END
 
             Varyings UnlitVertex(Attributes input)

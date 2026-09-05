@@ -202,24 +202,17 @@ namespace PoSumo
         /// Arena send. `room`, `decay` and `level` default to the near-field
         /// settings the SFX bus has always used; the crowd bus passes wetter,
         /// longer values so the two buses sit at different depths in the room.
+        ///
+        /// The filter itself is built by `Systems_AudioMix.AddArenaReverb`, which
+        /// is now the single definition of this room — `Systems_FighterVoice` had
+        /// no send at all and needed the identical one, and two hand-copied reverb
+        /// blocks would drift.
         private void AddReverb(GameObject host, float room = -400f, float decay = 1.4f, float level = float.NaN)
         {
-            var reverb = host.AddComponent<AudioReverbFilter>();
-            reverb.reverbPreset = AudioReverbPreset.Off;   // required before manual values take
-            reverb.dryLevel = 0f;
-            reverb.room = room;
-            reverb.roomHF = -900f;
-            reverb.decayTime = decay;
-            reverb.decayHFRatio = 0.55f;
-            reverb.reflectionsLevel = -1400f;
-            reverb.reflectionsDelay = 0.02f;
             // NaN rather than an overload: the caller's default has to be the
             // serialized reverbLevel, which is not a compile-time constant.
-            reverb.reverbLevel = float.IsNaN(level) ? reverbLevel : level;
-            reverb.reverbDelay = 0.035f;
-            reverb.diffusion = 100f;
-            reverb.density = 100f;
-            reverb.hfReference = 5000f;
+            Systems_AudioMix.AddArenaReverb(
+                host, room, decay, float.IsNaN(level) ? reverbLevel : level);
         }
 
         private void Start()
@@ -238,7 +231,7 @@ namespace PoSumo
             if (_murmur != null)
             {
                 _murmurSource.clip = _murmur;
-                _murmurSource.volume = murmurBase * masterVolume;
+                _murmurSource.volume = murmurBase * masterVolume * Systems_AudioMix.CrowdLevel;
                 _murmurSource.Play();
             }
 
@@ -278,6 +271,15 @@ namespace PoSumo
         {
             // Applause between rounds, and the bed drops into anticipation for the
             // next one.
+            //
+            // Ducked under, the same way OnMatchEnded ducks under the gong and
+            // OnKnockout ducks under the hit. The finish was the only one of the
+            // four big audio moments that did NOT duck, so the applause came up
+            // ON TOP of a bed still running at full level and the two smeared into
+            // one wash — audible as "the crowd noise never changes" rather than as
+            // a missing effect. Shorter and shallower than the gong's: a round end
+            // is punctuation, not the end of the bout.
+            Duck(0.4f, 0.5f);
             PlayCrowd(_applause, 0.5f, 1f);
             _anticipation = 1f;
 
@@ -531,8 +533,14 @@ namespace PoSumo
                 // The bed rises with excitement and DROPS between rounds — a crowd
                 // going quiet before a bout is as expressive as one roaring.
                 float target = Mathf.Lerp(murmurBase, murmurPeak, excitement) * (1f - 0.55f * _anticipation);
-                _murmurSource.volume = Mathf.Lerp(_murmurSource.volume,
-                                                  target * masterVolume * DuckFactor(), dt * 3f);
+                // The mix level is folded into the per-frame lerp target rather
+                // than applied once at Play, so a player moving the crowd slider
+                // mid-bout hears it immediately without this needing to subscribe
+                // to Systems_AudioMix.Changed.
+                _murmurSource.volume = Mathf.Lerp(
+                    _murmurSource.volume,
+                    target * masterVolume * Systems_AudioMix.CrowdLevel * DuckFactor(),
+                    dt * 3f);
                 // Barely-there pitch lift: a crowd getting louder also gets higher.
                 // Tracked in a field rather than read back off the source, because
                 // UpdateFilters also scales the pitch for slow motion — reading and
@@ -660,7 +668,7 @@ namespace PoSumo
             _nextVoice = (_nextVoice + 1) % VOICE_COUNT;
             src.pitch = pitch;
             src.panStereo = pan;
-            src.PlayOneShot(clip, volume * masterVolume);
+            src.PlayOneShot(clip, volume * masterVolume * Systems_AudioMix.SfxLevel);
         }
 
         private void PlayCrowd(AudioClip clip, float volume, float pitch)
@@ -670,7 +678,7 @@ namespace PoSumo
             _nextCrowdVoice = (_nextCrowdVoice + 1) % CROWD_VOICE_COUNT;
             src.pitch = pitch;
             src.panStereo = 0f;   // the crowd is all around, not on one side
-            src.PlayOneShot(clip, volume * masterVolume);
+            src.PlayOneShot(clip, volume * masterVolume * Systems_AudioMix.CrowdLevel);
         }
     }
 }

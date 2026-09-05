@@ -108,6 +108,23 @@ namespace PoSumo
         // arena scenes when this was written; SCN_SUMO_ICE and SCN_SUMO_STICKY
         // were deleted 2026-07-28 and SCN_SUMO is now the only one — which makes
         // the asset less necessary and no less correct.)
+        [Header("Arena band")]
+        [Tooltip("Confine the arena camera to a horizontal BAND of the screen instead of letting it own the whole frame.\n\nPortrait leaves roughly 30% of every frame as black nothing below the dohyo, and no camera VALUE fixes it - minOrtho, feetDrop and the rest only shuffle the dead space around, because they all work inside a fixed 9:16 viewport. The band changes the aspect the orthographic maths divides by, which is the one lever that changes the trade instead of moving it.\n\nThis is a RENDERING change, not just a framing one: the region outside a camera rect is not drawn by that camera, so Systems_CameraFollow also spawns an ArenaBandClear camera whose only job is to clear it. Without that the outside keeps the previous frame and smears.")]
+        public bool enableArenaBand = true;
+        // OFF after being measured on 2026-09-05, and the measurement is the point.
+        // The band DOES do what it promises to the maths: at 1440x3088 it took the
+        // aspect 0.466 -> 0.752 and the fighters rendered far larger. It still looked
+        // WORSE, because the arena has nothing to put in the space it opens up. The
+        // band is filled by backdrop grid and the empty crowd wall, and the pull-back
+        // shots (wideOrtho 14, the establishing shot at 9.5) do not shrink with the
+        // aspect, so a wide beat shows MORE emptiness than it did before, not less.
+        // Turning this on is therefore blocked on arena dressing that reaches the
+        // band edges - not on anything in this file.
+        [Tooltip("Bottom edge of the band as a fraction of screen height.")]
+        [Range(0f, 0.45f)] public float arenaBandBottom = 0.20f;
+        [Tooltip("Top edge of the band as a fraction of screen height. The gap above the band is where the score and the round banner live, so this is deliberately short of 1.")]
+        [Range(0.55f, 1f)] public float arenaBandTop = 0.88f;
+
         [Header("Presentation companions")]
         [Tooltip("Slow-mo finishes, camera punch-in, salt throw.")]
         public bool enablePresentation = true;
@@ -138,5 +155,11 @@ namespace PoSumo
 
         [Tooltip("Real-time diagnostic overlay: frame time, FPS, GC delta, physics step and per-fighter stamina. Development aid — turn OFF for a release build.")]
         public bool enablePerfHud = true;
+
+        [Tooltip("Expanding shock rings on the heaviest moments - a head KO, a limb coming off, and body-on-body contact hard enough to count as a slam. Presentation only: it reads outcomes and changes nothing a referee sees, so it is safe in a bracket and needs no retraining.\n\nEvery other VFX in the game is particles (Systems_DustPuff builds six systems), so the biggest moments all read as more of the same small stuff. One ring is the cheapest way to say that one was different.")]
+        public bool enableShockwave = true;
+
+        [Tooltip("Device haptics on the big moments, plus camera shake on the discrete events that produced none (head KO, dismemberment, gib, round end). Presentation only — it reads outcomes and changes nothing a referee sees, so it is safe in a bracket and needs no retraining.\n\nHaptics are Android-only and additionally respect the player's own switch (Systems_FeelFx.HapticsEnabled, persisted in PlayerPrefs). This flag decides whether the system exists at all.")]
+        public bool enableFeelFx = true;
     }
 }

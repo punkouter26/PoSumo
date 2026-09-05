@@ -92,6 +92,8 @@ namespace PoSumo
         private bool enableKimarite = true;
         private bool enableCrowdMomentum = true;
         private bool enablePerfHud = true;
+        private bool enableFeelFx = true;
+        private bool enableShockwave = true;
         [Tooltip("Round-opening countdown length; physics and brains are held until it finishes.")]
         public int countdownSeconds = 3;
         [Tooltip("Half the gap between the fighters' neutral stand-off positions during the countdown.")]
@@ -376,6 +378,8 @@ namespace PoSumo
                 enableKimarite = tuning.enableKimarite;
                 enableCrowdMomentum = tuning.enableCrowdMomentum;
                 enablePerfHud = tuning.enablePerfHud;
+                enableFeelFx = tuning.enableFeelFx;
+                enableShockwave = tuning.enableShockwave;
             }
 
             // enableLighting decides whether there is a light rig at all, and the

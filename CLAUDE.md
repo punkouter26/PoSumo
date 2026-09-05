@@ -27,7 +27,7 @@ where they touch code, the code is still the ground truth for what currently *is
   | Fighter kind | Colour |
   |---|---|
   | Heuristic hand-coded bot (`useBot: 1`, driven by `Agent_Bot`) | **RED** |
-  | The standard / reference RL brain, before any creature variation | **GREEN** |
+  | The standard / reference RL brain, before any creature variation | **GREEN**, no texture |
   | Custom RL variations | custom texture, supplied by the user |
 
 - **Every RL app in this family carries the same cast:** one heuristic coded bot, one
@@ -1056,6 +1056,8 @@ a tick on one asset rather than an edit in three scenes.
 | `Systems_CareerRecorder` | the only writer into career stats |
 | `Systems_KimariteCaller` | announces the winning technique after every round. Read-only w.r.t. the fight — it names the finish, it does not decide it. Measures; `Systems_Kimarite` (pure static, unit-tested) decides |
 | `Systems_CrowdMomentum` | the crowd backs whoever is losing; sustained support is a small torque boost. **Changes who wins rounds** — see below |
+| `Systems_FeelFx` | device haptics, plus camera trauma on the discrete events (head KO, dismemberment, gib, round end). Presentation only. See *The feel pass* below |
+| `Systems_ShockwaveFx` | expanding shock rings on a head KO, a dismemberment and body-on-body contact over 6.5 m/s. Pooled quads on an additive-annulus shader; subscribes only to STATIC events, never to another companion. See *The GFX/sound pass* below |
 
 **Fighters can be dismembered and decapitated, and this is not cosmetic.** Measured play
 produces `[DAMAGE] Damage_Nick lost LegNear at 20.0 damage — bleeding from stump 'Pelvis'`
@@ -1114,6 +1116,56 @@ that round. That is the interaction to keep in mind when tuning either: shorten
 there until the clock expires, which is the exact stall the rule was added to kill.
 The training referee has no equivalent, so no brain has ever trained against it.
 
+### The feel pass (2026-09-05): haptics, hitstop, event shake, round-end duck
+
+Four small things, none of which touches the observation vector, the action count, a
+mass or a collider — so **no brain is invalidated and no retraining is implied.**
+
+- **`Systems_FeelFx` + `Systems_Haptics`** (`enableFeelFx` on `GameTuning`). `Assets/Scripts/`
+  contained **zero** haptic calls before this. Android only, across all three vibration
+  generations (`VibratorManager` 31+, `VibrationEffect` 26+, legacy `vibrate(long)`), a
+  no-op everywhere else including the Editor. `Handheld.Vibrate()` was rejected: it is a
+  fixed ~500 ms buzz at a fixed strength and cannot express a 12 ms tick.
+- **The event shake was genuinely missing, and the code comment said otherwise.**
+  `Systems_CameraFollow.AddTrauma` claims "Systems_ImpactFx and Systems_BodyDamage both
+  call it" — **`Systems_BodyDamage` never did**, measured 2026-09-05. A decapitation moved
+  the frame LESS than an ordinary shove, because a shove at least carries collision speed.
+  `Systems_FeelFx` now shakes on KO / dismemberment / gib / round end. It deliberately does
+  **not** shake on ordinary impacts: that signal belongs to `Systems_ImpactFx` and doubling
+  it would wash the two together.
+- **Hitstop lives in `Systems_MatchPresentation`, and it has to.** That file is the
+  **single owner of `Time.timeScale`** in this project. A separate companion would restore
+  to 1 on its own schedule and cancel whatever slow motion was running — the KO finish
+  first. It is therefore implemented on the SAME `_slowMoActive` / `_slowMoEndReal` pair
+  the finishes use, so it inherits the one restore path in `Update`, the teardown in
+  `OnDisable`, and `RestoreTimeScale`'s refusal to step on a pause.
+  It does **not** touch `Time.fixedDeltaTime`, which is how hitstop is usually written
+  elsewhere: physics here is locked at 0.02 s and every brain was fitted against that step,
+  so scaling it would change the dynamics rather than the presentation.
+- **`Systems_MatchAudio.OnRoundEnded` now ducks.** It was the only one of the four big
+  audio moments that did not (the gong ducks, the KO ducks, the round end did not), so the
+  applause came up on top of a bed still at full level.
+
+`Systems_FeelFx` subscribes to `Sensor_Impact.AnyImpact` **only when the device can
+actually vibrate** — that is the one per-collision handler here and the impact tick is all
+it does, so off Android every call would run two tests and a `GetComponentInParent` to
+reach a pulse that cannot fire. Gated on the hardware fact, not on the player's
+`HapticsEnabled` preference, which is re-read per pulse so a settings toggle works
+mid-session.
+
+**Verified 2026-09-05:** compiles clean, `scriptCompilationFailed` false, zero project
+errors or warnings; `MatchTestHarness.Run(3)` gave
+`HARNESS RESULT: MATT 3 — 0 NICK over 3 matches / 11 rounds | longest FIGHT 24.4s`, all 12
+logged rounds `RingOut`, no draws and no stalls. Hitstop confirmed firing in a live bout
+with `Time.timeScale` restoring to 1.
+
+`_hitstopMinSpeed` is **5 m/s** and that number needs re-measuring before it is trusted:
+this file elsewhere records `knockbackSpeed` being cut 6.5 → 4.5 because 6.5 fired zero
+times in 15 rounds, but the same bout above logged knockback close-ups at **5.7, 7.3 and
+8.8 m/s**. Impact speeds have clearly risen since that note was written — almost certainly
+`Systems_StrikeImpulse` — so both thresholds are now sitting lower in the distribution than
+whoever set them intended.
+
 ### Three features added 2026-08-25 (kimarite, banzuke ceremony, crowd momentum)
 
 **`Systems_Kimarite` is pure logic on purpose.** It takes a struct of measurements
@@ -1160,6 +1212,102 @@ because `Systems_CareerStats.Get` hands back the LIVE record and the "before" st
 longer exists by the time the bracket shows it. The old `_rankNews` label **stays**: it
 is the persistent record on the page, the ceremony is the one-shot moment over it, and
 `TryTakeRankChange` is consume-once so a dismissed ceremony is otherwise unrecoverable.
+
+### The GFX/sound pass (2026-09-05) — and four claims it disproved
+
+Ten lanes of presentation work. **Nothing here touches the observation vector, the
+action count, a mass or a collider, so no brain is invalidated and no retraining is
+implied.** What is worth reading is not the feature list but the four things that
+turned out to be false when measured — three of them were false in THIS file.
+
+> **The arena band is now ON, and the thing that unblocked it was DRESSING, not the
+> camera.** `Systems_SumoArena.BuildForegroundTiers` adds four descending tiers of
+> masu-seki box seating below the dohyo, covering y = -1.65 to -4.7 — which is exactly
+> the range the band opens up and the arena previously left empty (the old dressing
+> stopped at `ArenaFloor`, about y = -1.1). Measured after: `draw 17 srp 72 setpass 31`,
+> so 356 tier objects batch to almost nothing.
+>
+> Three tuning errors were made and measured on the way, all worth knowing:
+> **(1)** seat count was a flat constant over a 34 m `floorWidth`, i.e. one spectator
+> every 3.5 m — two lonely silhouettes in an empty stand. Seat count must be DERIVED
+> from the tier's width at a fixed human pitch. **(2)** the tiers were first built to
+> `floorWidth` (34 m) when the band only shows about 8 m, putting ~500 renderers outside
+> the frustum; they are sized off `groundWidth` now. **(3)** a 0.34 body on a 0.6 pitch
+> read as fence posts — a crowd needs OVERLAPPING shoulders and a staggered head line,
+> because an even head line is what makes a repeated sprite look repeated.
+>
+> **The arena is BAKED**, so none of this appears until `Systems_SumoArena.Build()` is
+> re-run and `SCN_SUMO` saved. `Build()` does NOT clear existing children — re-running it
+> on a baked scene DUPLICATES the whole arena. Delete the children first.
+
+> **`GameTuning.enableArenaBand` did not exist.** The section above describes it as
+> implemented-but-off, with measured numbers (aspect 0.563 -> 0.907, fighters ~2.5x
+> larger). There was no `enableArenaBand`, no `ArenaBandClear` and no `Camera.rect`
+> write anywhere in `Assets/`. It has now been built for real in
+> `Systems_CameraFollow.ApplyArenaBand`, and **measured at 1440x3088 it makes the game
+> look WORSE**: aspect went 0.466 -> 0.752 and the fighters did render much larger, but
+> the band is filled with backdrop grid and empty crowd wall, and the pull-back beats
+> (`wideOrtho` 14, `establishOrtho` 9.5) do not shrink with the aspect — so a wide shot
+> now shows MORE emptiness than before. **Defaulted OFF.** Turning it on is blocked on
+> arena dressing that reaches the band edges, exactly as the older note predicted. The
+> lever is real; the art to fill it is not there.
+
+> **`spatialBlend = 0` is DELIBERATE and correct — do not "fix" it.**
+> `Systems_MatchAudio.NewSource` documents why: true 3D falloff in an orthographic game
+> fights the follow camera, because the listener's distance to the action changes with
+> ZOOM, so volumes pump. It already pans manually by world x, and so does
+> `Systems_FighterVoice`. Converting either to 3D is a regression.
+
+> **Reverb already existed on both buses**, with separate near-field and room settings.
+> The genuine gap was that `Systems_FighterVoice` built its `AudioSource` on the
+> fighter's own GameObject and so had NO send and NO low-pass — during a slow-mo finish
+> the whole mix went dark and wet and the spoken line stayed bone-dry in front of it.
+> Fixed: the room now lives once in `Systems_AudioMix.AddArenaReverb` and the voice
+> carries its own filters. Its low-pass update sits ABOVE `Update`'s early returns,
+> because a KO finish is exactly when `_matchDecided` is true.
+
+> **`Systems_DustPuff` builds SIX particle systems** (dust, sweat, salt, blood, spark,
+> haze), and the ring-out burst, salt throw and sweat spray are all long since wired up.
+> Counting files that mention `ParticleSystem` says two and is wrong.
+
+What actually landed:
+
+| Lane | Where |
+|---|---|
+| Shader: `_Wet`, `_Flash`, `_BackLight`, `_Detail` | `PoSumo_BodyLit.shader` — all three passes' CBUFFERs extended identically or the SRP Batcher drops it |
+| Those four driven per fighter | `Systems_BodySurface` — the flash lives here, not in `Systems_ImpactFx`, because this owns the material and both watch `Sensor_Impact.AnyImpact` independently |
+| Shock rings | **`Systems_ShockwaveFx`** + `enableShockwave`. Pooled quads on `PoSumo/Shockwave`, an additive annulus — NOT a refraction shockwave, because the URP 2D Renderer has no reliable opaque texture and a distortion ring would silently render nothing |
+| Persisted mix + one arena room | **`Systems_AudioMix`** (static, `SubsystemRegistration` reload). No `.mixer` asset: Unity exposes no public API to author one, and a mixer that fails to load leaves the game silent. What is genuinely lost is a master limiter |
+| Typefaces | **`Systems_UiFonts`**, applied at the two choke points in `Systems_UiKit` (`Text` and `StyleButton`). Resolves `Resources/Fonts/` -> OS family -> nothing, and writes NO font on the last, so an empty folder renders exactly as before |
+| Depth | `Systems_UiKit.Elevation` (Sunken/Base/Raised/Overlay) + `Elevate`/`ElevatedCard`. UI Toolkit has **no box-shadow**, so elevation is a bevel: light top edge, dark bottom edge, background lightening with the tier |
+| Contact grounding from real load | `Systems_BlobShadow.footLoadWeight` reads `Agent_BipedBody.FootLoadNear/Far`, which the body already samples for the contact observations. Load is GATED by height, never the reverse — a stale load on an airborne foot would paint a shadow under nothing |
+| Rolling frame graph + asset pressure | `Systems_PerfHud`: 48-bar ring buffer (12 s at the 4 Hz sample), fixed 50 ms ceiling because an auto-scaling graph makes a good run and a terrible one look identical; plus voices / particles / Light2D count, all three of which fail SILENTLY in this project |
+
+**`Systems_UiFonts` resolved live as `display=Bahnschrift ui=Segoe UI`.** The OS lookup
+runs on ANDROID too — it was `#if`'d to Editor/desktop at first, which would have shipped
+the default theme font on the one platform this game targets. Android genuinely exposes
+Roboto and Noto, so those families are in the list. It stays a fallback: `Resources/Fonts/`
+is checked first and is the only source under our control, because what a device has
+installed is guaranteed by nothing. Dropping a licensed `.ttf` in as `PoSumo_Display` /
+`PoSumo_UI` is still the way to make the type deterministic — that is a licensing
+decision, which is why the loader was built and the face was not chosen.
+
+> **A dynamic OS font is destroyed when Play mode exits** — the Editor logs "Deleting
+> invalid font reference" — so `Systems_UiFonts` carries the mandatory
+> `SubsystemRegistration` reset. Without it `_resolved` stayed true across the second
+> Play session while the cached `Font` was destroyed, and every label silently fell back
+> to the default. It looks exactly like the feature having been reverted, and only ever
+> on the SECOND run.
+
+**Muscle detail (`_Detail`) ships at 0 — OFF — and that is a conclusion, not a
+placeholder.** Three attempts: 0.35 read as caterpillar segmentation; the frequency was
+then found to be doubled (`abs()` folds the wave, so `_DetailScale` 7 drew FOURTEEN
+bellies per limb, not seven) and corrected to 1.6; at a corrected 0.22 it STILL read as
+horizontal stripes across the belly. The term is not wrong — the primitives defeat it.
+Every part is a plain ellipse or box sprite with no anatomical UV layout, and the trunk
+is four separate spine segments each carrying its own copy of the wave, so any amplitude
+high enough to read as form also reads as banding. The shader side is correct and costs
+nothing at 0; raise it only once the bodies carry authored art.
 
 ### Telemetry (`Systems_Telemetry`)
 Spawns itself via `[RuntimeInitializeOnLoadMethod]` in **Editor and development builds

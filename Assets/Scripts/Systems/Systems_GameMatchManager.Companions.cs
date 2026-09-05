@@ -67,6 +67,19 @@ namespace PoSumo
             SpawnCompanion<Systems_StrikeImpulse>(enableStrikeImpulse, "StrikeImpulse");
             SpawnCompanion<Systems_KimariteCaller>(enableKimarite, "Kimarite");
             SpawnCompanion<Systems_CrowdMomentum>(enableCrowdMomentum, "CrowdMomentum");
+            // Haptics and event shake. Spawned AFTER Systems_ImpactFx on purpose:
+            // both subscribe to Sensor_Impact.AnyImpact, and the ordinary-collision
+            // shake should be applied before the discrete-event shake stacks on top
+            // of it in the same frame. Nothing depends on that ordering for
+            // correctness — trauma is commutative — but it keeps the reading order
+            // of the two effects the same as the order they are documented in.
+            SpawnCompanion<Systems_FeelFx>(enableFeelFx, "FeelFx");
+            // Also after Systems_ImpactFx, and for the same reason: both watch
+            // Sensor_Impact.AnyImpact independently. The shock ring has a much
+            // higher speed gate (6.5 m/s against 2.2) so the two do not fire on
+            // the same contacts except during a genuine slam, which is exactly
+            // when both are wanted.
+            SpawnCompanion<Systems_ShockwaveFx>(enableShockwave, "ShockwaveFx");
             // ANDed with the build type, not left to the flag alone. `enablePerfHud`
             // defaults TRUE in code and is ABSENT from GameTuning.asset, so the code
             // default is what actually runs — and Systems_PerfHud carries no guard of

@@ -216,8 +216,83 @@ namespace PoSumo
                 horizontalMargin = tuning.horizontalMargin;
                 smoothing = tuning.smoothing;
                 wideOrtho = tuning.wideOrtho;
+                enableArenaBand = tuning.enableArenaBand;
+                arenaBandBottom = tuning.arenaBandBottom;
+                arenaBandTop = tuning.arenaBandTop;
             }
+
+            ApplyArenaBand();
         }
+
+        /// Confines the camera to a horizontal band, and spawns the clear camera
+        /// that the band makes necessary.
+        ///
+        /// **Why this is the only lever that works.** `feetDrop`'s own note is
+        /// right that no camera VALUE fixes the ~30% of every portrait frame that
+        /// is black below the dohyo — but that conclusion assumed the camera owns
+        /// the whole screen. It does not have to. `MaxOrthoForAspect` divides the
+        /// ring half-width by `_cam.aspect`, and Unity recomputes `aspect` from
+        /// the viewport rect, so narrowing the band vertically RAISES the aspect
+        /// and lowers the ortho size needed to keep both fighters in frame. At
+        /// 1080x1920 a 0.20-0.82 band takes the aspect from 0.563 to 0.907.
+        ///
+        /// **The clear camera is not optional.** The region outside a camera's
+        /// rect is not drawn by that camera at all, so without a second camera
+        /// clearing the full viewport the letterbox keeps whatever was in the
+        /// backbuffer and smears as the scene moves. It culls everything
+        /// (`cullingMask = 0`) and exists purely for its clear, and it sits one
+        /// step BELOW the arena camera in depth so it clears first.
+        private void ApplyArenaBand()
+        {
+            if (_cam == null)
+            {
+                return;
+            }
+            if (!enableArenaBand)
+            {
+                _cam.rect = new Rect(0f, 0f, 1f, 1f);
+                return;
+            }
+
+            float bottom = Mathf.Clamp01(arenaBandBottom);
+            float top = Mathf.Clamp01(arenaBandTop);
+            if (top - bottom < 0.2f)
+            {
+                // A degenerate band would drive the ortho maths to absurd values
+                // rather than erroring, so refuse it and keep the full frame.
+                Debug.LogWarning("[CAMERA] Arena band is degenerate (" + bottom + ".." + top
+                                 + ") — falling back to the full viewport.");
+                _cam.rect = new Rect(0f, 0f, 1f, 1f);
+                return;
+            }
+
+            _cam.rect = new Rect(0f, bottom, 1f, top - bottom);
+
+            var clearHost = new GameObject("ArenaBandClear");
+            clearHost.transform.SetParent(transform, false);
+            var clearCam = clearHost.AddComponent<Camera>();
+            clearCam.cullingMask = 0;
+            clearCam.clearFlags = CameraClearFlags.SolidColor;
+            clearCam.backgroundColor = Color.black;
+            clearCam.orthographic = true;
+            clearCam.depth = _cam.depth - 1f;
+            clearCam.rect = new Rect(0f, 0f, 1f, 1f);
+            // Nothing is rendered by this camera, so every one of these is pure
+            // cost with no output. An AudioListener in particular would be a
+            // SECOND listener in the scene, which Unity warns about and which
+            // silently changes how everything is mixed.
+            clearCam.useOcclusionCulling = false;
+            clearCam.allowHDR = false;
+            clearCam.allowMSAA = false;
+        }
+
+        /// Serialized copies of the tuning asset's band settings. As everywhere
+        /// else in this project the ASSET wins at runtime; these are the fallback
+        /// for a scene with no tuning asset assigned.
+        [Header("Arena band")]
+        public bool enableArenaBand = true;
+        [Range(0f, 0.45f)] public float arenaBandBottom = 0.20f;
+        [Range(0.55f, 1f)] public float arenaBandTop = 0.88f;
 
         /// Adds impact shake. `amount01` is clamped and ACCUMULATES, so a flurry
         /// shakes harder than one blow, but the squared falloff keeps it bounded.

@@ -31,6 +31,22 @@ namespace PoSumo
         [Tooltip("Minimum realtime gap between knockback close-ups. Without it a scrappy exchange cuts every few frames and the camera becomes unwatchable.")]
         public float knockbackCooldown = 3f;
 
+        [Header("Hitstop")]
+        [Tooltip("Freeze the world for a few frames when a really clean blow lands, then release. The oldest trick in fighting games and the reason a hit reads as weight rather than as two sprites overlapping.\n\nIt lives HERE, and not in its own companion, because Time.timeScale has exactly one owner in this project and it is this file. A second system writing it would restore to 1 on its own schedule and cancel whatever slow motion was running — the KO finish being the obvious casualty.")]
+        [SerializeField] private bool _enableHitstop = true;
+
+        [Tooltip("Impact speed (m/s) a blow must reach to freeze the world. ABOVE knockbackSpeed on purpose: the camera cut is allowed to be generous, the freeze is not — it interrupts everything on screen, so it has to be reserved for hits the audience already believes were big.\n\nCALIBRATE AGAINST MEASUREMENT, not against feel in isolation. Systems_StrikeImpulse logs landed blows at 3.9-5.3 m/s, and knockbackSpeed was cut 6.5 -> 4.5 after 6.5 fired ZERO times in 15 rounds. A threshold set outside the observed distribution is not subtle, it is absent — the same failure the walk-tall runs hit with WALK_TALL_Y. Re-measure with [STRIKE] logging before moving this.")]
+        [SerializeField] private float _hitstopMinSpeed = 5f;
+
+        [Tooltip("Time scale during the freeze. Not zero: a hair of movement reads as strain, a hard zero reads as the game hanging.")]
+        [SerializeField] private float _hitstopScale = 0.05f;
+
+        [Tooltip("REALTIME seconds the freeze is held, so it is the same length whatever the timescale was before it. Around 60 ms is the fighting-game convention — long enough to register, short enough that it never feels like a stutter.")]
+        [SerializeField] private float _hitstopRealSeconds = 0.06f;
+
+        [Tooltip("Minimum realtime gap between freezes. A clinch can produce several qualifying hits in a second and freezing on each one is a slideshow.")]
+        [SerializeField] private float _hitstopCooldown = 0.45f;
+
         [Header("Head KO (presentation only — does not end the round)")]
         public float koSlowMoScale = 0.18f;
         public float koSlowMoRealSeconds = 1.8f;
@@ -56,6 +72,11 @@ namespace PoSumo
         private bool _subscribed;
         /// Realtime stamp the knockback close-up is allowed to fire again.
         private float _knockbackReadyAt;
+        /// Realtime stamp the hitstop freeze is allowed to fire again. Separate
+        /// from the camera's: the freeze is cheap and may repeat several times
+        /// between cuts, and sharing one deadline would tie the pacing of a 60 ms
+        /// effect to that of a 1.3 s one.
+        private float _hitstopReadyAt;
 
         /// References are resolved here rather than in OnEnable because this
         /// companion is spawned BEFORE Systems_MatchAudio is, so an OnEnable
@@ -110,21 +131,37 @@ namespace PoSumo
         ///    shot deadline here, so a slow-motion finish does not stretch it.
         private void OnAnyImpact(Sensor_Impact sensor, Collision2D collision)
         {
-            if (!enableKnockbackCloseUp || _camFollow == null || sensor == null) return;
+            if (sensor == null) return;
             if (_slowMoActive || _widePending) return;                  // a bigger shot owns the camera
             if (_manager == null || !_manager.RoundActive) return;        // not during ceremony or result
-            if (Time.realtimeSinceStartup < _knockbackReadyAt) return;
+
+            // Which consumers could actually fire right now. Established BEFORE any
+            // component lookup, because this runs on every contact in the game and
+            // both consumers spend most of a bout on cooldown. Skipping the work
+            // when neither can fire is what keeps the handler cheap — it is the
+            // same early-out the single-consumer version had, generalised.
+            float now = Time.realtimeSinceStartup;
+            bool cameraReady = enableKnockbackCloseUp && _camFollow != null
+                               && now >= _knockbackReadyAt;
+            bool hitstopReady = _enableHitstop && now >= _hitstopReadyAt
+                                && !(_manager != null && _manager.IsPaused);
+            if (!cameraReady && !hitstopReady) return;
 
             Agent_BipedBody struck = sensor.owner;
             if (struck == null || struck.Torso == null) return;
+
+            // Speed before the component lookup: the overwhelming majority of
+            // contacts fail this, and GetComponentInParent walks a hierarchy.
+            float hitSpeed = collision.relativeVelocity.magnitude;
+            float bar = Mathf.Infinity;
+            if (cameraReady) bar = Mathf.Min(bar, knockbackSpeed);
+            if (hitstopReady) bar = Mathf.Min(bar, _hitstopMinSpeed);
+            if (hitSpeed < bar) return;
 
             // Fighter-on-fighter only: the mat is by far the most frequent thing a
             // body hits, and landing hard is not a knockback.
             var attacker = collision.collider.GetComponentInParent<Agent_BipedBody>();
             if (attacker == null || attacker == struck || attacker.Torso == null) return;
-
-            float hitSpeed = collision.relativeVelocity.magnitude;
-            if (hitSpeed < knockbackSpeed) return;
 
             // Is he actually going backwards? Positive means the struck fighter is
             // travelling along the attacker->struck axis, i.e. away from the blow.
@@ -133,7 +170,17 @@ namespace PoSumo
             float awaySpeed = struck.Torso.linearVelocity.x * awaySign;
             if (awaySpeed < knockbackAwaySpeed) return;
 
-            _knockbackReadyAt = Time.realtimeSinceStartup + knockbackCooldown;
+            // Freeze first, then cut. Both read the same qualifying blow — the
+            // freeze simply demands a harder one — so a hit big enough to do both
+            // lands as one beat rather than as two competing effects.
+            if (hitstopReady && hitSpeed >= _hitstopMinSpeed)
+            {
+                BeginHitstop(now);
+            }
+
+            if (!cameraReady || hitSpeed < knockbackSpeed) return;
+
+            _knockbackReadyAt = now + knockbackCooldown;
             // Body-level lookup rather than Systems_CameraFollow.FocusPoint, which
             // takes an Agent_Biped — Sensor_Impact only knows the Agent_BipedBody.
             // Same preference it applies: the head if there is drawn art, else the
@@ -147,6 +194,30 @@ namespace PoSumo
             // punch that fires on the same class of blow.
             Systems_Log.Info($"[SHOT] knockback close-up on {struck.name} — " +
                              $"hit {hitSpeed:F1} m/s, driven back at {awaySpeed:F1} m/s");
+        }
+
+        /// Freezes the world for `_hitstopRealSeconds` of REAL time.
+        ///
+        /// Implemented on the SAME `_slowMoActive` / `_slowMoEndReal` pair the
+        /// finishes use, which is the whole point: a hitstop is simply a very short,
+        /// very deep slow motion, so it inherits the one restore path in `Update`,
+        /// the teardown in `OnDisable` and — importantly — `RestoreTimeScale`'s
+        /// refusal to step on a pause. A parallel timer would be a second owner of
+        /// `Time.timeScale` and the two would race to restore it.
+        ///
+        /// It deliberately does NOT touch `Time.fixedDeltaTime`, which is the usual
+        /// way hitstop is written elsewhere. Physics here runs at a locked 0.02 s by
+        /// project rule — every torque ramp, the fatigue integrator and all four
+        /// brains were fitted against that step — so scaling it would change the
+        /// dynamics rather than the presentation. Lowering `timeScale` alone makes
+        /// the simulation step less often in real time, which is exactly what is
+        /// wanted and is what the existing slow motion already does.
+        private void BeginHitstop(float now)
+        {
+            _hitstopReadyAt = now + _hitstopCooldown;
+            Time.timeScale = _hitstopScale;
+            _slowMoActive = true;
+            _slowMoEndReal = now + _hitstopRealSeconds;
         }
 
         /// Match-end camera beat: hold tight on the fighter who lost for

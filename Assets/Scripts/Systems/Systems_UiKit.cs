@@ -198,6 +198,12 @@ namespace PoSumo
             {
                 label.style.unityFontStyleAndWeight = FontStyle.Bold;
             }
+            // Every label in the game is built here, which is what makes this the
+            // one place a typeface has to be applied. Systems_UiFonts picks the
+            // display or the UI face from the size, and writes nothing at all when
+            // no font resolved — so an empty Resources/Fonts/ leaves the UI
+            // rendering exactly as it did before.
+            Systems_UiFonts.Apply(label, fontSize);
             return label;
         }
 
@@ -216,6 +222,82 @@ namespace PoSumo
         {
             var card = new VisualElement();
             card.style.backgroundColor = background;
+            card.Round(radius);
+            return card;
+        }
+
+        // ---- Elevation ------------------------------------------------------
+        // Everything in this game is a flat dark rectangle on another flat dark
+        // rectangle, and at three or four nested levels — a card holding a row
+        // holding a chip — the levels stop being distinguishable. This is the
+        // spatial hierarchy that fixes it.
+        //
+        // **UI Toolkit has no box-shadow**, so elevation cannot be a shadow and
+        // there is no point pretending otherwise. What it does have is per-edge
+        // border colours, so depth here is the same bevel a physical control has:
+        // a light top edge catching the room light, a dark bottom edge in its own
+        // shadow, over a background that lightens as it rises. That reads as
+        // depth at every size and costs one element, no overdraw and no blur.
+        //
+        // Use the tier that matches what the element IS, not how it should look:
+        // Sunken for a track or a well, Base for a screen's own background,
+        // Raised for a card, Overlay for a dialog or anything floating over the
+        // arena. Four is deliberately few — the reason the old UI drifted to
+        // twenty font sizes is that nothing stopped it.
+        public enum Elevation
+        {
+            Sunken = 0,
+            Base = 1,
+            Raised = 2,
+            Overlay = 3,
+        }
+
+        /// Background for a tier. These fan out from the existing palette rather
+        /// than replacing it: Base IS `Surface`, so an untouched card looks
+        /// exactly as it did.
+        public static Color ElevationBackground(Elevation tier)
+        {
+            switch (tier)
+            {
+                case Elevation.Sunken: return new Color(0.045f, 0.042f, 0.052f, 1f);
+                case Elevation.Raised: return new Color(0.125f, 0.118f, 0.138f, 1f);
+                case Elevation.Overlay: return new Color(0.165f, 0.156f, 0.181f, 1f);
+                default: return Surface;
+            }
+        }
+
+        /// Applies a tier's background and bevel. The bevel INVERTS for Sunken —
+        /// a well is lit from below its top edge, which is what makes a track read
+        /// as cut into the surface rather than sitting on it.
+        public static T Elevate<T>(this T element, Elevation tier) where T : VisualElement
+        {
+            bool sunken = tier == Elevation.Sunken;
+            // Strength scales with the tier so an Overlay reads as further off the
+            // page than a Raised card, rather than every level having the same
+            // 1px outline and cancelling the hierarchy out.
+            float strength = tier == Elevation.Overlay ? 0.16f : 0.1f;
+
+            element.style.backgroundColor = ElevationBackground(tier);
+            element.style.borderTopWidth = 1;
+            element.style.borderBottomWidth = 1;
+            element.style.borderLeftWidth = 1;
+            element.style.borderRightWidth = 1;
+            element.style.borderTopColor = new Color(1f, 1f, 1f, sunken ? 0.02f : strength);
+            element.style.borderBottomColor = new Color(0f, 0f, 0f, sunken ? 0.05f : 0.4f);
+            // The sides carry a fraction of the top's light so the bevel wraps the
+            // corners instead of stopping dead at them.
+            Color side = new Color(1f, 1f, 1f, sunken ? 0.015f : strength * 0.4f);
+            element.style.borderLeftColor = side;
+            element.style.borderRightColor = side;
+            return element;
+        }
+
+        /// A card at a given elevation. The two-argument `Card` above stays as it
+        /// is — plenty of surfaces want an explicit colour and no bevel.
+        public static VisualElement ElevatedCard(Elevation tier, int radius = RADIUS_MD)
+        {
+            var card = new VisualElement();
+            card.Elevate(tier);
             card.Round(radius);
             return card;
         }
@@ -360,6 +442,10 @@ namespace PoSumo
             button.style.borderBottomWidth = 0;
             button.style.borderLeftWidth = 0;
             button.style.borderRightWidth = 0;
+            // Buttons carry their own text rather than hosting a kit Label, so
+            // they need the typeface applied here too — otherwise every control
+            // in the game would be the one thing still in the default font.
+            Systems_UiFonts.Apply(button, fontSize);
             button.Round(RADIUS_MD);
             AddPressFeedback(button, background, text);
         }

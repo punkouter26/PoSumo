@@ -5,12 +5,21 @@ namespace PoSumo
     /// Contact occlusion under a wrestler: a broad soft pool under the torso plus
     /// a tight dark patch under each foot.
     ///
-    /// Since the key light now casts real 2D shadows (Systems_ArenaLighting), this
-    /// is no longer pretending to BE the shadow — it is the ambient contact
-    /// darkening a projected shadow cannot give you. The important behaviour is
-    /// contact hardening: a patch is small, dark and sharp where a foot is
-    /// actually touching clay, and spreads out and fades as the body lifts away.
-    /// That single cue is what tells the eye a fighter is planted or airborne.
+    /// **This is the ONLY grounding cue the game has, and that is not a temporary
+    /// state.** The comment here used to say the key light "now casts real 2D
+    /// shadows" and that this was merely the ambient darkening beneath them —
+    /// that has been false since cast shadows were switched off. They are off for
+    /// a geometric reason that no amount of tuning fixes: at gameplay framing the
+    /// only clay in shot is the dohyo's front face seen edge-on, so there is no
+    /// horizontal surface for a projected shadow to land on. Enabling them costs
+    /// a shadow render texture per frame, on an Android target, and renders
+    /// nothing. So this class is not a stand-in for a shadow; it is the effect.
+    ///
+    /// The important behaviour is contact hardening: a patch is small, dark and
+    /// sharp where a foot is actually pressing on clay, and spreads out and fades
+    /// as the body lifts away. That single cue is what tells the eye a fighter is
+    /// planted or airborne. Since 2026-09-05 it is driven by measured foot LOAD as
+    /// well as height — see `footLoadWeight`.
     ///
     /// Spawned by Agent_BipedBody at build time.
     public sealed class Systems_BlobShadow : MonoBehaviour
@@ -32,6 +41,11 @@ namespace PoSumo
         [Range(0f, 1f)] public float footOpacity = 0.4f;
         [Tooltip("Height (m) at which a foot patch has fully faded out.")]
         public float footFadeHeight = 0.45f;
+
+        [Tooltip("How much of the foot patch is driven by measured contact LOAD rather than by height alone. 0 reproduces the height-only behaviour exactly.\n\nHeight says a foot is NEAR the clay; load says it is PRESSING ON it. They differ in the moment that matters most — a fighter braced against a shove is barely moving, at a constant height, and driving through his feet hard enough to shift 70 kg. Reading only height renders that identically to standing around.")]
+        [Range(0f, 1f)] public float footLoadWeight = 0.65f;
+        [Tooltip("Foot load (as reported by Agent_BipedBody.FootLoadNear/Far) treated as fully planted. Load is normalised against body weight there, so 1 is roughly a fighter's whole mass through one foot.")]
+        public float footLoadForFull = 1f;
 
         private SpriteRenderer _renderer;
         private SpriteRenderer[] _footRenderers;
@@ -150,6 +164,24 @@ namespace PoSumo
                 float ground = GroundAt(position.x);
                 float height = Mathf.Clamp(position.y - ground, 0f, footFadeHeight);
                 float contact = 1f - height / footFadeHeight;
+
+                // Blend in MEASURED load. Agent_BipedBody samples FootLoadNear /
+                // FootLoadFar every physics step for the contact observations, so
+                // this is a free read of a number the body already computes — no
+                // second query, no extra collision callback.
+                //
+                // Load is gated by height rather than replacing it, so a foot that
+                // is off the clay cannot draw a patch no matter what its load
+                // reads. That direction matters: a stale or spiking load on an
+                // airborne foot would paint a shadow under nothing, which is far
+                // more visible than a slightly soft patch under a planted one.
+                if (body != null && footLoadWeight > 0f)
+                {
+                    float load = Mathf.Clamp01(
+                        (footIndex == 0 ? body.FootLoadNear : body.FootLoadFar)
+                        / Mathf.Max(0.01f, footLoadForFull));
+                    contact *= Mathf.Lerp(1f, load, footLoadWeight);
+                }
 
                 renderer.transform.position = new Vector3(position.x, ground + 0.015f, 0f);
                 // The real contact-hardening cue: a sharp 0.26 m patch on the clay

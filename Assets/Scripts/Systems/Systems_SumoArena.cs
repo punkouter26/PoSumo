@@ -826,6 +826,144 @@ namespace PoSumo
                 tsr.color = fusa[index];
                 tsr.sortingOrder = -5;
             }
+
+            BuildForegroundTiers();
+        }
+
+        /// Descending tiers of masu-seki box seating in FRONT of and below the
+        /// dohyo, filling the screen between the crowd floor and the bottom of
+        /// frame.
+        ///
+        /// **This exists to pay for `GameTuning.enableArenaBand`.** Confining the
+        /// camera to a band raises the aspect the orthographic maths divides by,
+        /// which is the only lever that shrinks the portrait dead space rather
+        /// than moving it around — but it opens up vertical view that the arena
+        /// had nothing to put in. Measured before this existed: the band rendered
+        /// the fighters far larger and simultaneously looked WORSE, because the
+        /// space it bought was filled with backdrop grid and nothing else.
+        ///
+        /// The dressing stopped at `ArenaFloor` (y = -platformDrop - 0.5, about
+        /// -1.1). With the band on, ortho lands near 5.3 and the camera sits close
+        /// to y = 0, so the frame runs to roughly y = -5.2. Everything between was
+        /// empty. These four tiers cover exactly that gap.
+        ///
+        /// They are drawn as near-BLACK silhouettes on purpose. A real hall's
+        /// front rows are between the viewer and the lit dohyo, so they read as
+        /// shape rather than detail — which means the dead space becomes
+        /// deliberate foreground rather than void, at a handful of quads, with no
+        /// lighting cost and nothing for the 2D light rig to have to reach.
+        ///
+        /// **Sorting stays BELOW the fighters (negative orders).** A wrestler
+        /// thrown off the dohyo lands on `ArenaFloor` at about y = -1.1, which
+        /// overlaps the first tier. Drawing the crowd over him would hide the
+        /// fighter at the most dramatic moment available; a small depth
+        /// inconsistency is much the cheaper error.
+        private void BuildForegroundTiers()
+        {
+            if (!deluxe)
+            {
+                return;
+            }
+
+            // Tier fronts, descending toward the viewer. Each is wider than the
+            // one behind it so the tiers read as steps rather than as stripes.
+            float[] tierY = { -1.65f, -2.55f, -3.55f, -4.7f };
+            // Sized off the DOHYO, not off floorWidth. floorWidth is 34 m, and
+            // with the band on the camera shows roughly 8 m across — so building
+            // tiers to the floor's full span put ~500 spectator renderers outside
+            // the frustum, six times the arena's entire existing crowd, for
+            // nothing visible. These spans still overhang the widest shot
+            // (wideOrtho 14 shows about 21 m) without paying for the rest.
+            float baseSpan = groundWidth * 1.9f;
+            float[] tierWidth = { baseSpan, baseSpan * 1.12f,
+                                  baseSpan * 1.26f, baseSpan * 1.42f };
+            // Darkening toward the viewer: the nearest tier is closest to pure
+            // silhouette. Never fully black — a flat 0 reads as a hole in the
+            // render rather than as a near object.
+            float[] tierValue = { 0.115f, 0.085f, 0.06f, 0.042f };
+
+            var tierRoot = new GameObject("ForegroundTiers");
+            tierRoot.transform.SetParent(transform, false);
+
+            for (int tierIndex = 0; tierIndex < tierY.Length; tierIndex++)
+            {
+                float y = tierY[tierIndex];
+                float width = tierWidth[tierIndex];
+                float value = tierValue[tierIndex];
+                // -2 nearest, -5 furthest: above ArenaFloor (-6) and the backdrop
+                // (-12), below every body part.
+                int sorting = -2 - (tierY.Length - 1 - tierIndex);
+
+                // The step face itself.
+                var step = new GameObject("Tier" + tierIndex);
+                step.transform.SetParent(tierRoot.transform, false);
+                step.transform.localPosition = new Vector3(0f, y - 0.45f, 0f);
+                step.transform.localScale = new Vector3(width, 0.9f, 1f);
+                var stepRenderer = step.AddComponent<SpriteRenderer>();
+                stepRenderer.sprite = Box();
+                stepRenderer.color = new Color(value, value * 0.92f, value * 0.88f, 1f);
+                stepRenderer.sortingOrder = sorting;
+
+                // A slightly lighter rail along the top edge, which is what makes
+                // a step read as a step instead of as a band of flat colour.
+                var rail = new GameObject("TierRail" + tierIndex);
+                rail.transform.SetParent(tierRoot.transform, false);
+                rail.transform.localPosition = new Vector3(0f, y, 0f);
+                rail.transform.localScale = new Vector3(width, 0.07f, 1f);
+                var railRenderer = rail.AddComponent<SpriteRenderer>();
+                railRenderer.sprite = Box();
+                railRenderer.color = new Color(value * 2.4f, value * 2.1f, value * 1.8f, 1f);
+                railRenderer.sortingOrder = sorting;
+
+                // Seated silhouettes along the tier. Deterministic spacing and
+                // jitter from the index — no Random, so the arena is identical
+                // every time it is built and a screenshot diff stays meaningful.
+                // Seat COUNT is derived from the tier's width at a fixed human
+                // pitch, never chosen as a constant. floorWidth is 34 m, so the
+                // first pass's flat "10 seats" spread ten figures over 35 m — one
+                // person every 3.5 metres, which rendered as two lonely
+                // silhouettes in an empty stand. 0.6 m matches the pitch the
+                // existing floor-level crowd is built at.
+                const float SEAT_PITCH = 0.42f;
+                int seats = Mathf.Max(4, Mathf.RoundToInt(width / SEAT_PITCH));
+                float spacing = width / seats;
+                for (int seatIndex = 0; seatIndex < seats; seatIndex++)
+                {
+                    // Deterministic pseudo-jitter: a hash of the seat index, not
+                    // Random.value, so rebuilding the arena reproduces it exactly.
+                    int hash = (seatIndex * 37 + tierIndex * 101) % 17;
+                    float jitter = (hash / 17f - 0.5f) * spacing * 0.5f;
+                    float px = -width * 0.5f + spacing * (seatIndex + 0.5f) + jitter;
+                    // Shoulders overlap at this pitch, which is the point: a crowd
+                    // is a continuous mass with heads on top, not a row of evenly
+                    // spaced blocks. The first pass used a 0.34 body on a 0.6
+                    // pitch and read as fence posts.
+                    float scale = 0.26f + (hash % 5) * 0.022f;
+                    // Vertical stagger as well as horizontal, so the head line is
+                    // broken up — an even head line is what makes a crowd read as
+                    // a repeated sprite.
+                    float lift = ((hash % 7) / 7f - 0.5f) * 0.05f;
+
+                    var body = new GameObject("TierSpectator");
+                    body.transform.SetParent(tierRoot.transform, false);
+                    body.transform.localPosition = new Vector3(px, y + scale * 0.5f + lift, 0f);
+                    body.transform.localScale = new Vector3(scale * 1.05f, scale, 1f);
+                    var bodyRenderer = body.AddComponent<SpriteRenderer>();
+                    bodyRenderer.sprite = Box();
+                    bodyRenderer.color = new Color(value * 0.6f, value * 0.55f, value * 0.55f, 1f);
+                    bodyRenderer.sortingOrder = sorting;
+
+                    var head = new GameObject("TierHead");
+                    head.transform.SetParent(tierRoot.transform, false);
+                    head.transform.localPosition =
+                        new Vector3(px, y + scale + scale * 0.1f + lift, 0f);
+                    head.transform.localScale = new Vector3(scale * 0.42f, scale * 0.42f, 1f);
+                    var headRenderer = head.AddComponent<SpriteRenderer>();
+                    headRenderer.sprite = Circle();
+                    headRenderer.color = new Color(value * 0.7f, value * 0.62f, value * 0.6f, 1f);
+                    headRenderer.sortingOrder = sorting;
+                }
+            }
         }
     }
 }

@@ -56,10 +56,38 @@ it, which is a bug that has already been fixed once.
 These need Unity Editor work that cannot be done from a script, and until they
 are done the game is running on defaults.
 
-### 1. Font asset (required — this is the biggest single visual win left)
+### 1. Font asset (PARTLY DONE 2026-09-05 — read this before doing the steps below)
 
-The project has no `.ttf`/`.otf` anywhere and `GamePanelSettings.textSettings`
-is empty, so every screen renders in Unity's default UI font. To fix:
+**`Systems_UiFonts` now resolves and applies a typeface automatically**, so the
+manual route below is no longer the only option and steps 6 in particular is
+already done. It resolves in three stages and every stage may fail safely:
+
+1. `Resources/Fonts/PoSumo_Display` and `PoSumo_UI` (`.ttf` or `.otf`) — drop a
+   file in and it is used, with no Editor work at all;
+2. an OS family by name (Bahnschrift/Segoe UI on desktop, Roboto/Noto on
+   Android — measured resolving as `display=Bahnschrift ui=Segoe UI`);
+3. nothing, in which case NO font is written and the runtime theme default
+   stands exactly as before.
+
+It is applied at the two choke points in `Systems_UiKit` — `Text()` for every
+label and `StyleButton()` for every control — and picks the display face at
+`FONT_TITLE` and above.
+
+**What is still worth doing, and why:** stage 2 depends on what a device happens
+to have installed, which is guaranteed by nothing. Dropping a licensed face into
+`Assets/Resources/Fonts/` is what makes the type deterministic across devices.
+An SDF Font Asset (the steps below) additionally gives crisper large text than a
+dynamic `Font` at `FONT_MEGA` 112pt. Neither is required to get off the default
+font any more.
+
+> A font from `Font.CreateDynamicFontFromOSFont` is a RUNTIME object with no
+> backing asset, and Unity destroys it when Play mode exits — the console logs
+> "Deleting invalid font reference" once per font as it does. That line is
+> engine teardown noise on play-exit, not a fault. `Systems_UiFonts` carries a
+> `SubsystemRegistration` reset so the destroyed font is not still cached on the
+> next Play session, which would silently drop every label back to the default.
+
+The original manual route, still valid and still the highest-quality result:
 
 1. Drop a condensed bold display face (for `FONT_TITLE` / `FONT_HERO` /
    `FONT_MEGA` — the score digits, the round banner, the countdown) and a clean
