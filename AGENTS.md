@@ -11,8 +11,14 @@ disagrees with the code, **the code wins**.
 Process and convention rules — master-only branching, reading `DOCS/` for the project
 overview, TensorBoard-with-every-run, pruning obsolete behaviours from the logdir before a
 launch, the RED-heuristic-bot / GREEN-reference-RL colour convention, the
-coded-bot + reference-bot + custom-bots cast, and the TL;DR-on-long-answers rule — live in
+coded-bot + reference-bot + custom-bots cast, the TL;DR-on-long-answers rule, **never
+pushing to a remote without the explicit phrase `git sync`**, and the
+**`joanllobera/mujoco-bin` Android toolchain for the MuJoCo-backed rigs** — live in
 **`CLAUDE.md` → *Standing working agreements***. They apply here too.
+
+Note the last one carries a caveat there worth reading before acting on it: this repo has
+no MuJoCo and builds Android through the Unity menu tool, so that rule describes the
+family's MuJoCo siblings rather than PoSumo's current pipeline.
 
 ---
 

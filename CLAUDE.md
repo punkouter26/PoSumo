@@ -35,6 +35,25 @@ where they touch code, the code is still the ground truth for what currently *is
   custom skinned meshes.
 - **TL;DR every long answer.** Any reply longer than ~100 words ends with a ~20-word
   `TL;DR:` line.
+- **NEVER push to a remote unless asked.** Committing locally is fine when the work is
+  done; `git push` is not. The standing permission is the literal phrase **`git sync`** —
+  that one means commit and push. Anything else ("commit this", "save it", "done") means
+  local only. A push is outward-facing and effectively irreversible once other people
+  fetch it, which is why it needs the explicit word rather than an inference.
+- **Android builds for the MuJoCo-backed rigs use
+  [`joanllobera/mujoco-bin`](https://github.com/joanllobera/mujoco-bin/).** That is the
+  toolchain for compiling MuJoCo for Android phones.
+
+  > Recorded as given, with the discrepancy stated rather than resolved: **this repo
+  > contains no MuJoCo at all** (zero references outside the vendored `Training/ml-agents`
+  > tree), and its own Android path is the Unity menu tool — *PoSumo → Build Android APK /
+  > Build Android AAB (Play release)*, which drives `BuildPipeline.BuildPlayer` and is
+  > documented under *Editor menu tools*. So this rule does not describe how PoSumo ships
+  > today. It reads as a family-wide rule for the MuJoCo-based siblings (see the "every RL
+  > app in this family" bullet above), or as forward-looking for a physics-backend change
+  > here. Do not "apply" it to this project's Unity Android build — they are different
+  > pipelines solving different problems. Ask before treating it as a migration
+  > instruction.
 
 > **Bot is now red; Matt still collides with it (2026-09-05).** `Bot_Character.asset`
 > `teamColor` was blue `(0.16, 0.45, 1)` and is now red `(0.85, 0.16, 0.14)`, satisfying the
