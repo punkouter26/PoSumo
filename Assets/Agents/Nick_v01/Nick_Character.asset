@@ -30,8 +30,8 @@ MonoBehaviour:
   torqueScale: 1
   extendedObservations: 1
   decisionPeriod: 3
-  contactObservations: 0
-  staminaObservation: 0
+  contactObservations: 1
+  staminaObservation: 1
   inferenceModel: {fileID: 5022602860645237092, guid: 1f15b9a7469d7cc4daafd2020713ebc9, type: 3}
   useBot: 0
   uprightReward: 0.002
@@ -46,7 +46,7 @@ MonoBehaviour:
   riseReward: 0.025
   effortPenalty: 0.0015
   stanceReward: 0.0009
-  driveReward: 0
+  driveReward: 0.003
   energyPenalty: 0.0002
   jerkPenalty: 0.00015
   straightLegEarnFraction: 0.75

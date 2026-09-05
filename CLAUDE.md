@@ -365,6 +365,8 @@ each live in *Editor menu tools* and *Training workflow* below.
 | Play the game | **Always** open `SCN_TOURNAMENT` and enter Play mode from there (it loads `SCN_SUMO` per bout) |
 | Compile / import after editing `.cs` outside the editor | MCP `assets-refresh` (ForceUpdate) |
 | Behavioural test | Play mode in `SCN_SUMO`, then `MatchTestHarness.Run(n)` via MCP `script-execute` → `HARNESS RESULT:` |
+| **Loop test** (bracket → arena → win → bracket → champion) | Play mode in `SCN_TOURNAMENT`, then `BracketTestHarness.Run()` → `BRACKET HARNESS RESULT: PASS/FAIL`. The ONLY coverage that crosses a scene boundary |
+| Prove every asset reference resolves | `python Tools/ref_audit.py` — exit 1 on any unresolved GUID or `m_Script: {fileID: 0}` |
 | Ship an Android build | *PoSumo → Build Android APK* / *Build Android AAB (Play release)* |
 | Build a training env | *PoSumo → Build \<Name\> Training Env* → `Builds/<Name>Env/<Name>Env.exe` |
 | Train | `Training\Start-Training.ps1` (wraps `mlagents-learn.exe` + TensorBoard + `--base-port`) |
@@ -406,8 +408,12 @@ Scenes contain only manager objects. `Agent_BipedBody.Awake()` constructs the 14
 ragdoll from code-defined tables (`PART_DEFS` / `JOINT_DEFS`): 4-segment articulated
 spine (pelvis→lowerback→upperback→chest), legs and arms — **13 hinge motors**, mirrored
 via `facingSign` (one policy works both directions because all observations are
-multiplied into a facing-local frame). Intra-biped collisions are disabled pairwise
-(limbs pass through their own body by design). `massScale` / `widthScale` /
+multiplied into a facing-local frame). Intra-biped collisions are disabled pairwise **except for 30 leg-versus-trunk pairs**
+(`Agent_BipedBody.EnableLegTrunkCollisions`), so the knees no longer pass through the
+belly and `widthScale` finally constrains what a fighter can fold into — Kim's 1.3 belly
+stops his crouch earlier than Nick's 0.82. Arms and leg-versus-leg deliberately still
+pass through: this is a SAGITTAL model and those pairs clear each other in the third
+dimension, so colliding them would invent a constraint the body does not have. `massScale` / `widthScale` /
 `torqueScale` come from the character asset, so physique is data, not code.
 
 **The drawn edge is the colliding edge, everywhere, and that rule was tightened
@@ -448,8 +454,14 @@ crouch and drive off a loaded leg. Corrected to hip (−120…30°), knee (0…1
 (−150…0°) — flexion is *positive* jointAngle at the knee, *negative* at hip and elbow.
 `Agent_Biped.KneeBendFactor()` reads the knee as positive and must move with these.
 
-Ankle (±25°), the three spine joints (±20° each) and shoulder (±120°) are clamped to roughly
-human TOTAL range and are genuinely **symmetric**, so the sign error never touched them.
+Ankle, spine, shoulder and the MTP toes were **symmetric** — which no human joint is —
+because the sign had to be measured rather than reasoned out. **That probe is now done**
+(2026-09-05) and the four are anatomical: ankle **−20…50** (plantarflexion positive; it
+is the drive that pushes a sumo forward and had 35° of a needed 50°), spine **−12…30**
+each (flexion positive, so 90° forward against 36° back over three segments), shoulder
+**−175…60** (flexion negative), toe **−60…30** (extension negative). The derivation
+method is in `JOINT_DEFS` and reproduces all three previously-measured joints, which is
+what makes it trustworthy — re-read it before touching any range again.
 Leg torques are realistic (hip 300, knee 250, ankle 120 N·m); the upper body was 2-4× human
 and was brought back to spine 180 each / shoulder 80 / elbow 60.
 
@@ -499,26 +511,35 @@ output layer.
 
 ### The brain contract (`Agent_Biped`)
 - **13 continuous actions** (`ActionCount`), always.
-- **`Agent_Biped.ObservationCount = 42`**, or **45** when `extendedObservations` is on
-  (+ opponent uprightness / down flag / edge distance, decision period 3 — the standard
-  for all four shipped fighters). Layout: 5 body + 26 joint (13 × angle/speed) + 4 feet
-  + **1 task flag** + 4 opponent-or-target + 2 edge distances. The pre-merge counts were
-  41/44; the task flag is what took them to 42/45 and invalidated every earlier brain.
-  Prose elsewhere in the repo (`MANIFEST.md`, `ROSTER.md`, the tooltip on
-  `Agent_CharacterDefinition.extendedObservations`) still says 44 — **the constant in
+- **`Agent_Biped.ObservationCount = 43`**, and **all four fighters now run the full 51**
+  (43 base + 4 contact + 1 stamina + 3 extended, decision period 3). Base layout:
+  5 body + 26 joint (13 × angle/speed) + 4 feet + **1 task flag** + 4 opponent-or-target
+  + **3 mat** (edge ahead, edge behind, live mat half-width). The base count has been
+  41 → 42 → 43 and the total 44 → 45 → 51 (46 was never shipped — it is what the base
+  bump alone would have given); every one of those moves invalidated every brain that
+  preceded it. Prose elsewhere in the repo (`MANIFEST.md`, `ROSTER.md`, the
+  tooltips on `Agent_CharacterDefinition`) still says 44/45 — **the constant in
   `Agent_Biped` is the truth**. Obs count and decision period MUST match what the assigned
   `.onnx` was trained with, or inference is silently garbage.
-- Two **opt-in** observation blocks lengthen the vector further and are OFF for every
-  shipped brain, because switching either on is only legal together with a retrain:
-  `contactObservations` (+4: per-foot contact and load) and `staminaObservation`
-  (+1: whole-body stamina, added 2026-08-05). Append order is fixed at
+- **The three mat slots are scaled by a CONSTANT `RING_REFERENCE_HALF` (3.5), not by
+  the live width**, so they carry metres rather than a fraction — "1.2 m of mat ahead"
+  reads the same on a full mat and on a randomised narrow one. Dividing by the live
+  width would make the centre of a 3.5 m mat and the centre of a 0.2 m sliver identical.
+  Non-fighting agents (the walk lane, the ceremonial walk-in) emit a neutral 1/1/1
+  instead, the same way the extended block already handles having no opponent.
+- **`Agent_Biped` asserts that every agent sharing a behavior name builds the SAME
+  vector**, and logs `[OBS] <name>: N slots ...` for the first agent of each name.
+  ML-Agents already checks an assigned `.onnx` against the vector; nothing checked
+  agent-against-agent, which is the axis that is live during training when there is no
+  `.onnx` at all.
+- `contactObservations` (+4: per-foot contact and load) and `staminaObservation`
+  (+1: whole-body stamina) are **both ON as of the Rebuild01 generation** — they were
+  opt-in and off for every brain before it. Append order is fixed at
   base → contact → stamina → extended; that order **is** the input layer's layout and
   must never change again once a brain has trained on it.
-- **Turn `staminaObservation` on for the next run.** Fatigue applies to the body whether
-  or not it is observed, so leaving it off means the policy is fighting a body that is
-  silently getting weaker with no way to perceive it — it cannot learn to pace itself or
-  to time a push against a tiring opponent. The corrective run the fatigue model already
-  requires is the free moment to add it.
+  Stamina especially mattered: fatigue has applied to the body since 2026-08-05 while
+  being invisible to the policy, so no fighter could pace itself or time a push against
+  a tiring opponent.
 - Two `Mode`s: `Walk` (falling ends the episode) and `Sumo` (refereed externally;
   shaping only, ±1 comes from the referee). A third, `Recover` (get up, then walk),
   was **deleted 2026-08-02** along with `recoverShoveChance` and the `shove_chance`
@@ -592,6 +613,10 @@ above the mat, standing pose is 1.06 m) went:
 > fall penalty was made a curriculum parameter (`walk_fall_penalty`, read by
 > `Agent_Biped.OnEpisodeBegin`) and ramped 0.05 → 0.25 → 0.6 → 1.0 across 16M steps, warm
 > started from the 15M `*_stamina01` trunks. All four fighters completed the full ramp.
+>
+> **The dial is now REMOVED, not defaulted** (2026-09-05). `WALK_FALL_PENALTY` is a
+> constant again and `Agent_Biped.OnEpisodeBegin` no longer reads `walk_fall_penalty` at
+> all, because leaving a measured-backwards lever wired invites a seventh attempt at it.
 >
 > Measured result: torso height **0.16-0.20 m** against the 0.55-0.76 m it was trying to
 > raise, and a 1.06 m standing pose. They stopped crawling and started **dragging flat**.
@@ -683,12 +708,26 @@ while `StanceFactor` ten lines below already subtracted `ArenaGroundY`. That one
 other provider) but it is corrected too, because the no-op holds only while nobody
 offsets a sumo arena, and the walk lane proves this project does exactly that.
 
-**`Agent_CharacterDefinition.driveReward` is 0 on every fighter**, so the drive term
-in `Reward_SumoObjective` has never contributed to any brain. Left at 0 deliberately:
-enabling it belongs in its own experiment, not bundled into a run that changes the
-observation vector.
+**`Agent_CharacterDefinition.driveReward` was 0 on every fighter** for the whole life of
+the project, so the drive term in `Reward_SumoObjective` — the only term that pays for
+sumo's actual winning mechanic, sustained two-footed push — never contributed to any
+brain. **It is live as of Rebuild01**: Matt 0.004, Standard 0.004, Kim 0.006 (the anchor),
+Nick 0.003 (the light mobile one). It is a character-asset value and not a YAML key, so
+it cannot be swept from a config; the clean attribution if Rebuild01's ELO is ambiguous
+is a re-run with the field back at 0.
 
-#### The corrective run is STAGED, and the staging is the point
+#### SUPERSEDED — the staged run was folded into Rebuild01
+
+> **`<Name>Obs01.yaml` and the four `*Assist01.yaml` files are superseded and carry a
+> `SUPERSEDED` banner (2026-09-05); the live configs are `<Name>Rebuild01.yaml`.** The
+> staging described below was correct while there were warm-start trunks worth 12-45M
+> steps to protect. There are none — `Training/results/`, `Training/trunks/` and
+> `Training/venv/` are all absent — so every run from here is cold whatever it changes,
+> and paying for five separate cold 15M runs to keep the changes separable costs more
+> than the separability is worth. The section below is kept as the reasoning, not the
+> plan.
+
+#### The corrective run was STAGED, and the staging was the point
 
 `<Name>Obs01.yaml` (created 2026-08-25) warm-starts from `<name>_tall04` at
 `learning_rate 0.0001` for 3M steps and changes **only** the obs-0 fix. The vector
@@ -807,6 +846,71 @@ Three rules used to be game-only. **Two of them were ported into the training re
 >   **25 ring-outs, 0 timeouts**, longest fight 61 s. The training referee got the same
 >   unclamped shrink; with the scenes' serialized 20 s timeout (8 + 12) it is
 >   behaviour-neutral there until someone raises that timeout.
+
+#### THE MAT WAS NOT IN THE OBSERVATION VECTOR (fixed 2026-09-05)
+
+`Agent_Biped.ringHalfWidth` feeds the mat observations and was written **once**, in each
+referee's setup, to the configured full width — then never again. Everything that moved
+the real mat afterwards moved the platform collider and left the agents' copy alone:
+`Systems_SumoMatchManager.ResetRound` randomises each round's start width in 1.7…3.5, and
+both referees' `TickShrinkingRing` close it to 1.8 and on toward zero.
+
+Two independent consequences, and both are the same class of defect as the world-absolute
+observation 0 that cost five failed retrains:
+
+- **The policy could not perceive the shrink**, which decides the fight — 17 of 17 logged
+  rounds ended by ring-out with 16 past `shrinkStartSeconds`. A fighter chose its footing
+  against 3.5 m of mat while standing on a fraction of it.
+- **The `platform_difficulty` curriculum was inert.** Its stated job is to teach edge
+  distance "across SCALES instead of letting the policy memorise one mat width", and the
+  one number it varies is the one the observation was not reading.
+
+Both referees now call `PublishRingHalfWidth` from every path that resizes the mat.
+Verified in Play mode in `SCN_TRAIN_MATT`: the four sumo agents read **3.16 and 2.89** on
+their two arenas instead of a shared constant 3.5. Note `ringHalfWidth` on the *referee*
+is still the FULL width — it is what the shrink lerps from — and
+`Systems_GameMatchManager.CurrentRingHalfWidth` is still the public read for the live rim.
+
+#### THE MAT IS THE REFEREE, and until 2026-09-05 nothing on screen said so
+
+The rule change above worked — 0 timeouts, 0 draws, 0 stalls, and that still holds.
+What it did NOT do is make the FIGHT decisive, and a bracket measured on 2026-09-05
+says how far off that is. **17 logged rounds, 100% ring-out, mean round 18.0 s — and
+16 of the 17 ran past `shrinkStartSeconds` (8).** Only one round in seventeen (2.2 s)
+was settled before the mat began to close. The losers' final X clustered at −2.4 to
+−3.5 against a mat that had already contracted ~40%.
+
+So the honest description of a PoSumo round is not "one fighter drives the other out".
+It is "the floor is withdrawn from under both of them until one runs out of clay".
+That is a legitimate design — it is what killed the stalls — but for months it was
+completely **invisible**: there is no clock, the mat contracts about 0.14 m/s, and a
+viewer watching two fighters mill about for eighteen seconds had no way to know a
+deadline existed, let alone read it.
+
+Two cues now say it out loud, and they read the SAME quantity so they cannot disagree:
+
+- **`Systems_GameMatchManager.CurrentRingHalfWidth`** is the live half-width.
+  `ringHalfWidth` is the FULL width and stays there all round — it is what the shrink
+  lerps FROM — so anything framing, drawing or reporting the edge must read the new
+  property. `_appliedHalfWidth` (private) is what backs it.
+- **`Systems_FightHud`'s MAT meter**, in the dock. It also fixes a layout defect: the
+  Triplet's centre column had been left EMPTY when the DOMINANCE bar was removed on
+  2026-08-26, and an empty column still reserves `COL_CENTRE` of the strip — a wide
+  dead gap between the two mannequins in every capture. The bar shrinks from both ends
+  (the mat does; a bar emptying from one side reads as a clock, which this is not) and
+  runs green → amber → red on the same ramp as the damage mannequins beside it.
+- **`Systems_RingSqueezeCue`** (`enableRingSqueezeCue`), two danger bands standing on
+  the live rim, brightening and pulsing as it closes. Pulse is on
+  `Time.realtimeSinceStartup`, like every other presentation timer here, so a
+  slow-motion finish does not stretch it.
+
+**None of this touches the observation vector, the action count, a mass or a collider,
+so no brain is invalidated and no retraining is implied.** Neither cue is mirrored into
+`Systems_SumoMatchManager` and neither should be: they are read-only w.r.t. the fight.
+
+If a future pass wants the FIGHT to decide rounds rather than the mat, the lever is the
+policy, not these numbers — and the measurement to re-run first is the one above, "what
+fraction of rounds end before `shrinkStartSeconds`". It was 6%.
 > - **`headTouchLoses` exists and is OFF** (GameTuning + a copy on
 >   `Systems_SumoMatchManager`, both `false`). It reads `Sensor_HeadContact` on the
 >   `HeadHitbox` child (the head is a compound collider on Chest, so
@@ -1077,6 +1181,7 @@ a tick on one asset rather than an edit in three scenes.
 | `Systems_CrowdMomentum` | the crowd backs whoever is losing; sustained support is a small torque boost. **Changes who wins rounds** — see below |
 | `Systems_FeelFx` | device haptics, plus camera trauma on the discrete events (head KO, dismemberment, gib, round end). Presentation only. See *The feel pass* below |
 | `Systems_ShockwaveFx` | expanding shock rings on a head KO, a dismemberment and body-on-body contact over 6.5 m/s. Pooled quads on an additive-annulus shader; subscribes only to STATIC events, never to another companion. See *The GFX/sound pass* below |
+| `Systems_RingSqueezeCue` | two danger bands standing on the **live** edge of the mat, amber → red and pulsing as it closes. Read-only w.r.t. the fight. Added 2026-09-05 because the contraction was deciding almost every round invisibly — see *The mat is the referee* below |
 
 **Fighters can be dismembered and decapitated, and this is not cosmetic.** Measured play
 produces `[DAMAGE] Damage_Nick lost LegNear at 20.0 damage — bleeding from stump 'Pelvis'`
@@ -1270,6 +1375,20 @@ turned out to be false when measured — three of them were false in THIS file.
 > now shows MORE emptiness than before. **Defaulted OFF.** Turning it on is blocked on
 > arena dressing that reaches the band edges, exactly as the older note predicted. The
 > lever is real; the art to fill it is not there.
+>
+> **"Defaulted OFF" meant the CODE default only, and the ASSET said otherwise — so the
+> band shipped ON for weeks (found and fixed 2026-09-05).** `GameTuning.asset` carried
+> `enableArenaBand: 1`, and the asset always wins at runtime; the field on the component
+> is only the fallback for when no tuning asset is assigned. Measured live in a bracket
+> bout at 1440x3088: `Camera.rect = (0, 0.20, 1, 0.68)`, aspect 0.686, i.e. **32% of every
+> frame was letterboxed** — a black bar behind the scorebug at the top and, at the bottom,
+> exactly the empty crowd wall this note predicted. The asset is now `0` and the camera
+> reads `rect (0,0,1,1)` again, verified in play.
+>
+> This is the code-default-vs-asset trap this file warns about under *Two referees*, and
+> it is worth restating because it will happen again: **a sentence here saying a feature is
+> "off by default" is a claim about `.cs`, and says nothing about what actually runs.**
+> Grep `GameTuning.asset` before writing or believing one.
 
 > **`spatialBlend = 0` is DELIBERATE and correct — do not "fix" it.**
 > `Systems_MatchAudio.NewSource` documents why: true 3D falloff in an orthographic game
@@ -1504,6 +1623,16 @@ After any change to the walk lane, assert every walker spawns at `xLocal < -0.3`
   packed by `Resources/Atlases/FaceAtlas` and loaded through `Systems_FaceArt.Load(name)` —
   **never put a face back under `Resources/`: a sprite in a Resources folder is never
   atlased** (measured 2026-08-26, `sprite.packed` false on all 21 while they lived there).
+- **`Physics2D.positionIterations = 16` / `velocityIterations = 14` are a throughput
+  SAVING, not a cost — measured 2026-09-05, do not lower them to go faster.** They look
+  extravagant beside Unity's 2D defaults (3/8), so they were swept in Play mode in
+  `SCN_TRAIN_MATT` (10 bipeds / 150 joints / 160 rigidbodies, kept awake and loaded):
+  16/14 gave **0.696 ms/step**, 12/10 0.750, 10/8 0.788, 8/8 0.778, 6/6 0.824 — and max
+  joint separation degraded from 0.146 m to 0.476 m by 6/6. Fewer iterations came out
+  both slower and worse, because an under-solved chain interpenetrates and the extra
+  contacts cost more than the iterations saved. A first pass measured in `SCN_SUMO`
+  appeared to show 3/8 as 40× faster; that was two idle bipeds falling asleep. If this
+  is ever re-swept, load the bodies or the numbers mean nothing.
 - `Systems_AcademyLifecycle` (static init) sets `runInBackground = true` — **critical**;
   without it Unity stops simulating on focus loss and the trainer times out — plus
   gravity, solver iterations, and Academy disposal on quit.
@@ -1733,7 +1862,8 @@ dumping ground. Everything else goes elsewhere —
 | `BuildAndroid` | *Build Android APK* → `Builds/Android/PoSumo.apk` from the enabled build-settings scenes |
 | `BuildAndroidAAB` | *Build Android AAB (Play release)* → `Builds/Android/PoSumo.aab`, signed. Logs `AAB BUILD RESULT:` |
 | `DeployBrain` | Copy a run's ONNX → agent folder + wire the character asset. One entry per fighter, each pinned to the run that currently backs its shipped brain |
-| `MatchTestHarness` | `MatchTestHarness.Run(n)` in Play mode: chains N matches unattended, logs a `HARNESS RESULT:` win/loss tally |
+| `MatchTestHarness` | `MatchTestHarness.Run(n)` in Play mode: chains N matches unattended, logs a `HARNESS RESULT:` win/loss tally. Stays inside ONE arena scene — it never crosses a `LoadScene` |
+| `BracketTestHarness` | *PoSumo → Test → Run Bracket Harness*, or `BracketTestHarness.Run()`, in Play mode on **SCN_TOURNAMENT**. Plays a whole 7-match bracket and asserts champion, title, match wins, `Systems_TournamentState.Active` cleared and `Time.timeScale` back to 1. Watches from `EditorApplication.update`, which is Editor-side and so survives the scene loads it is testing |
 | `GenerateAudio` | *Generate Audio* — synthesizes the match SFX bank in-editor; the clips are generated assets, not recordings |
 | `NormalizeVoice` | *Normalize Voice Levels* — evens out the per-fighter voice clips |
 
@@ -1968,6 +2098,71 @@ because holding more than they show is their job.
 > built, with the slack spacer as the deliberate exception. Add a block to that
 > column and it is covered; build another scrolling screen and it is not.
 
+## The loop audit (2026-09-05) — what a driven bracket found
+
+The whole player loop was driven end to end through `Tools/unity.py` on a real portrait
+size (1440x3088): SCN_TOURNAMENT → Play → `PressAction()` → bouts → back to the bracket.
+**It works, and most of what could have been wrong was not.** Zero console errors and zero
+warnings across three bouts; zero `m_Script: {fileID: 0}` anywhere; every one of 314 asset
+references resolves; zero overflowing elements in the bracket's 178-element tree or the
+arena HUD. The walk-in, which this file still describes as stalling on every bout, now
+reaches contact 11 times in 12 (2.1-6.8 s).
+
+Five real defects, all now fixed:
+
+- **`ResetMatch` ran TWICE on a REMATCH tap.** `Update`'s tap-to-continue reads
+  `Pointer.current.press.wasPressedThisFrame` — the raw device, which knows nothing about
+  the button under the finger — so press-DOWN reset the match and the button's `clicked`
+  reset it again on release. Two `MatchReset` events to every companion, two `EndEpisode`
+  pairs, and the Grace timer restarted a frame into the new match. `ResetMatch` now returns
+  unless `_phase == Phase.MatchOver`, which covers both orderings; `MatchTestHarness` is
+  unaffected because it only ever calls it on a decided match.
+- **`Systems_TournamentReporter` was the odd one of the three exits from a decided bout.**
+  It never wrote `Time.timeScale = 1` before `LoadScene`, while
+  `Systems_BotLadderReporter.Return` and `ContinueToBracket` both do — and timeScale is
+  global and survives a scene load, so a knockout finish returning mid slow-motion carried
+  ~0.25x into the bracket screen. It also waited on `Invoke`, which counts in SCALED time,
+  while everything it was waiting for — the result card's scheduler, the slow-motion
+  deadline — counts in realtime. Both reporters now use a realtime accumulator in `Update`
+  (the project's rule; `Invoke` was the last coroutine-shaped thing left) and both clear
+  the scale.
+- **`_bracketBout` was set late, by whichever reporter's `Start` happened to run.** Two
+  separate workarounds existed for that. `Systems_MatchRoster` — which SPAWNS both
+  reporters and runs at `[DefaultExecutionOrder(-500)]` — now calls `MarkBracketBout()`
+  itself, so it is true before any Awake in the scene and both the tap-to-continue and the
+  result card's buttons can trust it unconditionally.
+- **The safe-area inset skipped the `Overlay` layer.** `Systems_HudRoot` insets `content`
+  and `modalSafe` (never the scrim, for the documented reason) but not the layer whose
+  whole purpose is putting things in a true screen CORNER — which is exactly where a notch,
+  a punch-hole and a gesture bar live. Measured: the DBG toggle at y=1490 h=44 in a 1544pt
+  panel, 10pt off the bottom edge. Now inset with the others.
+- **The camera hid the only losing condition.** `Systems_CameraFollow` framed the PAIR and
+  nothing else, so at the `minOrtho` floor (2.47) it showed ±1.69 m of a ±3.5 m mat with
+  the edge a fighter was two steps from entirely out of shot — and ring-out is the one way
+  to lose. New `edgeAwareness` (1.1 m) widens ONLY when someone is actually that close to
+  the CURRENT rim, so the tight follow through the middle of the mat is untouched.
+  `MaxOrthoForAspect` reads `CurrentRingHalfWidth` too now; it has never actually bound at
+  any aspect the game runs at, but it is honest if it ever does.
+
+Two things were added because the audit could not have been repeated otherwise:
+
+- **`BracketTestHarness`** (*PoSumo → Test → Run Bracket Harness*). `MatchTestHarness`
+  chains matches inside ONE arena scene and never crosses a `LoadScene` — and everything
+  hard about this game lives exactly at that boundary. This plays a full 7-match bracket
+  and asserts champion, title, match wins, `Active` cleared and `timeScale` back to 1.
+  > **Its first run reported a FALSE FAIL, and the lesson generalises: `IsComplete` is not
+  > the same moment as back-on-the-bracket.** The flag flips inside `ReportWinner`, called
+  > from the reporter's `MatchEnded` handler — still in SCN_SUMO, loser mid-flop, finish
+  > slow-motion running. Sampling `Time.timeScale` there reads 0.35 and blames the reporter
+  > for a leak that is not there (measured 1.000 on the bracket a moment later). Anything
+  > asserting on post-return state must wait for `SceneManager.GetActiveScene()`.
+- **`Tools/ref_audit.py`.** A scan that walks only `Assets/` reports every ML-Agents
+  component in six scenes as broken, and a scan that adds `Training/ml-agents/` still
+  reports `a79441f3…` (URP's `UniversalAdditionalCameraData`) as missing in all three
+  shipped scenes. There are THREE meta roots — `Assets/`, `Library/PackageCache/` and the
+  `file:` package at `Training/ml-agents/` — plus two built-in GUIDs that have no `.meta`
+  by design. The tool encodes all of it and exits 1 on a genuine miss.
+
 ## Three things measured on 2026-08-25 that contradict what the code assumed
 
 - **The perf HUD shipped to players.** `enablePerfHud` defaults `true` in code and is
@@ -1995,6 +2190,13 @@ because holding more than they show is their job.
   `behaviorName` must keep matching the YAML key or that fighter has no brain).
 
 ### The walk-in stalls on EVERY match — and since 2026-08-26 it no longer "restarts"
+
+> **The heading is now WRONG and is kept only because the rest of the section is the
+> history. Re-measured 2026-09-05 over a driven bracket: 11 of 12 walk-ins reached
+> CONTACT, in 2.1-6.8 s. One stalled** (`surfaceGap=1.35`, bestGap 0.85). The 4 s / 8 cm
+> stall clock and the 30 s `walkInTimeout` between them turned "fires every single bout"
+> into a rare backstop, which is what those numbers were changed for. Do not plan work off
+> the "every bout" claim below.
 
 > **SUPERSEDED 2026-08-26.** The park described below is DELETED. A stalled or timed-out
 > approach now hands both bodies to the fight brains **where they stand**
@@ -2025,7 +2227,8 @@ teleport onto the marks — capturing after it glides from the mark to the mark.
 ~30% of every frame that is black below the dohyo, and concludes the space must be
 filled. That conclusion assumed the camera owns the whole screen.
 
-`GameTuning.enableArenaBand` (**OFF by default**) confines it to a band instead,
+`GameTuning.enableArenaBand` (**OFF — in the asset as well as in code since
+2026-09-05; it had been ON in the asset, see the correction above**) confines it to a band instead,
 which raises the aspect the ortho maths divides by — the one lever that changes the
 trade rather than shuffling it. MEASURED at 1080x1920: a 0.20-0.82 band took aspect
 **0.563 -> 0.907** and the fighters rendered about **2.5x larger** with both still in

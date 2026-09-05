@@ -71,6 +71,16 @@ namespace PoSumo
         /// collider and sprite scales, and calling it every physics step with an
         /// unchanged value is pure waste at 50 Hz.
         private float _appliedHalfWidth = -1f;
+
+        /// The half-width the mat is at RIGHT NOW, which is what a fighter is
+        /// actually being squeezed against once `TickShrinkingRing` starts closing
+        /// it. `ringHalfWidth` is the FULL width and stays there all round — it is
+        /// the source the shrink lerps FROM — so anything that wants to frame,
+        /// draw or report the live edge has to read this instead.
+        ///
+        /// Falls back to `ringHalfWidth` before the first tick has applied
+        /// anything (`_appliedHalfWidth` starts at -1).
+        public float CurrentRingHalfWidth => _appliedHalfWidth >= 0f ? _appliedHalfWidth : ringHalfWidth;
         public PanelSettings panelSettings;
         public Systems_GameTuning tuning;
         // Companion spawn toggles now live on GameTuning.asset
@@ -94,6 +104,7 @@ namespace PoSumo
         private bool enablePerfHud = true;
         private bool enableFeelFx = true;
         private bool enableShockwave = true;
+        private bool enableRingSqueezeCue = true;
         [Tooltip("Round-opening countdown length; physics and brains are held until it finishes.")]
         public int countdownSeconds = 3;
         [Tooltip("Half the gap between the fighters' neutral stand-off positions during the countdown.")]
@@ -380,6 +391,7 @@ namespace PoSumo
                 enablePerfHud = tuning.enablePerfHud;
                 enableFeelFx = tuning.enableFeelFx;
                 enableShockwave = tuning.enableShockwave;
+                enableRingSqueezeCue = tuning.enableRingSqueezeCue;
             }
 
             // enableLighting decides whether there is a light rig at all, and the
@@ -402,8 +414,11 @@ namespace PoSumo
 
             // Size the dohyo to the configured ring at startup. The platform is
             // resized once more per round — wide for the walk-in, back to
-            // ringHalfWidth before the fight — but it never moves DURING a round,
-            // so the fighting ring is always the size the brains trained on.
+            // ringHalfWidth before the fight — and then CLOSES throughout the round
+            // (TickShrinkingRing). An earlier version of this comment claimed it
+            // "never moves DURING a round", which was true when it was written and
+            // stopped being true when the shrink was added; the agents' copy of the
+            // width was never updated on the strength of it. See PublishRingHalfWidth.
             // Baked scenes ship a 5.5 m-wide platform, so without this the
             // physical edge would ignore ringHalfWidth entirely.
             _arena = FindAnyObjectByType<Systems_SumoArena>();
@@ -772,7 +787,28 @@ namespace PoSumo
             // round 1 finished on, and by round 3 the fighters would be spawning
             // on a strip narrower than their own stance.
             _appliedHalfWidth = ringHalfWidth;
+            // ...and the fighters have to be told the mat re-opened, or their edge
+            // observations stay pinned at whatever the previous round shrank to.
+            PublishRingHalfWidth(ringHalfWidth);
             if (_savedGroundWidth > 0f) _arena.groundWidth = _savedGroundWidth;
+        }
+
+        /// Hands both fighters the half-width of the mat they are ACTUALLY standing on.
+        ///
+        /// The mirror of `Systems_SumoMatchManager.PublishRingHalfWidth`, and it exists
+        /// for the same reason: `Agent_Biped.ringHalfWidth` feeds the three mat
+        /// observations and was written once at setup, so the contraction that decides
+        /// almost every round was invisible to the policy driving through it. The
+        /// comment above the setup call used to say the ring "never moves DURING a
+        /// round" — true when it was written, and falsified by TickShrinkingRing.
+        ///
+        /// Note this is the AGENTS' copy, not `ringHalfWidth`, which stays at the full
+        /// width all round because it is what the shrink lerps FROM. `CurrentRingHalfWidth`
+        /// is the public read for anything else that needs the live rim.
+        private void PublishRingHalfWidth(float halfWidth)
+        {
+            if (wrestlerA != null) wrestlerA.ringHalfWidth = halfWidth;
+            if (wrestlerB != null) wrestlerB.ringHalfWidth = halfWidth;
         }
 
         /// Hands both bodies from the locomotion brain back to the fight brain.
@@ -1605,6 +1641,7 @@ namespace PoSumo
             // costs a collider rebuild.
             if (Mathf.Abs(target - _appliedHalfWidth) < 0.01f) return;
             _appliedHalfWidth = target;
+            PublishRingHalfWidth(target);
             _arena.SetPlatformHalfWidth(target);
             // The slick rim has to travel with the edge, or the bales stay out at
             // the original radius and the contracted mat has full grip right up to
@@ -1994,6 +2031,22 @@ namespace PoSumo
         /// one match — and the harness tally is how fighters are judged here.
         public void ResetMatch()
         {
+            // ONE reset per finished match, and only from a finished match.
+            //
+            // The REMATCH tap fired this TWICE. Update's tap-to-continue reads
+            // `Pointer.current.press.wasPressedThisFrame` — the raw device, which
+            // knows nothing about the button sitting under the finger — so the
+            // press-down frame reset the match, and the button's own `clicked`
+            // then reset it again on release. Two MatchReset events to every
+            // companion, two EndEpisode pairs, and the Grace timer restarted from
+            // the top a frame or two into the new match.
+            //
+            // Guarding on the phase fixes both orderings at once: whichever of the
+            // two fires first leaves MatchOver behind it, and the other is a no-op.
+            // MatchTestHarness calls this to chain matches and is covered by the
+            // same rule — it only ever calls it on a decided match.
+            if (_phase != Phase.MatchOver) return;
+
             _scoreA = _scoreB = 0;
             _koA = _koB = 0;
             EndedByKnockout = false;

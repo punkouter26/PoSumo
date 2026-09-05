@@ -29,6 +29,41 @@ Training/
 and the TensorBoard event files. Intermediate numbered checkpoints are pruned —
 they are ~140 MB per run and nothing ever deploys from them.
 
+## The live set (2026-09-05)
+
+**Exactly four configs are launchable. Every other file in `configs/` carries a
+`SUPERSEDED` banner as its first lines and cannot start a run.**
+
+| Config | Behavior | Run id | Base port | Steps |
+|---|---|---|---|---|
+| `MattRebuild01.yaml` | Matt | `matt_rebuild01` | 5005 | 15.0M cold |
+| `StandardRebuild01.yaml` | Standard | `standard_rebuild01` | 5015 | 15.0M cold |
+| `NickRebuild01.yaml` | Nick | `nick_rebuild01` | 5025 | 15.0M cold |
+| `KimRebuild01.yaml` | Kim | `kim_rebuild01` | 5035 | 15.0M cold |
+
+They are cold because they have to be: `results/`, `trunks/` and `venv/` are all
+absent from this working copy, so there is no checkpoint to `--resume` or
+`--initialize-from` and no Python environment to launch with. The observation vector
+also moved 45 → **51**, which forbids a warm start on its own.
+
+Read `MattRebuild01.yaml`'s header before launching any of them — it is the full
+changelog for this generation (live mat observation, asymmetric joints, leg/trunk
+self-collision, one torque cost, `driveReward` live) and lists three preconditions
+that are not optional.
+
+**The 45 superseded configs are kept deliberately and must not be deleted.** Their
+headers are the only written record of several measured negative results — the
+`tall01..tall04` sweep, why `gait01` made the gait worse, why the ring adaptation
+was needed. Two classes of them carry a provenance correction in the banner:
+
+- **`*Assist01.yaml` (×4)** — the entire header is a verbatim copy of `*Obs01.yaml`,
+  title line included. The only real difference is `max_steps` (5M vs 3M) and
+  nothing in the repo records what "Assist" was for. Undocumented, not documented.
+- **`*Tall04.yaml` (×4)** — every one is titled "WALK-TALL 03", and the warm-start
+  lineage differs across the roster: Matt came from `matt_tall03`, the other three
+  from `*_fatigue01`. So "tall04" is four different runs, and any cross-fighter
+  comparison from that generation compares recipes as well as fighters.
+
 ## Configs and the runs they produced
 
 **One brain per fighter, covering both walking and fighting** (2026-07-28). The walk
@@ -92,9 +127,33 @@ because `staminaObservation` was switched on and then back off:
 | `*_tall02` | off | 45 | no (back to 45; warm from `fatigue01`-line weights) |
 | `*_tall03`, `*_tall04` | off | 45 | yes, from `tall02` / `tall03` |
 | `*_stamina01` | **on** | **46** | **no — cold, for exactly this reason** |
+| `*_rebuild01` | **on** | **51** | **no — cold; nothing can warm-start into it** |
 
-The shipped `.onnx` are therefore **45 obs**, and the character assets must agree.
-See the note at the end of this file about the flag's current state.
+The shipped `.onnx` are **45 obs**, and until `*_rebuild01` is trained they are the
+only brains that exist.
+
+**They no longer match the code**, and that is a deliberate, temporary state rather
+than a defect to fix by reverting: the base vector went 42 → 43 (the mat's own
+half-width) and `contactObservations` + `staminaObservation` are now on for all five
+character assets, so the live vector is **51**. A 45-input model fed 51 slots is
+rejected by ML-Agents, which falls back to a limp heuristic **silently** — measured,
+`MatchTestHarness.Run(2)` ran four minutes without completing a round, max |action|
+0.000, and zero console entries of any severity.
+
+`Agent_Biped.AssertModelMatchesVector` now makes that loud. Entering Play mode logs,
+per fighter:
+
+```
+[OBS] STALE BRAIN: 'Matt' takes 45 inputs but 'Matt' now builds 51. This fighter
+will NOT move — ML-Agents rejects the model and falls back to a limp heuristic,
+silently. Retrain against the current vector (Training/configs/MattRebuild01.yaml)
+and redeploy, or put back the observation flags the model was trained with.
+```
+
+**So the game is not playable until `*_rebuild01` is trained and deployed.** The two
+ways out are training it, or reverting the vector — setting `contactObservations` and
+`staminaObservation` back to `false` on the character assets gets to 46, which still
+does not match 45, so a revert also has to undo the base 42 → 43 change.
 
 ### The ring-adaptation pass (`*_ring01`, 2026-08-07)
 

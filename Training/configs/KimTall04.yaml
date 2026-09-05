@@ -1,3 +1,31 @@
+# =============================================================================
+# SUPERSEDED 2026-09-05 by KimRebuild01.yaml. DO NOT LAUNCH THIS FILE.
+#
+# It targets a 45-slot observation vector, a body whose ankle / spine / shoulder /
+# toe joints are symmetric, and a body with no self-collision at all. None of those
+# exist any more. An env built from today's code feeds a 51-slot vector, so this
+# config cannot start a run, and its `--initialize-from` trunk was pruned long ago.
+#
+# KEPT, NOT DELETED, AND ON PURPOSE: the header below is part of this project's
+# training log. Several of these files are the only written record of a measured
+# negative result -- what the tall01..tall04 sweep cost and why it failed, why
+# gait01 made the gait worse, why the ring adaptation was needed. Deleting the
+# configs would delete the findings.
+#
+# THIS FILE'S HEADER SAYS "WALK-TALL 03". It is the TALL 04 config; the title line
+# and the warm-start line were both left behind when it was copied from Tall03.
+#
+# The lineage also differs across the roster, which matters because CLAUDE.md and
+# the Obs01 configs treat *_tall04 as ONE experiment warm-started from one place:
+#     MattTall04     -> warm start from matt_tall03
+#     KimTall04      -> warm start from kim_fatigue01
+#     NickTall04     -> warm start from nick_fatigue01
+#     StandardTall04 -> warm start from standard_fatigue01
+# Three of the four skip tall03 entirely. So "tall04" is four different runs, and
+# any cross-fighter comparison drawn from that generation is comparing recipes as
+# well as fighters.
+# =============================================================================
+#
 # Kim WALK-TALL 03 — created 2026-08-08. Warm start from kim_fatigue01.
 #
 # THE FIX THIS RUN TESTS: the walk gate is now on HEIGHT, not knee bend.

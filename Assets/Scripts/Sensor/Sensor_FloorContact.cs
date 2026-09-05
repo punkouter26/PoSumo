@@ -39,6 +39,19 @@ namespace PoSumo
 
         private void OnCollisionStay2D(Collision2D c)
         {
+            // UNBOUND: no referee has called BindArenaFloor on this fighter, so
+            // floorLevelY is -inf and no contact can ever qualify. Cheap, and it is
+            // not a rare case — six of the ten agents in every SCN_TRAIN_* scene are
+            // walk-lane agents with no referee at all, so 6/10 of the bodies in a
+            // training env were scanning every contact of every part, every physics
+            // step, to reach a comparison that cannot be true.
+            if (float.IsNegativeInfinity(floorLevelY)) return;
+
+            // Already recorded this step by another contact on this part. The result
+            // is a single bool for the whole step, so the rest of the scan cannot
+            // change it.
+            if (_lastFloorTime == Time.fixedTime) return;
+
             // Callbacks reach both the collider's object and the rigidbody's; the
             // head hitbox shares the chest rigidbody, so guard on the collider.
             if (c.otherCollider != _own || !IsStatic(c)) return;

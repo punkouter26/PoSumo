@@ -26,8 +26,6 @@ namespace PoSumo
         private const float HIPS_HIGH_Y = 0.95f, HIPS_SPAN = 0.3f;
         /// Uprightness above which a fighter counts as still on its feet.
         private const float ON_FEET_UPRIGHT = 0.6f;
-        /// Speed at which effort stops being charged as useless flailing.
-        private const float USEFUL_SPEED = 1.5f;
         /// Reward per m/s of upward torso velocity while down. Not per-character:
         /// it is a nudge out of a failure state, not a style.
         private const float RISE_VELOCITY_REWARD = 0.0005f;
@@ -35,7 +33,7 @@ namespace PoSumo
         private float _rUpright = 0.0005f, _rClosing = 0.0006f, _rLunge = 0.001f;
         private float _lungeThresh = 1.5f;
         private float _rImpact = 0.01f, _impactCap = 8f, _rKnee = 0.0004f, _rHips = 0.0003f;
-        private float _rCadence = 0.0015f, _rRise = 0.02f, _pEnergy = 0.0004f, _pJerk = 0.0003f;
+        private float _rCadence = 0.0015f, _rRise = 0.02f, _pJerk = 0.0003f;
         private float _bendFloor = 0.3f;
         private float _pEffort = 0.0015f, _rStance = 0.0009f;
         private float _rDrive = 0f;
@@ -53,7 +51,6 @@ namespace PoSumo
             _rHips = character.hipsLowReward;
             _rCadence = character.cadenceReward;
             _rRise = character.riseReward;
-            _pEnergy = character.energyPenalty;
             _pJerk = character.jerkPenalty;
             _pEffort = character.effortPenalty;
             _rStance = character.stanceReward;
@@ -123,16 +120,20 @@ namespace PoSumo
                 if (drive > 0f)
                 {
                     float grip = Mathf.Min(body.FootLoadNear, body.FootLoadFar);
-                    // INERT ON EVERY SHIPPED FIGHTER. `driveReward` defaults to 0 on
-                    // Agent_CharacterDefinition and no character asset overrides it,
-                    // so this line has never contributed to any brain.
+                    // LIVE AS OF THE REBUILD01 GENERATION. `driveReward` was 0 on all
+                    // five character sheets for the whole life of the project, so this
+                    // line — the only term in the provider that pays for sumo's actual
+                    // winning mechanic — had never contributed to any brain.
                     //
-                    // Deliberately left at 0 rather than enabled here: switching it
-                    // on would add an untested shaping term to the same run that
-                    // changes the observation vector, and a run that moves two things
-                    // at once cannot tell you which one moved the ELO. If it is
-                    // wanted, it is its own experiment against an otherwise
-                    // unchanged trunk.
+                    // It stayed at 0 because enabling it would have confounded a run
+                    // that was also changing the observation vector. That reasoning
+                    // held while there were warm-start trunks to protect; there are
+                    // none now (Training/results is absent), so the vector change is a
+                    // cold retrain regardless and the two are no longer separable by
+                    // waiting. It is still worth isolating: the intended sequence is
+                    // Rebuild01 with drive at 0, then a warm follow-up that turns it
+                    // on ALONE, so a moved ELO attributes cleanly. See the per-fighter
+                    // config headers.
                     total += drive * grip * _rDrive;
                 }
             }
@@ -144,16 +145,32 @@ namespace PoSumo
             // stance.
             total += StanceFactor(body, ctx) * _rStance;
 
-            // Useless effort costs; driving toward the opponent is cheap.
-            float useful = Mathf.Clamp01(Mathf.Abs(Reward_Context.San(tv.x)) / USEFUL_SPEED);
-            total += -ctx.Energy * _pEnergy * (1f - useful);
             total += -ctx.Jerk * _pJerk;
 
-            // UNGATED, unlike the line above. That `(1f - useful)` gate makes effort
-            // free whenever the fighter is moving fast, which is the mechanism that
-            // produced the saturated motors: drive hard and the torque bill
-            // disappears. This term always applies, so full-power flailing costs
-            // something even mid-charge.
+            // ONE torque cost, not two. There used to be an L1 term on top of this:
+            //
+            //     float useful = Clamp01(|tv.x| / USEFUL_SPEED);
+            //     total += -ctx.Energy * _pEnergy * (1f - useful);
+            //
+            // charging the same quantity a second time on a different norm, and
+            // gated so that it vanished whenever the fighter was moving fast. That
+            // gate is the exact mechanism the quadratic term below was added to
+            // undo — drive hard and the torque bill disappears — so the pair pulled
+            // against each other, and tuning either one moved a net cost that was
+            // the sum of both. Keeping the L1 term meant every fighter carried two
+            // coefficients (`energyPenalty`, `effortPenalty`) for one effect.
+            //
+            // The quadratic is the one worth keeping, and it is not a coin toss:
+            // an L1 cost has a constant gradient, so it shifts every action down
+            // uniformly and a policy pays it off by being slightly less lazy
+            // everywhere. A squared cost rises steeply toward the rails, which is
+            // what actually discourages slamming a motor to full torque — and
+            // slamming is what was measured, 7 to 12 of the 13 motors above |0.9|
+            // with a mean magnitude of 0.75-0.91. It is also ungated, so full-power
+            // flailing costs something even mid-charge.
+            //
+            // `energyPenalty` stays on the character sheet: Reward_WalkObjective
+            // still uses it, ungated, where there is no second term to overlap with.
             total += -ctx.Effort * _pEffort;
 
             return total;

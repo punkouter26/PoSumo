@@ -31,6 +31,32 @@ namespace PoSumo
             // more closing speed, and the KO knockback applies a mass-scaled
             // impulse to all 14 parts on one frame. Under-solved, a hinge chain
             // that long visibly separates at the joints when hit hard.
+            //
+            // MEASURED, DO NOT LOWER THESE TO GO FASTER — they are not a throughput
+            // cost, they are a throughput SAVING. These numbers look extravagant next
+            // to Unity's 2D defaults (3 position / 8 velocity) and were the obvious
+            // suspect for the biggest per-step cost in a training env, so they were
+            // swept in Play mode in SCN_TRAIN_MATT — the real workload, 10 bipeds /
+            // 150 joints / 160 rigidbodies — under continuous random impulses to keep
+            // every body awake and loaded:
+            //
+            //     pos/vel   ms/step   max joint separation
+            //     16/14     0.696     0.146 m      <- current, FASTEST
+            //     12/10     0.750     0.140 m
+            //     10/8      0.788     0.209 m
+            //      8/8      0.778     0.165 m
+            //      6/6      0.824     0.476 m
+            //
+            // Fewer iterations came out both SLOWER and worse. Slower because an
+            // under-solved chain interpenetrates and flies apart, and the extra
+            // contacts it generates cost more than the solver iterations saved; worse
+            // because joint separation degrades 3x by 6/6, which is the visible
+            // "ragdoll coming apart at the seams" this setting exists to prevent.
+            //
+            // A first pass measured in SCN_SUMO instead and appeared to show 3/8 as
+            // 40x faster. That was two idle bipeds falling asleep — a sleeping
+            // rigidbody costs nothing to simulate. If this is ever re-swept, load the
+            // bodies and keep them awake, or the numbers mean nothing.
             Physics2D.positionIterations = 16;
             Physics2D.velocityIterations = 14;
 

@@ -1,0 +1,176 @@
+# Standard REBUILD 01 - COLD, and it has to be. Created 2026-09-05.
+#
+# THE ONE RUN THAT REPLACES THE WHOLE BACKLOG. Every pending change to the body,
+# the observation vector and the reward landed together, because there is nothing
+# left to protect by separating them: Training/results/, Training/trunks/ and
+# Training/venv/ are all ABSENT, so `--initialize-from` has no trunk to load and
+# EVERY run from here is cold whatever it changes. The "never confound two changes
+# in one run" rule that shaped MattObs01 and the four *Assist01 files exists to
+# protect warm-start trunks worth 12-45M steps. Those trunks are gone. Paying for
+# five separate cold 15M runs to keep changes separable would cost more than the
+# separability is worth.
+#
+# WHAT CHANGED SINCE *_tall04 - six things, and the first is the big one.
+#
+# 1. THE MAT IS NOW OBSERVABLE. `Agent_Biped.ringHalfWidth` feeds the edge
+#    observations and was written ONCE at Start, to the configured 3.5, and never
+#    again. Everything that moved the real mat afterwards left the agents' copy
+#    alone: the per-round randomisation in ResetRound (1.7..3.5) and the
+#    contraction in TickShrinkingRing (3.5 -> 1.8 and on toward zero). Two
+#    consequences, both measured:
+#      - a bracket ended 17 of 17 rounds by ring-out, 16 of them past
+#        shrinkStartSeconds, so the closing mat decides essentially every round -
+#        and the policy could not perceive it closing;
+#      - `platform_difficulty` below, whose stated job is to teach edge distance
+#        "across SCALES", varied the one number the observation was not reading.
+#        It has been inert for the policy's entire history.
+#    Both referees now publish the live half-width every step. Verified in Play
+#    mode in SCN_TRAIN_STANDARD: the four sumo agents read 3.16 and 2.89 on their two
+#    arenas instead of a shared constant 3.5.
+#
+# 2. THE VECTOR IS 51, up from 45. Base went 42 -> 43 (the mat's own width, so
+#    "1.0 ahead, 1.0 behind" can be told apart from the same reading on a mat half
+#    the size), and contactObservations (+4) and staminaObservation (+1) are ON for
+#    the first time. Stamina especially: fatigue has applied to the body since
+#    2026-08-05 while being invisible to the policy, so no fighter could pace
+#    itself or time a push against a tiring opponent.
+#      Layout, and the order IS the input layer: base 43 -> contact +4 ->
+#      stamina +1 -> extended +3.
+#
+# 3. FOUR JOINTS ARE ANATOMICALLY ASYMMETRIC for the first time. The ankle, the
+#    three spine joints, the shoulders and the MTP toes were all SYMMETRIC, which
+#    no human joint is; hip, knee and elbow were fixed long ago but the rest were
+#    left symmetric because the sign convention had to be measured. It has been
+#    now - the derivation is in Agent_BipedBody's JOINT_DEFS comment and it
+#    reproduces all three previously-measured joints. Ankle -20..50 (plantarflexion
+#    is the drive that pushes a sumo forward and had 35 deg of a needed 50), spine
+#    -12..30 each, shoulder -175..60, toe -60..30.
+#
+# 4. LEG-VERSUS-TRUNK SELF-COLLISION IS ON. Every collider pair inside a biped was
+#    ignored, so the knees passed through the belly and physique had no effect on
+#    what a fighter could fold into. 30 leg/trunk pairs now collide (arms and
+#    leg-versus-leg deliberately still do not - this is a sagittal model and those
+#    pass in the third dimension). Standard's widthScale matters for the first time.
+#
+# 5. ONE TORQUE COST, NOT TWO. The L1 `energyPenalty` term is gone from the sumo
+#    school; it charged the same quantity as the quadratic `effortPenalty` on a
+#    different norm AND was gated to vanish at speed, which is the exact mechanism
+#    the quadratic term was added to undo. `energyPenalty` still drives the walk
+#    school, ungated.
+#
+# 6. `driveReward` IS LIVE, at 0.004 for Standard. It was 0 on all five character
+#    sheets for the whole project, so the only term paying for sumo's actual
+#    winning mechanic - sustained two-footed push, gated on both feet loaded -
+#    never contributed to any brain. If this run's ELO is ambiguous, the clean
+#    attribution is a re-run with this one field back at 0; it is a character-asset
+#    value, not a YAML key, so it cannot be swept from here.
+#
+# ALSO GONE: the `walk_fall_penalty` curriculum. It was measured making the gait
+# dramatically WORSE (torso 0.16-0.20 m against the 0.55-0.76 it was raising) -
+# cheap falls do not buy exploration, because a body already on the ground cannot
+# fall, so the terminal simply stopped firing. Do not reintroduce it.
+#
+# Standard IS the reference build - GREEN, no texture, the fighter every variation is compared against.
+#
+# HYPERPARAMETERS ARE THE UNIFIED RECIPE, UNCHANGED. That is deliberate: this run
+# already moves the body, the vector and the reward, and it is the only cold recipe
+# in this project's history that produced a shipped brain. Moving the optimiser too
+# would leave nothing fixed to attribute against. lr 3.0e-4 because a cold run needs
+# fresh-run adaptation speed, not the 1e-4 of a corrective pass.
+#
+# num-envs: 4 - RECORD IT. It changes how experience is batched, so it changes the
+# resulting model even with every hyperparameter held fixed. The shipped four were
+# trained at 3.
+#
+# JUDGE ON THE SHAPE OF THE SELF-PLAY ELO CURVE, NOT MEAN REWARD. They have moved
+# in opposite directions in this project before (reward ~36 while ELO fell
+# 1198 -> 1140 = a policy farming shaping instead of winning). Mean reward here also
+# mixes two reward functions across the sumo and walk populations and is not
+# comparable to any earlier run at all.
+#
+# Watch the walk lane separately: mean reward pinned just under the +3 graduation
+# bonus with near-zero variance is one terminal firing every episode, not
+# convergence. That signature cost 2.6M steps once already.
+#
+# PRECONDITIONS - none of this is optional:
+#   1. Training/venv/ does not exist. Recreate it (Python 3.10.11, torch 2.5.1+cpu,
+#      setuptools 69.5.1) and `pip install -e` both packages from Training/ml-agents.
+#   2. Rebuild the env AFTER the code changes above:
+#      *PoSumo -> Build Standard Training Env* -> Builds/StandardEnv/StandardEnv.exe
+#      An env built before them feeds a 45-slot vector to a 51-slot config and the
+#      run will not start.
+#   3. TensorBoard must be running. It is a hard rule with a blocking hook, and
+#      ELO is the only signal this run may be judged by.
+#
+# Launch:
+#   Training/Start-StaminaExtension.ps1 -Phase Rebuild01 -Minutes <n>
+# or by hand:
+#   Training/venv/Scripts/mlagents-learn.exe Training/configs/StandardRebuild01.yaml
+#     --run-id=standard_rebuild01 --results-dir=Training/results
+#     --env=Builds/StandardEnv/StandardEnv.exe --num-envs=4 --no-graphics --base-port=5015
+
+behaviors:
+  Standard:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 3.0e-4
+      beta: 5.0e-3
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:
+      normalize: true
+      hidden_units: 512
+      num_layers: 3
+      vis_encode_type: simple
+    reward_signals:
+      extrinsic:
+        gamma: 0.997
+        strength: 1.0
+    keep_checkpoints: 5
+    checkpoint_interval: 250000
+    max_steps: 15000000
+    time_horizon: 1000
+    summary_freq: 30000
+    threaded: true
+    self_play:
+      window: 25
+      play_against_latest_model_ratio: 0.25
+      save_steps: 50000
+      swap_steps: 50000
+      team_change: 250000
+
+# Ring-width curriculum. Systems_SumoMatchManager randomises each round's platform
+# half-width within startHalfRange (1.7 .. 3.5); platform_difficulty controls how far
+# toward the narrow end it may go.
+#
+# THIS LESSON ONLY STARTS WORKING WITH THIS RUN. Its purpose is to teach edge
+# distance across SCALES rather than let the policy memorise one mat width - and
+# until change 1 above, the width it varied was not in the observation vector at
+# all, so every lesson looked identical from inside the policy. Expect it to bite
+# for the first time here, and expect the wide -> mixed -> full progression to
+# actually cost something.
+environment_parameters:
+  platform_difficulty:
+    curriculum:
+      - name: wide
+        completion_criteria:
+          measure: progress
+          behavior: Standard
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.3
+        value: 0.0
+      - name: mixed
+        completion_criteria:
+          measure: progress
+          behavior: Standard
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.6
+        value: 0.5
+      - name: full
+        value: 1.0

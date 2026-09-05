@@ -358,23 +358,55 @@ namespace PoSumo
 
         // child, parent, anchor(x,y in root space), min, max (deg), torque, speed
         //
-        // RANGES. The ankle, the three spine joints and the shoulders were SYMMETRIC and bent
-        // backwards far past human range — a fighter could hyperextend his spine
-        // 75 degrees and throw an arm 160 degrees behind him, which is the single
-        // largest "that is not a body" contributor after motor saturation. They are
-        // now clamped to roughly human TOTAL range:
-        //   ankle    +/-45 -> +/-25 -> +/-35 (human TOTAL ROM ~70 deg, and +/-25 gave
-        //            only 50, capping the joint that actually drives a sumo forward.
-        //            Torque 120 -> 160 against a human plantarflexor peak of 150-200.)
-        //            STILL SYMMETRIC, and that is deliberate restraint, not an
-        //            oversight: the real ankle is asymmetric (~20 dorsi / 50 plantar),
-        //            but which SIGN is plantarflexion has to be MEASURED here, not
-        //            reasoned out — see the sign-convention note below, which is the
-        //            bug that survived the whole life of this project. Widen-symmetric
-        //            is the change that cannot be wrong. Make it asymmetric only after
-        //            probing the sign the same way the hip/knee/elbow were probed.
-        //   spine    +/-25 -> +/-20   each, so +/-60 over three (human ~120 total)
-        //   shoulder +/-160 -> +/-120 (human ~240 total)
+        // RANGES. The ankle, the three spine joints and the shoulders were SYMMETRIC,
+        // which no human joint is. Symmetry was deliberate restraint at the time —
+        // the sign convention below had already produced one project-long bug and
+        // widen-symmetric is the change that cannot be wrong — with an explicit note
+        // to make them asymmetric only after probing the sign. THAT PROBE IS NOW DONE,
+        // and its method is recorded here because it is reusable and cheap:
+        //
+        //   The three measured joints (hip, knee, elbow) give three independent
+        //   checks of any candidate rule. Take a joint, rotate the CHILD by theta
+        //   (CCW positive) and its up vector becomes (-sin theta, cos theta), so
+        //   SignedAngle(parent.up, child.up) = theta and, by the measured -1.00 ratio
+        //   below, jointAngle = -theta * facingSign. Ask which way the DISTAL end of
+        //   the child moves for the named anatomical action, and the sign falls out.
+        //   Run against the knee: flexion takes the heel backward (-x), so the shin's
+        //   +y tilts to +x, theta < 0, jointAngle > 0 — and the measured knee range is
+        //   (0..150) with flexion positive. Against the elbow: flexion takes the hand
+        //   forward (+x), theta > 0, jointAngle < 0 — measured (-150..0). Against the
+        //   hip: flexion takes the knee forward (+x), theta > 0, jointAngle < 0 —
+        //   measured (-120..30). Three for three, so the rule is sound.
+        //
+        //   Note jointAngle is FACING-INVARIANT: the raw geometry flips with
+        //   facingSign and the formula multiplies it back out, which is why one set of
+        //   asymmetric limits serves both facings. That is also why the existing
+        //   hip/knee/elbow limits work at all.
+        //
+        // Applying it to the four unprobed joints:
+        //   ankle    +/-35 -> (-20..50). Plantarflexion (toe down) tilts the foot's
+        //            +y toward +x, so theta < 0 and PLANTARFLEXION IS POSITIVE. Human
+        //            is ~20 dorsi / ~50 plantar; total ROM is unchanged at 70 deg, it
+        //            is now in the right place. This matters more than it sounds:
+        //            plantarflexion is the drive that pushes a sumo forward off the
+        //            mat, and it had 35 deg of a needed 50 while spending 15 deg on a
+        //            dorsiflexion nobody uses.
+        //   toe(MTP) +/-35 -> (-60..30). Toe-tip up tilts the toe's +y toward -x, so
+        //            theta > 0 and EXTENSION IS NEGATIVE. Human ~60 extension / ~30
+        //            flexion. Extension is the half that matters — it is what the MTP
+        //            does as the heel rises through toe-off.
+        //   spine    +/-20 -> (-12..30) each. Trunk flexion takes the segment's top
+        //            forward (+x), theta < 0, so FLEXION IS POSITIVE. Human lumbar +
+        //            thoracic is ~80-90 flexion against ~30-35 extension; over three
+        //            segments that is 90 flexion / 36 extension. The old symmetric
+        //            +/-60 total gave a fighter 60 deg of backward bend it has no
+        //            business having, and only 60 of the forward fold a sumo drive
+        //            posture is built on.
+        //   shoulder +/-120 -> (-175..60). Arm forward takes the elbow to +x,
+        //            theta > 0, so FLEXION IS NEGATIVE. Human ~180 flexion / ~60
+        //            extension; 175 rather than 180 keeps the limit off the wrap
+        //            singularity. This buys the overhead reach a real grapple uses and
+        //            takes away 60 deg of the backward throw the old range allowed.
         //
         // SIGN CONVENTION — measured, do not re-derive by eye. The three asymmetric
         // joints (hip, knee, elbow) were inverted for the whole life of the project.
@@ -406,16 +438,16 @@ namespace PoSumo
         {
             new JointDef(1, 0,  0f, 0.964f,-120f,  30f, 300f, 260f), // hip near
             new JointDef(2, 1,  0f, 0.533f,   0f, 150f, 250f, 320f), // knee near
-            new JointDef(3, 2,  0f, 0.10f,  -35f,  35f, 160f, 220f), // ankle near
+            new JointDef(3, 2,  0f, 0.10f,  -20f,  50f, 160f, 220f), // ankle near
             new JointDef(4, 0,  0f, 0.964f,-120f,  30f, 300f, 260f), // hip far
             new JointDef(5, 4,  0f, 0.533f,   0f, 150f, 250f, 320f), // knee far
-            new JointDef(6, 5,  0f, 0.10f,  -35f,  35f, 160f, 220f), // ankle far
-            new JointDef(7, 0,  0f, 1.130f, -20f,  20f, 180f, 160f), // spine 1 (pelvis->lower back)
-            new JointDef(8, 7,  0f, 1.259f, -20f,  20f, 180f, 160f), // spine 2 (lower->upper back)
-            new JointDef(9, 8,  0f, 1.388f, -20f,  20f, 180f, 160f), // spine 3 (upper back->chest)
-            new JointDef(10, 9, 0f, 1.471f,-120f, 120f,  80f, 320f), // shoulder near (on chest)
+            new JointDef(6, 5,  0f, 0.10f,  -20f,  50f, 160f, 220f), // ankle far
+            new JointDef(7, 0,  0f, 1.130f, -12f,  30f, 180f, 160f), // spine 1 (pelvis->lower back)
+            new JointDef(8, 7,  0f, 1.259f, -12f,  30f, 180f, 160f), // spine 2 (lower->upper back)
+            new JointDef(9, 8,  0f, 1.388f, -12f,  30f, 180f, 160f), // spine 3 (upper back->chest)
+            new JointDef(10, 9, 0f, 1.471f,-175f,  60f,  80f, 320f), // shoulder near (on chest)
             new JointDef(11,10, 0f, 1.144f,-150f,   0f,  60f, 320f), // elbow near
-            new JointDef(12, 9, 0f, 1.471f,-120f, 120f,  80f, 320f), // shoulder far (on chest)
+            new JointDef(12, 9, 0f, 1.471f,-175f,  60f,  80f, 320f), // shoulder far (on chest)
             new JointDef(13,12, 0f, 1.144f,-150f,   0f,  60f, 320f), // elbow far
             // MTP (toe) joints — UNPOWERED, and they must stay last. ApplyMotor and
             // CollectObservations both index 0..ActionCount-1, so appending here adds
@@ -432,8 +464,8 @@ namespace PoSumo
             // Range is symmetric for the same reason the ankle is — the real MTP is
             // asymmetric (~60 extension, ~30 flexion) but the sign has to be measured
             // here, not assumed.
-            new JointDef(14, 3, 0.126f, 0.04f, -35f, 35f, 40f, 400f, false), // toe near
-            new JointDef(15, 6, 0.126f, 0.04f, -35f, 35f, 40f, 400f, false), // toe far
+            new JointDef(14, 3, 0.126f, 0.04f, -60f, 30f, 40f, 400f, false), // toe near
+            new JointDef(15, 6, 0.126f, 0.04f, -60f, 30f, 40f, 400f, false), // toe far
         };
 
         private void Awake()
@@ -868,10 +900,13 @@ namespace PoSumo
                 _passiveDamping[jointDefIndex] = _maxTorque[jointDefIndex] * PASSIVE_DAMPING_FRAC / 400f;
             }
 
-            // Self-pass-through: ignore every collider pair within this biped.
+            // Self-pass-through: ignore every collider pair within this biped, then
+            // put back the handful that a real body genuinely cannot pass through.
             for (int a = 0; a < AllColliders.Count; a++)
                 for (int b = a + 1; b < AllColliders.Count; b++)
                     Physics2D.IgnoreCollision(AllColliders[a], AllColliders[b], true);
+
+            EnableLegTrunkCollisions();
 
             // Record spawn pose for resets.
             _initialLocalPos = new Vector3[n];
@@ -1113,6 +1148,75 @@ namespace PoSumo
         }
 
         /// action in [-1,1] -> motor target speed; sign mirrored with facing.
+        /// PART_DEFS indices. Named because the pairing below is unreadable as raw
+        /// integers and because renumbering PART_DEFS is already forbidden elsewhere
+        /// (Systems_BodyDamage.RegionOf switches on the part index).
+        private const int P_PELVIS = 0, P_LOWERBACK = 7, P_UPPERBACK = 8, P_CHEST = 9;
+        private static readonly int[] TRUNK_PARTS = { P_PELVIS, P_LOWERBACK, P_UPPERBACK, P_CHEST };
+        /// Thighs are adjacent to the pelvis (it is their joint parent), so they get
+        /// the trunk list MINUS the pelvis; everything below the knee gets all of it.
+        private static readonly int[] THIGH_PARTS = { 1, 4 };
+        private static readonly int[] LOWER_LEG_PARTS = { 2, 5, 3, 6, 14, 15 }; // shins, feet, toes
+
+        /// Puts back the self-collisions a body genuinely has.
+        ///
+        /// Every collider pair inside a biped was ignored, which is right for adjacent
+        /// segments — a knee has to be able to sit inside the seam between thigh and
+        /// shin — but it also meant the knees passed straight through the belly. That
+        /// removed the one anatomical limit that is not a joint angle: a hip can only
+        /// flex until the thigh meets the trunk, and how soon that happens depends on
+        /// how big the trunk is. Kim carries widthScale 1.3 and Nick 0.82, so with
+        /// self-collision off their physiques differed in mass and torque but not in
+        /// what they could physically fold into. Now the heavy fighter's belly stops
+        /// his crouch earlier, which is exactly the trade a real heavyweight makes.
+        ///
+        /// LEG-VERSUS-TRUNK ONLY, and the omissions are deliberate:
+        ///
+        ///  - NOT leg-versus-leg and NOT arm-versus-arm. This is a SAGITTAL model: the
+        ///    near and far limbs are a left/right pair drawn fore-and-aft, and in a
+        ///    real body they pass each other in the third dimension. Colliding them
+        ///    would invent a constraint the body does not have and would lock the
+        ///    scissor stance the fighters spawn in.
+        ///  - NOT arm-versus-trunk, for the same reason: an arm crossing the chest
+        ///    passes to the SIDE of it, which a 2D model cannot represent. The
+        ///    ART already draws the arms in front (sorting 3) on that understanding.
+        ///  - NOT anything versus the head hitbox. That collider hangs off the CHEST
+        ///    rigidbody and is what Systems_BodyDamage compares against to identify a
+        ///    head hit, so letting a fighter's own knee reach it risks a self-inflicted
+        ///    head KO. It is a separate change with its own verification.
+        ///
+        /// No pair enabled here overlaps at spawn (the nearest, thigh top at y 0.965
+        /// against lower back bottom at 1.125, clears by 0.16 m), so nothing is born
+        /// interpenetrating and pushing itself apart.
+        private void EnableLegTrunkCollisions()
+        {
+            for (int t = 0; t < TRUNK_PARTS.Length; t++)
+            {
+                Collider2D trunk = ColliderOfPart(TRUNK_PARTS[t]);
+                if (trunk == null) continue;
+
+                for (int l = 0; l < THIGH_PARTS.Length; l++)
+                {
+                    if (TRUNK_PARTS[t] == P_PELVIS) continue;   // adjacent: joint parent
+                    Collider2D leg = ColliderOfPart(THIGH_PARTS[l]);
+                    if (leg != null) Physics2D.IgnoreCollision(trunk, leg, false);
+                }
+                for (int l = 0; l < LOWER_LEG_PARTS.Length; l++)
+                {
+                    Collider2D leg = ColliderOfPart(LOWER_LEG_PARTS[l]);
+                    if (leg != null) Physics2D.IgnoreCollision(trunk, leg, false);
+                }
+            }
+        }
+
+        /// The part's OWN collider. Safe on the chest, whose head hitbox lives on a
+        /// child GameObject and so is not returned here.
+        private Collider2D ColliderOfPart(int partIndex)
+        {
+            if (Parts == null || partIndex >= Parts.Length || Parts[partIndex] == null) return null;
+            return Parts[partIndex].GetComponent<Collider2D>();
+        }
+
         public void ApplyMotor(int jointIndex, float action)
         {
             // A limp body ignores motor commands outright. Without this the

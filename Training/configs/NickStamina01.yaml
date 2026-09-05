@@ -1,3 +1,18 @@
+# =============================================================================
+# SUPERSEDED 2026-09-05 by NickRebuild01.yaml. DO NOT LAUNCH THIS FILE.
+#
+# It targets a 45-slot observation vector, a body whose ankle / spine / shoulder /
+# toe joints are symmetric, and a body with no self-collision at all. None of those
+# exist any more. An env built from today's code feeds a 51-slot vector, so this
+# config cannot start a run, and its `--initialize-from` trunk was pruned long ago.
+#
+# KEPT, NOT DELETED, AND ON PURPOSE: the header below is part of this project's
+# training log. Several of these files are the only written record of a measured
+# negative result -- what the tall01..tall04 sweep cost and why it failed, why
+# gait01 made the gait worse, why the ring adaptation was needed. Deleting the
+# configs would delete the findings.
+# =============================================================================
+#
 # Nick STAMINA 01 Aaa created 2026-08-15. COLD retrain, no warm start.
 #
 # WHY THIS RUN EXISTS

@@ -10,10 +10,14 @@ namespace PoSumo
     /// sign so a single policy works facing left or right. All observations are
     /// sanitized against NaN/Inf before submission.
     ///
-    /// Two brain generations coexist:
-    ///  - legacy (41 obs, decision period 5) — the Standard fighter's shipped policy;
-    ///  - extended (44 obs: +opponent uprightness/down/edge, period 3) — Matt's
-    ///    technique brain, trained with the stance/gait/impact shaping below.
+    /// The vector is composed from four blocks, and the ORDER IS THE INPUT LAYER'S
+    /// LAYOUT — it must never be reordered once a brain has trained on it:
+    ///     base (43) -> contact (+4) -> stamina (+1) -> extended (+3).
+    /// All four fighters run the full 51.
+    ///
+    /// It has been 41, 42 and 44 in earlier generations; every one of those moves
+    /// invalidated every brain that preceded it, so treat a change here as a cold
+    /// retrain of the whole roster and nothing less.
     [RequireComponent(typeof(Agent_BipedBody))]
     public sealed class Agent_Biped : Agent
     {
@@ -90,11 +94,27 @@ namespace PoSumo
         /// through, so suffixing it would leave that fighter with no brain at all.
         /// This is presentation only.
         [System.NonSerialized] public string displayNameOverride;
-        // 42 = 5 body + 26 joints + 4 feet + 1 task flag + 4 opponent/target + 2 edges.
+        // 43 = 5 body + 26 joints + 4 feet + 1 task flag + 4 opponent/target
+        //      + 2 edges + 1 mat width.
         // Was 41; the task flag was added when the walk and fight brains were merged
-        // into one policy per fighter. That +1 invalidated every brain trained before
-        // it — there is no way to feed a 42/45-slot vector to a 41/44-input model.
-        public const int ObservationCount = 42;
+        // into one policy per fighter. Was 42 until the LIVE MAT fix below took the
+        // edge block from two slots to three. Either change invalidates every brain
+        // trained before it — there is no way to feed a 43-slot vector to a
+        // 42-input model.
+        public const int ObservationCount = 43;
+
+        /// Reference half-width the edge observations are scaled by, in metres.
+        ///
+        /// It is a CONSTANT and `ringHalfWidth` is not — that separation is the whole
+        /// point. The edge slots used to divide by `ringHalfWidth`, which made them a
+        /// FRACTION of whatever mat was current; combined with a `ringHalfWidth` that
+        /// never moved, the policy could read neither the absolute distance to the rim
+        /// nor the fact that the rim was closing. Scaling by a fixed reference instead
+        /// keeps the slots proportional to real metres, so "1.2 m of mat ahead" reads
+        /// the same whether the mat started at 3.5 m or was randomised to 1.7.
+        ///
+        /// 3.5 is `GameTuning.ringHalfWidth`, i.e. a full mat maps to 1.0.
+        private const float RING_REFERENCE_HALF = 3.5f;
         public const int ActionCount = 13;      // hips, knees, ankles, 3 spine, shoulders, elbows
 
         /// Last motor commands as sent to the joints (for HUD display).
@@ -163,9 +183,9 @@ namespace PoSumo
             if (bp == null) bp = gameObject.AddComponent<BehaviorParameters>();
             bp.BehaviorName = behaviorName;
             bp.TeamId = teamId;
-            bp.BrainParameters.VectorObservationSize =
-                ObservationCount + (extendedObservations ? 3 : 0) + (contactObservations ? 4 : 0)
-                + (staminaObservation ? 1 : 0);
+            int vectorSize = ResolvedObservationCount;
+            bp.BrainParameters.VectorObservationSize = vectorSize;
+            AssertVectorSizeMatchesBehavior(vectorSize);
             bp.BrainParameters.NumStackedVectorObservations = 1;
             bp.BrainParameters.ActionSpec = ActionSpec.MakeContinuous(ActionCount);
 
@@ -193,35 +213,168 @@ namespace PoSumo
             base.Awake();
         }
 
-        /// Cost of falling in Mode.Walk, as a POSITIVE magnitude. 1 is the historical
-        /// value and stays the default, so a run with no curriculum trains exactly
-        /// what it always did.
+        /// The vector length this fighter's flags actually produce.
+        public int ResolvedObservationCount =>
+            ObservationCount + (contactObservations ? 4 : 0) + (staminaObservation ? 1 : 0)
+            + (extendedObservations ? 3 : 0);
+
+        /// First observation size seen for each behavior name this session, and the
+        /// GameObject that established it.
         ///
-        /// Curriculum-controlled via `walk_fall_penalty` because it is the one lever
-        /// CLAUDE.md names as untried against the crawling gait, and four runs proved
-        /// the alternative does not work. The arithmetic: a fall is -1 plus the
-        /// forgone +3 graduation, about -4, against a measured tall-vs-crawl shaping
-        /// advantage of 0.0063 per step. No reward coefficient can cross that gap —
-        /// runs tall01..tall04 all tried and all failed — so the gap has to be closed
-        /// from the OTHER side, by making falling cheap enough early on that the
-        /// policy can afford to experiment with standing upright, then ramping the
-        /// penalty back to 1 once it has a tall gait to protect.
+        /// Cleared on SubsystemRegistration like every other static holding game state
+        /// here — Enter Play Mode domain reload is disabled in this project, so without
+        /// it the registry would carry a previous Play session's agents and report
+        /// mismatches against objects that no longer exist.
+        private static readonly System.Collections.Generic.Dictionary<string, (int size, string owner)>
+            _vectorSizeByBehavior = new System.Collections.Generic.Dictionary<string, (int, string)>();
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetVectorSizeRegistry() => _vectorSizeByBehavior.Clear();
+
+        /// ONE behavior name is ONE policy, so every agent carrying that name must
+        /// build the SAME observation vector. Nothing enforced that, and the flags
+        /// come from three places that can disagree — the character sheet, the
+        /// serialized scene values it overwrites, and the per-agent Inspector.
         ///
-        /// Note this only softens the explicit penalty. A fall still ENDS the episode
-        /// and still forfeits the +3, so falling is never free even at 0 — which is
-        /// deliberate: an agent that could fall for nothing would simply stop walking.
-        private float _walkFallPenalty = 1f;
+        /// This is not hypothetical. `Bot_Character.asset` ships `staminaObservation: 1`
+        /// while all four trained fighters ship `0`; put a second character on that
+        /// behavior name and one agent feeds 47 slots where the other feeds 46. The
+        /// failure mode is not an exception — ML-Agents pads or truncates and the
+        /// policy simply receives garbage in the slots after the disagreement, which
+        /// is indistinguishable from a fighter that trained badly.
+        ///
+        /// ML-Agents' own SentisModelParamLoader already catches a mismatch between an
+        /// assigned .onnx and the vector, so this deliberately checks the other axis:
+        /// agent-against-agent, which nothing else looks at, and which is live during
+        /// training when there is no .onnx to check against at all.
+        private void AssertVectorSizeMatchesBehavior(int vectorSize)
+        {
+            if (string.IsNullOrEmpty(behaviorName)) return;
+
+            if (_vectorSizeByBehavior.TryGetValue(behaviorName, out var first))
+            {
+                if (first.size != vectorSize)
+                {
+                    Debug.LogError(
+                        $"[OBS] Behavior '{behaviorName}' is building TWO different observation " +
+                        $"vectors: '{first.owner}' feeds {first.size} slots and '{name}' feeds " +
+                        $"{vectorSize}. One behavior name is one policy, so one of them is " +
+                        $"receiving garbage. Flags on '{name}': extended={extendedObservations} " +
+                        $"contact={contactObservations} stamina={staminaObservation} " +
+                        $"(character='{(character != null ? character.name : "none")}').", this);
+                }
+                return;
+            }
+
+            _vectorSizeByBehavior[behaviorName] = (vectorSize, name);
+            AssertModelMatchesVector(vectorSize);
+            Systems_Log.Info(
+                $"[OBS] {behaviorName}: {vectorSize} slots " +
+                $"(base {ObservationCount}{(contactObservations ? " +4 contact" : "")}" +
+                $"{(staminaObservation ? " +1 stamina" : "")}" +
+                $"{(extendedObservations ? " +3 extended" : "")}), " +
+                $"{ActionCount} actions, decision period {decisionPeriod}.");
+        }
+
+        /// Input width of each `.onnx` seen this session, so the model is loaded once
+        /// per asset rather than once per agent — a training scene is 10 agents sharing
+        /// one model.
+        private static readonly System.Collections.Generic.Dictionary<Unity.InferenceEngine.ModelAsset, int>
+            _modelInputSize = new System.Collections.Generic.Dictionary<Unity.InferenceEngine.ModelAsset, int>();
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetModelSizeCache() => _modelInputSize.Clear();
+
+        /// A STALE BRAIN IS SILENT, AND THAT IS THE WHOLE REASON THIS EXISTS.
+        ///
+        /// Feed a 51-slot vector to a model trained on 45 and nothing throws, nothing is
+        /// logged, and the console stays clean. ML-Agents rejects the model and the
+        /// policy falls back to `Heuristic`, which for a fighter that is not the BOT is
+        /// "write 0 to all 13 motors" — so the failure renders as two ragdolls standing
+        /// limp at the stand-off while the round never starts. Measured exactly that way
+        /// on 2026-09-05 after the vector went 45 -> 51: `MatchTestHarness.Run(2)` ran
+        /// for four minutes without completing a single round, max |action| 0.000 on
+        /// both fighters, and ZERO console entries of any severity.
+        ///
+        /// That is indistinguishable from a physics bug, a referee bug, or a brain that
+        /// simply trained badly, and it is the single most expensive way to lose an
+        /// afternoon in this project. So it is an explicit Error naming both numbers.
+        ///
+        /// Deliberately NOT stripped from release builds: a shipped APK carrying a stale
+        /// `.onnx` has exactly this symptom, and a player-facing "the fighters do not
+        /// move" bug is worth one log line.
+        private void AssertModelMatchesVector(int vectorSize)
+        {
+            if (inferenceModel == null) return;
+
+            if (!_modelInputSize.TryGetValue(inferenceModel, out int modelSize))
+            {
+                modelSize = -1;
+                try
+                {
+                    var loaded = Unity.InferenceEngine.ModelLoader.Load(inferenceModel);
+                    if (loaded != null && loaded.inputs != null && loaded.inputs.Count > 0)
+                    {
+                        var shape = loaded.inputs[0].shape;
+                        // ML-Agents' vector input is (batch, size) — e.g. "(d0, 45)", the
+                        // leading axis dynamic. Read the TRAILING dimension rather than
+                        // assuming index 1, and go through Get(): DynamicTensorShape has
+                        // no indexer. A dynamic axis reports a non-positive value, which
+                        // is why the comparison below requires modelSize > 0.
+                        if (!shape.isRankDynamic && shape.rank > 0)
+                        {
+                            modelSize = shape.Get(shape.rank - 1);
+                        }
+                    }
+                }
+                catch (System.Exception e)
+                {
+                    // A model that cannot even be inspected is ML-Agents' problem to
+                    // report, not ours; do not turn a diagnostic into a second failure.
+                    Debug.LogWarning($"[OBS] could not inspect '{inferenceModel.name}' " +
+                                     $"to verify its input size: {e.GetType().Name}.");
+                }
+                _modelInputSize[inferenceModel] = modelSize;
+            }
+
+            if (modelSize > 0 && modelSize != vectorSize)
+            {
+                Debug.LogError(
+                    $"[OBS] STALE BRAIN: '{inferenceModel.name}' takes {modelSize} inputs " +
+                    $"but '{behaviorName}' now builds {vectorSize}. This fighter will NOT " +
+                    $"move — ML-Agents rejects the model and falls back to a limp heuristic, " +
+                    $"silently. Retrain against the current vector " +
+                    $"(Training/configs/{behaviorName}Rebuild01.yaml) and redeploy, or put " +
+                    $"back the observation flags the model was trained with.", this);
+            }
+        }
+
+        /// Cost of falling in Mode.Walk, as a POSITIVE magnitude.
+        ///
+        /// A CONSTANT again, and it must stay one. It was briefly a curriculum dial
+        /// (`walk_fall_penalty`, ramped 0.05 -> 1.0 over 16M steps in the `gait01`
+        /// runs) on the reasoning that the tall-vs-crawl shaping advantage of 0.0063
+        /// per step cannot cross a ~-4 fall, so the gap had to be closed from the
+        /// penalty side instead.
+        ///
+        /// MEASURED, AND IT MADE THE GAIT DRAMATICALLY WORSE: torso height fell to
+        /// 0.16-0.20 m against the 0.55-0.76 m it was trying to raise, on a 1.06 m
+        /// standing pose. The fighters stopped crawling and started dragging flat.
+        /// The reason is worth keeping, because it is not obvious: cheap falls do not
+        /// buy exploration, because A BODY ALREADY ON THE GROUND CANNOT FALL. Once the
+        /// policy found the floor the terminal simply stopped firing, so there was no
+        /// gradient left pointing up, and ramping the penalty back to 1.0 over the
+        /// final 4M steps did not recover it.
+        ///
+        /// So the dial is removed rather than defaulted, because leaving it wired
+        /// invites a seventh attempt at a lever that has been measured backwards.
+        /// Both remaining routes are structural, not reward-shaped: a torso-height
+        /// constraint the policy cannot opt out of, or a walk-only trunk that does not
+        /// share capacity with self-play sumo.
+        private const float WALK_FALL_PENALTY = 1f;
 
         public override void OnEpisodeBegin()
         {
-            // Read per episode, not per step: this is a lesson dial, and re-reading it
-            // mid-episode would change the terms of an episode already under way.
-            if (Academy.IsInitialized)
-            {
-                _walkFallPenalty = Mathf.Max(0f,
-                    Academy.Instance.EnvironmentParameters.GetWithDefault("walk_fall_penalty", 1f));
-            }
-
             _b.ResetPose();
             if (_contactSensors == null) _contactSensors = GetComponentsInChildren<Sensor_BodyPartContact>();
             for (int sensorIndex = 0; sensorIndex < _contactSensors.Length; sensorIndex++)
@@ -385,9 +538,51 @@ namespace PoSumo
             sensor.AddObservation(San((ov.x - tv.x) * Fs / 5f));                  // 1
             sensor.AddObservation(San((ov.y - tv.y) / 5f));                       // 1
 
-            float xLocal = (tp.x - arenaCenterX) * Fs;                            // 2
-            sensor.AddObservation(San((ringHalfWidth - xLocal) / ringHalfWidth)); // dist to edge ahead
-            sensor.AddObservation(San((ringHalfWidth + xLocal) / ringHalfWidth)); // dist to edge behind
+            // THE MAT, AS IT IS RIGHT NOW — three slots.                         // 3
+            //
+            // `ringHalfWidth` is now written by both referees EVERY physics step, so
+            // it tracks the contraction and the per-round randomisation. It used to
+            // be written once at Start and never again, which made these slots lie in
+            // two separate ways at once:
+            //
+            //   1. THE SHRINK. The mat closes from 3.5 m to 1.8 m and on past it
+            //      toward zero (Systems_*MatchManager.TickShrinkingRing). Measured in
+            //      a bracket: 17 of 17 rounds ended in a ring-out and 16 of them ran
+            //      past shrinkStartSeconds, so the closing mat decides essentially
+            //      every round — and the policy could not see it happening. A fighter
+            //      believed it had 3.5 m of mat while standing on 0.2 m.
+            //   2. THE CURRICULUM. ResetRound randomises the round's start width
+            //      anywhere in 1.7..3.5 m, and the `platform_difficulty` lesson exists
+            //      to "teach edge distance across SCALES". Dividing by a constant
+            //      3.5 made every mat read identically, so that lesson was a no-op
+            //      for the policy's entire history.
+            //
+            // Scaled by RING_REFERENCE_HALF rather than by the live width: dividing by
+            // the live width would give the FRACTION of the mat remaining, which is 1.0
+            // at the centre of a 3.5 m mat and 1.0 at the centre of a 0.2 m sliver.
+            // Metres are what the fighter has to act on.
+            float xLocal = (tp.x - arenaCenterX) * Fs;
+            if (fighting)
+            {
+                sensor.AddObservation(San((ringHalfWidth - xLocal) / RING_REFERENCE_HALF)); // edge ahead
+                sensor.AddObservation(San((ringHalfWidth + xLocal) / RING_REFERENCE_HALF)); // edge behind
+                // How much mat exists at all. Without this the two slots above are
+                // ambiguous: "1.0 ahead, 1.0 behind" is a full mat and also a fighter
+                // dead-centre on a mat half that size, and only one of those is safe.
+                sensor.AddObservation(San(ringHalfWidth / RING_REFERENCE_HALF));
+            }
+            else
+            {
+                // Walk lane and the ceremonial walk-in have no rim. The scenes
+                // serialise ringHalfWidth: 10 on the six walk agents — a mat that does
+                // not exist — and those slots then carried a large constant plus a
+                // duplicate of the target distance the opponent block already gives.
+                // Neutral constants instead, matching how the extended block below
+                // already handles having no opponent.
+                sensor.AddObservation(1f);
+                sensor.AddObservation(1f);
+                sensor.AddObservation(1f);
+            }
 
             if (contactObservations)                                              // +4
             {
@@ -503,7 +698,7 @@ namespace PoSumo
                 // this step's shaping outright — a fall is worth exactly -1 no matter
                 // what was earned on the way down — so the order of these two lines
                 // against the Evaluate above is load-bearing.
-                if (IsDown) { SetReward(-_walkFallPenalty); EndEpisode(); return; }
+                if (IsDown) { SetReward(-WALK_FALL_PENALTY); EndEpisode(); return; }
                 if (xLocal > -0.3f) { AddReward(3f); EndEpisode(); }
             }
             else // Sumo

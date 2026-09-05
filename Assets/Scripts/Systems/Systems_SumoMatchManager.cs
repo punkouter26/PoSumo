@@ -194,6 +194,38 @@ namespace PoSumo
             }
         }
 
+        /// Hands both fighters the half-width of the mat they are ACTUALLY standing on.
+        ///
+        /// `Agent_Biped.ringHalfWidth` feeds the three mat observations, and it used to
+        /// be written exactly once, in Start, to the configured 3.5. Everything that
+        /// moved the real mat after that — the per-round randomisation in ResetRound
+        /// (1.7..3.5) and the contraction in TickShrinkingRing (3.5 -> 1.8 and on
+        /// toward zero) — moved the platform collider and left the agents' copy alone.
+        ///
+        /// Two independent consequences, and both are the same class of defect as the
+        /// world-absolute observation 0 that this project already paid five failed
+        /// retrains for:
+        ///
+        ///   The policy could not perceive the shrink, which decides the fight. A
+        ///   measured bracket ended 17 of 17 rounds by ring-out with 16 of them past
+        ///   shrinkStartSeconds, so a fighter was choosing its footing against 3.5 m
+        ///   of mat while standing on a fraction of it.
+        ///
+        ///   The `platform_difficulty` curriculum was inert. Its stated purpose is to
+        ///   teach edge distance "across SCALES instead of letting the policy memorise
+        ///   one mat width", and the one thing it varies is the number the observation
+        ///   was NOT reading.
+        ///
+        /// Called from both places that move the mat, so there is no path that resizes
+        /// the platform without telling the fighters. `Systems_GameMatchManager` does
+        /// the same thing through its own TickShrinkingRing — a losing condition has to
+        /// look identical in both referees, and the mat edge is now the only one.
+        private void PublishRingHalfWidth(float halfWidth)
+        {
+            if (wrestlerA != null) wrestlerA.ringHalfWidth = halfWidth;
+            if (wrestlerB != null) wrestlerB.ringHalfWidth = halfWidth;
+        }
+
         /// Closes the mat in as the round clock runs down, mirroring
         /// Systems_GameMatchManager.TickShrinkingRing so a policy trains against the
         /// arena it will actually fight on.
@@ -223,6 +255,7 @@ namespace PoSumo
             // scene that holds several.
             if (Mathf.Abs(target - _appliedHalf) < 0.01f) return;
             _appliedHalf = target;
+            PublishRingHalfWidth(target);
             arena.SetPlatformHalfWidth(target);
             // The slick rim travels with the edge, or the bales stay out at the
             // original radius and the contracted mat has full grip up to a cliff.
@@ -317,6 +350,10 @@ namespace PoSumo
             // Left stale, a round following a fully-shrunk one sees its target as
             // already applied and the mat never re-opens.
             _appliedHalf = _startHalf;
+            // The agents have to be told the round opened on a different mat, or the
+            // randomisation above is invisible to them and `platform_difficulty`
+            // teaches nothing. See PublishRingHalfWidth.
+            PublishRingHalfWidth(_startHalf);
         }
     }
 }
