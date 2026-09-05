@@ -80,6 +80,10 @@ namespace PoSumo
 
         private Transform _arena;
         private Camera _camera;
+
+        /// Seconds between Camera.main probes while no main camera exists. See LateUpdate.
+        private const float CAMERA_PROBE_INTERVAL = 0.5f;
+        private float _nextCameraProbe;
         private float _arenaCenterX;
         private static Sprite _shaftSprite;
 
@@ -178,8 +182,17 @@ namespace PoSumo
 
         private void LateUpdate()
         {
+            // Camera.main is a tagged-object search, so a stretch with no main
+            // camera (scene load, camera disabled) would otherwise pay for one
+            // every rendered frame until one appears. Probe on an interval
+            // instead; the parallax simply holds its last offset until then.
             if (_camera == null)
             {
+                if (Time.unscaledTime < _nextCameraProbe)
+                {
+                    return;
+                }
+                _nextCameraProbe = Time.unscaledTime + CAMERA_PROBE_INTERVAL;
                 _camera = Camera.main;
                 if (_camera == null)
                 {

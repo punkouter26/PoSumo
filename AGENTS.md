@@ -8,6 +8,12 @@ Read `CLAUDE.md` for what this project *is*; read this file for how motion must 
 built, rewarded and judged. Where the two disagree, `CLAUDE.md` wins. Where either
 disagrees with the code, **the code wins**.
 
+Process and convention rules — master-only branching, reading `DOCS/` for the project
+overview, TensorBoard-with-every-run, pruning obsolete behaviours from the logdir before a
+launch, the RED-heuristic-bot / GREEN-reference-RL colour convention, the
+coded-bot + reference-bot + custom-bots cast, and the TL;DR-on-long-answers rule — live in
+**`CLAUDE.md` → *Standing working agreements***. They apply here too.
+
 ---
 
 ## 0. Read this before writing a joint

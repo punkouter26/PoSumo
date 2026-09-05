@@ -171,6 +171,22 @@ namespace PoSumo
         private void OnRoundStarted()
         {
             ShowDetail(false);
+            ResolveBodies();
+        }
+
+        /// Caches the two `Agent_BipedBody`s off the manager's current wrestlers.
+        ///
+        /// Called on every RoundStarted rather than lazily from FixedUpdate, so the
+        /// 50 Hz sampling path carries no GetComponent at all once a round is live.
+        /// FixedUpdate still re-resolves if either cache is null — the first physics
+        /// step can land before the first RoundStarted, and a destroyed body reads
+        /// as null through Unity's == override after a scene load.
+        private void ResolveBodies()
+        {
+            Agent_Biped a = manager != null ? manager.wrestlerA : null;
+            Agent_Biped b = manager != null ? manager.wrestlerB : null;
+            _bodyA = a != null ? a.GetComponent<Agent_BipedBody>() : null;
+            _bodyB = b != null ? b.GetComponent<Agent_BipedBody>() : null;
         }
 
         /// The aggregate table is a between-rounds read, so this is exactly when
@@ -419,8 +435,11 @@ namespace PoSumo
             var a = manager != null ? manager.wrestlerA : null;
             var b = manager != null ? manager.wrestlerB : null;
             if (a == null || b == null) return;
-            if (_bodyA == null) _bodyA = a.GetComponent<Agent_BipedBody>();
-            if (_bodyB == null) _bodyB = b.GetComponent<Agent_BipedBody>();
+            if (_bodyA == null || _bodyB == null)
+            {
+                ResolveBodies();
+                if (_bodyA == null || _bodyB == null) return;
+            }
 
             Vector2 velA = a.Torso.linearVelocity, velB = b.Torso.linearVelocity;
 

@@ -275,6 +275,11 @@ namespace PoSumo
         // and resets Parts[]. A neck wired in halfway leaves the head still
         // simulating after the match-end freeze. It needs its own pass.
 
+        /// Head draw order. Must stay ABOVE the largest `sorting` in PART_DEFS
+        /// (currently 3, the near arms) or the face is occluded mid-fight — see
+        /// the note at the head's SpriteRenderer in Build().
+        private const int HEAD_SORTING = 4;
+
         private struct PartDef
         {
             public string name; public float w, h, mass, x, y;
@@ -698,7 +703,22 @@ namespace PoSumo
                     head.transform.SetParent(go.transform, false);
                     head.transform.localPosition = new Vector3(0f, 0.25f / d.h, 0f);
                     var hsr = head.AddComponent<SpriteRenderer>();
-                    hsr.sortingOrder = 1;
+                    // ABOVE EVERY PART, and that is the whole point. This was 1
+                    // for the life of the project, while PART_DEFS gives the near
+                    // arms sorting 3 and the near leg 2 — so the face was drawn
+                    // UNDER six renderers per fighter, on BOTH fighters, since the
+                    // two share one sorting layer and one set of order values. In a
+                    // clinch the arms live at head height, so the head vanished
+                    // behind an arm or a thigh at unpredictable moments and came
+                    // back when the grip changed. Reported as "the head texture
+                    // sometimes goes invisible in a fight"; measured 2026-09-05.
+                    //
+                    // The face is the one thing a viewer tracks and the only part
+                    // carrying a fighter's identity, so it wins every overlap.
+                    // Head damage decals ride host.sortingOrder + 1, so they follow
+                    // it up automatically. Nothing else on a fighter sits between 4
+                    // and the atmosphere's foreground haze at 20.
+                    hsr.sortingOrder = HEAD_SORTING;
                     // UNLIT, unlike every other part. The head carries a photograph
                     // of a face; the rest of the body is flat tinted primitives that
                     // need the rig to read as a body at all. Lighting a correctly

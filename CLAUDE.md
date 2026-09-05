@@ -2,6 +2,48 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Standing working agreements
+
+User-set rules for how work happens in this repo. They govern process and convention;
+where they touch code, the code is still the ground truth for what currently *is*.
+
+- **`master` only.** All work lands on `master`. Do not create, switch to, or push another
+  branch unless explicitly asked for one.
+- **Read `DOCS/` first for the overview.** The repo root carries a `DOCS/` folder —
+  `index.html` (documentation index), `onnx_summary.md` (canonical brain + rig inventory,
+  Matrix A models / Matrix B rigs), `creatures_dashboard.html`, `scenes.html`, and
+  `diagrams/*.mmd`. Skim it before planning work. It is generated prose with a "last
+  revised" date: where it disagrees with this file the newer wins, where it disagrees with
+  the code the code wins.
+- **TensorBoard always starts with training**, so progress is watchable live. This is
+  already a hard rule with a blocking hook — see `.claude/rules/training.md` and the three
+  wrappers under *Training workflow*. Never hand-invoke `mlagents-learn.exe` without it.
+- **Prune obsolete behaviours before launching a run.** `Training/results/` *is* the
+  TensorBoard logdir, so a stale or superseded run is clutter in the only graph a fight run
+  can be judged by. Check it before every launch and delete what no longer backs a brain or
+  a warm-start trunk (`Training\Stop-Training.ps1 -Prune` clears event-less dirs).
+- **Colour is identity, not decoration:**
+
+  | Fighter kind | Colour |
+  |---|---|
+  | Heuristic hand-coded bot (`useBot: 1`, driven by `Agent_Bot`) | **RED** |
+  | The standard / reference RL brain, before any creature variation | **GREEN** |
+  | Custom RL variations | custom texture, supplied by the user |
+
+- **Every RL app in this family carries the same cast:** one heuristic coded bot, one
+  reference RL bot, and 0..n custom bots — the custom ones usually with custom textures and
+  custom skinned meshes.
+- **TL;DR every long answer.** Any reply longer than ~100 words ends with a ~20-word
+  `TL;DR:` line.
+
+> **Bot is now red; Matt still collides with it (2026-09-05).** `Bot_Character.asset`
+> `teamColor` was blue `(0.16, 0.45, 1)` and is now red `(0.85, 0.16, 0.14)`, satisfying the
+> rule. `Standard_Character.asset` is green `(0.2, 0.5, 0.3)` and was already correct. But
+> **`Matt_Character.asset` is `(0.85, 0.25, 0.2)`** — a red within a rounding error of the
+> bot's, so a Bot-v-Matt bout renders two near-identical fighters. Matt is an RL variation,
+> and variation appearance is the user's to choose, so it was left alone rather than
+> guessed at. Re-tint him before that bracket matters.
+
 ## What this is
 
 PoSumo: a Unity 6000.5.4f1 (2D URP) game where physics-ragdoll bipeds learn sumo
@@ -1301,6 +1343,40 @@ After any change to the walk lane, assert every walker spawns at `xLocal < -0.3`
 - Face sprites are resolved by the names on the character asset. Matt is the one exception:
   his asset leaves those fields empty and `Systems_FaceMood` falls back to its `Matt_*`
   constants — rename his PNGs and those constants together.
+
+> **Any tool that resolves asset GUIDs must ALSO scan `Training/ml-agents/`, or it will
+> report every ML-Agents component in every scene as a broken script** (measured
+> 2026-09-05). `com.unity.ml-agents` is referenced as
+> `file:../Training/ml-agents/com.unity.ml-agents`, and a `file:` package is used **in
+> place** — it is never copied into `Library/PackageCache/` and it does not live under
+> `Packages/`. A reference audit that walks only those two directories finds no `.meta` for
+> `5d1c4e0b1822b495aa52bc52839ecb30` (`BehaviorParameters`) and flags it as missing in six
+> scenes. Two other GUIDs look broken and never are: `0000000000000000e000000000000000` and
+> `0000000000000000f000000000000000` are Unity's built-in resources, which have no `.meta`
+> by design.
+>
+> The genuine broken-script signature is `m_Script: {fileID: 0}`, not an unresolved GUID.
+> There are currently **zero** of those in the project.
+
+> **The head sprite sorts at 4, ABOVE every body part, and it must stay there.**
+> `PART_DEFS` gives the near arms `sorting` 3 and the near leg 2, while the head's
+> `SpriteRenderer` sat at **1** for the life of the project — and both fighters share one
+> sorting layer and one set of order values, so the face was drawn under six renderers per
+> fighter on both bodies. In a clinch the arms are at head height, so the head disappeared
+> behind an arm or a thigh and came back when the grip changed. Reported as "the head
+> texture sometimes goes invisible in a fight"; found and fixed 2026-09-05
+> (`Agent_BipedBody.HEAD_SORTING`). Head damage decals ride `host.sortingOrder + 1` and
+> follow it up automatically; nothing else on a fighter sits between 4 and the atmosphere's
+> foreground haze at 20. Raise a part's `sorting` past 3 and this constant has to move too.
+
+- **Atlas source textures are UNCOMPRESSED, deliberately.** Every PNG packed by
+  `Resources/Atlases/FaceAtlas` (the whole `Assets/Art/Faces` folder, 21 files) and by
+  `Art/Atlases/ArenaAtlas` (`Box`, `Circle`, `SpotCone`, `WallGradient`) carries
+  `textureCompression: 0`. Packing a *compressed* source into an atlas throws away pixel
+  detail before the atlas is built, and the Editor says so once per sprite on every import.
+  Set to Uncompressed on 2026-09-05 after 6 such warnings; the atlas's own output
+  compression is a separate setting and is unaffected. `Grid_Deluxe` and `Noise_Clay` are
+  not packables and stay compressed.
 
 ## Training workflow
 
