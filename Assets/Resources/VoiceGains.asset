@@ -14,6 +14,21 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Systems_VoiceGains
   _targetRmsDb: -35.88464
   _clipNames:
+  - Bot_Happy_1
+  - Bot_Happy_2
+  - Bot_Happy_3
+  - Bot_Happy_4
+  - Bot_Happy_5
+  - Bot_Insult_1
+  - Bot_Insult_2
+  - Bot_Insult_3
+  - Bot_Insult_4
+  - Bot_Insult_5
+  - Bot_Sad_1
+  - Bot_Sad_2
+  - Bot_Sad_3
+  - Bot_Sad_4
+  - Bot_Sad_5
   - Kim_Happy_1
   - Kim_Happy_2
   - Kim_Happy_3
@@ -75,6 +90,21 @@ MonoBehaviour:
   - Standard_Sad_4
   - Standard_Sad_5
   _gains:
+  - 0.20248862
+  - 0.19274007
+  - 0.16844451
+  - 0.19359063
+  - 0.16894676
+  - 0.18514496
+  - 0.17494716
+  - 0.15324847
+  - 0.14804022
+  - 0.118369006
+  - 0.20441014
+  - 0.1868621
+  - 0.17602974
+  - 0.15840589
+  - 0.1564266
   - 0.16966517
   - 0.09134933
   - 0.09012424

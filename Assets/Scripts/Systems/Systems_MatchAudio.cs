@@ -34,14 +34,24 @@ namespace PoSumo
         public float thudMinSpeed = 1.2f;
         [Tooltip("Relative velocity treated as a maximum-strength hit.")]
         public float thudFullSpeed = 6.5f;
-        public float scuffMinSpeed = 0.5f;
+        // RAISED 0.5 -> 1.2 (2026-09-06). Scuff is filtered WHITE NOISE, and at
+        // 0.5 m/s it fired on essentially every foot contact — the single most
+        // constant sound in a bout was hiss. It now takes a real slide.
+        public float scuffMinSpeed = 1.2f;
         public float scuffMaxSpeed = 3.5f;
 
         [Header("Voices")]
         [Tooltip("Impact speed above which the fighter taking the hit grunts.")]
-        public float gruntThreshold = 3.4f;
+        // 3.4 -> 2.2 (2026-09-06). Grunts are the only VOICED impact layer — a
+        // real vocal fold model, not noise — and at 3.4 m/s they fired only on
+        // the hardest slams while the noise layers ran constantly. Measured
+        // impact speeds in a live bout run 3.9-8.8 m/s at the top end, so 2.2
+        // also catches the clinch work, which is most of what a bout IS.
+        public float gruntThreshold = 2.2f;
         [Tooltip("Seconds between breaths while a round is live.")]
-        public float breathInterval = 2.6f;
+        // 2.6 -> 4.5 (2026-09-06). Breath is filtered white noise too, and on a
+        // 2.6 s timer it laid a near-continuous hiss under the fight.
+        public float breathInterval = 4.5f;
         [Tooltip("Distance between wrestlers that counts as locked up.")]
         public float lockUpDistance = 0.62f;
         public float lockUpSeconds = 1.1f;
@@ -391,7 +401,7 @@ namespace PoSumo
                     float next;
                     if (_nextScuffTime.TryGetValue(sensor.owner, out next) && now < next) return;
                     _nextScuffTime[sensor.owner] = now + 0.14f;
-                    PlayScuff(Mathf.Lerp(0.08f, 0.3f, speed / scuffMaxSpeed), pan);
+                    PlayScuff(Mathf.Lerp(0.04f, 0.15f, speed / scuffMaxSpeed), pan);
                     return;
                 }
                 // Body part slamming the ground: dusty and dull, no flesh slap.
@@ -457,10 +467,10 @@ namespace PoSumo
             {
                 return;
             }
-            _nextGruntTime = Time.unscaledTime + Random.Range(0.45f, 0.9f);
+            _nextGruntTime = Time.unscaledTime + Random.Range(0.28f, 0.6f);
             float strength = Mathf.InverseLerp(gruntThreshold, thudFullSpeed, speed);
             PlayFrom(_grunts, Random.Range(0, _grunts.Length),
-                     Mathf.Lerp(0.28f, 0.8f, strength),
+                     Mathf.Lerp(0.40f, 0.95f, strength),
                      // A harder hit knocks the pitch up: that is involuntary.
                      Random.Range(0.92f, 1.06f) + strength * 0.12f,
                      pan);
@@ -483,7 +493,7 @@ namespace PoSumo
                 if (fighter != null)
                 {
                     PlayFrom(_breaths, Random.Range(0, _breaths.Length),
-                             0.22f, Random.Range(0.9f, 1.1f), Pan(fighter.TorsoX));
+                             0.12f, Random.Range(0.9f, 1.1f), Pan(fighter.TorsoX));
                 }
             }
 
