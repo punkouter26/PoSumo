@@ -523,27 +523,30 @@ output layer.
   tooltips on `Agent_CharacterDefinition`) still says 44/45 — **the constant in
   `Agent_Biped` is the truth**. Obs count and decision period MUST match what the assigned
 
-> **THE FOUR SHIPPED `.onnx` ARE DEAD AGAINST TODAY'S CODE, measured 2026-09-05.** Every
-> training env logs this at startup, once per fighter:
+> **RESOLVED 2026-09-06 — all four fighters now run 51-slot brains. The warning this
+> block used to carry is history, kept because the FAILURE MODE is the thing worth
+> remembering.**
 >
->     [OBS] Matt: 51 slots (base 43 +4 contact +1 stamina +3 extended), 13 actions, decision period 3.
->     [OBS] STALE BRAIN: 'Matt' takes 45 inputs but 'Matt' now builds 51. This fighter will
->           NOT move — ML-Agents rejects the model and falls back to a limp heuristic, silently.
+> What it said: the vector went 44 → 45 → 51, every move invalidated every brain before
+> it, and the four shipped `.onnx` were never retrained — so ML-Agents rejected all four
+> models and fell back to a limp heuristic **silently**. A bracket still ran to
+> completion, nothing errored, and `Bot_v01` won. That is exactly why it survived so
+> long unnoticed.
 >
-> So the game currently ships four fighters that **cannot fight**: Matt, Standard, Nick and
-> Kim all fall back to a limp heuristic, and `Bot_v01` — the hand-coded `useBot: 1` entry
-> this file elsewhere calls the "rules-based baseline" — is the ONLY thing in the roster
-> that still moves under its own power. A bracket still runs to completion, which is
-> exactly why this is easy to miss: nothing errors, and the bot wins.
+> Repaired in two passes, both cold 15M-step self-play on the Rebuild01 generation:
 >
-> This is not a new class of bug, it is the documented one arriving: the vector went
-> 44 → 45 → 51 and "every one of those moves invalidated every brain that preceded it."
-> The `.onnx` files were never re-trained after the 51-slot move.
+>     f6d7d9b  Matt, Standard   2026-09-05
+>     e4a0c58  Nick, Kim        2026-09-06   ELO 2305.6 (+1206.7) / 1569.2 (+475.2)
 >
-> **Consequence for planning:** a Rebuild01 training run is not optional polish, it is the
-> repair that makes the game playable. And per the note further down, the shipped `.onnx`
-> are NOT reproducible from anything on disk — so the four committed files are a historical
-> artefact of a vector the code no longer builds, not a fallback to return to.
+> All four `.onnx` are now 2 241 352 bytes and share one vector and one physics.
+> Verified after deploy: zero console errors in a live bout, and
+> `BRACKET HARNESS RESULT: PASS — champion Standard over 7 matches in 601s`.
+>
+> **The lesson generalises and the guard now exists.** `Agent_Biped` logs
+> `[OBS] <name>: N slots ...` per behaviour and raises an explicit `STALE BRAIN` error
+> naming the config to retrain from. Trust that line over any prose here — including
+> this paragraph. If you change the vector again, every brain dies again, and the only
+> tell is that error plus fighters who stand still.
   `.onnx` was trained with, or inference is silently garbage.
 - **The three mat slots are scaled by a CONSTANT `RING_REFERENCE_HALF` (3.5), not by
   the live width**, so they carry metres rather than a fraction — "1.2 m of mat ahead"
