@@ -179,12 +179,40 @@ namespace PoSumo
 
         private static Font FromOs(string[] families)
         {
-            // Runs on Android too. `GetOSInstalledFontNames` is supported there
-            // and the platform genuinely exposes Roboto and Noto, so refusing to
-            // look would ship the default theme font on the one platform this
-            // game actually targets. It stays a FALLBACK — the Resources path is
-            // checked first and is the only one under our control, because what a
-            // device has installed is not guaranteed by anything.
+            // NOT ON ANDROID — MEASURED ON A PIXEL 9 PRO, 2026-09-06.
+            //
+            // This used to run on Android deliberately, and the reasoning was
+            // written down right here: the platform really does expose Roboto and
+            // Noto, so refusing to look "would ship the default theme font on the
+            // one platform this game actually targets". That argument is sound and
+            // the conclusion is still wrong, because it was never checked on a
+            // phone. It has been now, and the result is not a subtle regression:
+            // EVERY label in the game rendered as scattered glyphs at wildly wrong
+            // sizes and positions — the bracket was completely unreadable.
+            //
+            // The cause is the object TYPE, not the family. `CreateDynamicFontFromOSFont`
+            // returns a LEGACY `Font`, whose glyph atlas is managed by the old font
+            // system; UI Toolkit in Unity 6 wants a `FontAsset` and its handling of
+            // a legacy dynamic font's atlas rebuild is broken on device. In the
+            // Editor the same call resolves Bahnschrift/Segoe UI and looks correct,
+            // which is exactly why this shipped — the platform it was verified on
+            // is not the platform it targets.
+            //
+            // So the OS path stays for Editor and desktop, where it is verified and
+            // is the whole point of being able to judge the look before committing
+            // to a licence. On Android we write NO font and the runtime theme's
+            // default — a real `FontAsset` that Unity ships — renders correctly.
+            //
+            // The proper fix, if a licensed face is ever chosen, is a TextMeshPro
+            // `FontAsset` generated in the Editor and loaded through the Resources
+            // path, NOT a legacy `Font`. A `.ttf` dropped into `Resources/Fonts/`
+            // imports as a legacy `Font` too, so it carries this same risk — verify
+            // any such drop-in ON A DEVICE before believing a desktop capture.
+            if (Application.platform == RuntimePlatform.Android)
+            {
+                return null;
+            }
+
             string[] installed = Font.GetOSInstalledFontNames();
             if (installed == null || installed.Length == 0)
             {

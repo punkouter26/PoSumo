@@ -31,11 +31,33 @@ namespace PoSumo
     public static class Systems_UiKit
     {
         // ---- Type scale ----------------------------------------------------
-        // Seven steps on a ~1.27 ratio. Replaces the previous twenty ad-hoc sizes.
-        public const int FONT_MICRO = 14;   // footnotes, table footers
-        public const int FONT_SMALL = 17;   // stat captions, hints
-        public const int FONT_BODY = 21;    // stat values, fighter names
-        public const int FONT_LEAD = 27;    // clock, secondary card lines
+        // Seven steps. Replaces the previous twenty ad-hoc sizes.
+        //
+        // THE FLOOR WAS TOO LOW FOR A PHONE, and the arithmetic is worth keeping
+        // because it is not obvious from looking at the Editor Game view.
+        //
+        // The panel scales on WIDTH against a 720pt reference, so a point here is
+        // a fixed FRACTION of the screen's width and its physical size is roughly
+        // constant across devices — which is the good property, but it also means
+        // the Editor at 960pt wide flatters every size by a third. On a 1080px-wide
+        // phone one point resolves to 1.5 px; the old FONT_MICRO of 14 was
+        // therefore 21 px, and at a typical ~2.75 density that is about 7.6sp
+        // against Android's 12sp minimum for caption text. Roughly two thirds of
+        // legible. FONT_SMALL at 17 was no better placed.
+        //
+        // The floor is raised where the problem actually is and the top of the
+        // scale is left alone: HERO and MEGA were never hard to read, and moving
+        // them is pure overflow risk in the scorebug, the result card and the
+        // bracket chips. The ratio compresses upward as a result, which is the
+        // right shape for a handheld scale — a phone needs a high floor far more
+        // than it needs a dramatic range.
+        //
+        // Verified after the change with Tools/portrait_check.py at 1080x1920,
+        // 1080x2400 and 1200x1600; re-run it before moving any of these again.
+        public const int FONT_MICRO = 19;   // footnotes, table footers
+        public const int FONT_SMALL = 21;   // stat captions, hints
+        public const int FONT_BODY = 24;    // stat values, fighter names
+        public const int FONT_LEAD = 28;    // clock, secondary card lines
         public const int FONT_TITLE = 34;   // score digits, card titles
         public const int FONT_HERO = 46;    // result title, round banner
         public const int FONT_MEGA = 112;   // the countdown digit, and nothing else
@@ -426,6 +448,39 @@ namespace PoSumo
             bar.style.height = 18;
             bar.style.marginLeft = 2;
             bar.style.marginRight = 2;
+            bar.style.backgroundColor = TextHi;
+            bar.Round(2);
+            return bar;
+        }
+
+        /// The menu affordance, drawn as three stacked bars for exactly the reason
+        /// PauseButton draws two: the hamburger character is not in every system
+        /// font, this project ships no font asset of its own, and a glyph the
+        /// device's default font lacks renders as an empty box. Three drawn
+        /// rectangles render identically everywhere.
+        public static Button MenuButton(System.Action onClick)
+        {
+            var button = new Button(onClick);
+            StyleButton(button, Chip, TextHi, TOUCH_MIN, FONT_SMALL);
+            button.style.width = TOUCH_MIN;
+            button.style.marginLeft = 0;
+            button.style.marginRight = 0;
+            button.style.flexDirection = FlexDirection.Column;
+            button.style.alignItems = Align.Center;
+            button.style.justifyContent = Justify.Center;
+            button.Add(MenuBar());
+            button.Add(MenuBar());
+            button.Add(MenuBar());
+            return button;
+        }
+
+        private static VisualElement MenuBar()
+        {
+            var bar = new VisualElement().NoPick();
+            bar.style.width = 20;
+            bar.style.height = 3;
+            bar.style.marginTop = 2;
+            bar.style.marginBottom = 2;
             bar.style.backgroundColor = TextHi;
             bar.Round(2);
             return bar;

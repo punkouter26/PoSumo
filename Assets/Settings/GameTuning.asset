@@ -60,3 +60,5 @@ MonoBehaviour:
   enableFeelFx: 1
   enableRingSqueezeCue: 1
   enableFighterPanel: 1
+  enableScreenChrome: 1
+  enableAgentDebug: 1

@@ -106,6 +106,8 @@ namespace PoSumo
         private bool enableShockwave = true;
         private bool enableRingSqueezeCue = true;
         private bool enableFighterPanel = true;
+        private bool enableScreenChrome = true;
+        private bool enableAgentDebug = true;
         [Tooltip("Round-opening countdown length; physics and brains are held until it finishes.")]
         public int countdownSeconds = 3;
         [Tooltip("Half the gap between the fighters' neutral stand-off positions during the countdown.")]
@@ -394,6 +396,8 @@ namespace PoSumo
                 enableShockwave = tuning.enableShockwave;
                 enableRingSqueezeCue = tuning.enableRingSqueezeCue;
                 enableFighterPanel = tuning.enableFighterPanel;
+                enableScreenChrome = tuning.enableScreenChrome;
+                enableAgentDebug = tuning.enableAgentDebug;
             }
 
             // enableLighting decides whether there is a light rig at all, and the
@@ -939,13 +943,20 @@ namespace PoSumo
         /// `top:10 right:10` from a different file and a different UIDocument.
         private void BuildTopBar()
         {
-            // An on-screen pause affordance, in the slot that was being reserved
-            // for it anyway. Removing it left the hardware back key as the ONLY
-            // way to pause on Android with nothing on screen advertising that,
-            // while the slot it vacated went on costing 104pt of hardcoded width
-            // for nothing. The escapeKey binding in Update stays — this is a
-            // second door to the same room, not a replacement for it.
-            _hud.TopBarLeft.Add(Systems_UiKit.PauseButton(TogglePause));
+            // The on-screen pause affordance, ONLY when the chrome layer is not
+            // providing one.
+            //
+            // The enforced HUD layout puts the game's title top-left and the menu
+            // top-right, and that menu button is the pause control — so with chrome
+            // on, a pause chip here would be a second, redundant pause sitting
+            // underneath the title. With chrome OFF this slot is the only on-screen
+            // way to pause: removing it once already left the hardware back key as
+            // the sole route on Android with nothing advertising it, which is the
+            // regression this branch exists to prevent.
+            if (!enableScreenChrome)
+            {
+                _hud.TopBarLeft.Add(Systems_UiKit.PauseButton(TogglePause));
+            }
 
             // Which bout of the bracket this is. The bracket screen announces
             // "MATCH 3 of 7 — KIM v NICK", then the arena showed two names and a
@@ -1135,7 +1146,11 @@ namespace PoSumo
             _hud.AddModal(_pauseCard);
         }
 
-        private void TogglePause()
+        /// Public because the pause affordance moved out of this file: the chrome
+        /// layer's top-right menu button is what opens this now, and it is built by
+        /// Systems_ScreenChrome. The Escape binding in Update and the Android
+        /// hardware back key still call it too — three doors, one room.
+        public void TogglePause()
         {
             if (_phase == Phase.MatchOver) return;   // result card owns that moment
             _paused = !_paused;

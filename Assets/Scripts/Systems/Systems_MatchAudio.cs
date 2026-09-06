@@ -48,9 +48,27 @@ namespace PoSumo
         // impact speeds in a live bout run 3.9-8.8 m/s at the top end, so 2.2
         // also catches the clinch work, which is most of what a bout IS.
         public float gruntThreshold = 2.2f;
-        [Tooltip("Seconds between breaths while a round is live.")]
-        // 2.6 -> 4.5 (2026-09-06). Breath is filtered white noise too, and on a
-        // 2.6 s timer it laid a near-continuous hiss under the fight.
+        /// BREATHING IS OFF (2026-09-06, at the player's request).
+        ///
+        /// It was filtered white noise on a timer, and stretching the timer was
+        /// tried first and did not fix it: 2.6 -> 4.5 s the same day, on the
+        /// reasoning that a 2.6 s cadence "laid a near-continuous hiss under the
+        /// fight". At 4.5 s it was the same hiss less often — the problem was the
+        /// LAYER, not its rate. Every impact layer in this bank is already noise
+        /// (thuds, scuffs, dust), so breath added texture that was
+        /// indistinguishable from them while never lining up with anything on
+        /// screen. The grunts stay: those are a voiced vocal-fold model and they
+        /// fire ON an impact, so they read as a fighter rather than as air.
+        ///
+        /// A private const rather than deleting the code or clearing the field,
+        /// which is the same trick `Systems_SoftBodyJiggle.ENABLE_JIGGLE` uses and
+        /// for the same reason: `breathInterval` is PUBLIC and therefore serialized
+        /// into every scene that holds this component, so a code default cannot
+        /// turn it off on its own — the stale scene values would win. Gating the
+        /// playback makes all of them inert.
+        private const bool ENABLE_BREATHING = false;
+
+        [Tooltip("Seconds between breaths while a round is live. INERT — breathing is off, see ENABLE_BREATHING.")]
         public float breathInterval = 4.5f;
         [Tooltip("Distance between wrestlers that counts as locked up.")]
         public float lockUpDistance = 0.62f;
@@ -484,8 +502,9 @@ namespace PoSumo
             }
             float now = Time.time;
 
-            // Breathing, alternating between the two fighters.
-            if (_breaths.Length > 0 && now >= _nextBreathTime)
+            // Breathing, alternating between the two fighters. OFF — see
+            // ENABLE_BREATHING above for why the layer went rather than its rate.
+            if (ENABLE_BREATHING && _breaths.Length > 0 && now >= _nextBreathTime)
             {
                 bool useA = Random.value < 0.5f;
                 Agent_Biped fighter = useA ? _wrestlerA : _wrestlerB;

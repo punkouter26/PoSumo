@@ -167,5 +167,11 @@ namespace PoSumo
 
         [Tooltip("The tale of the tape in the empty band between the dohyo and the dock. Per fighter: elo and banzuke rank, match record and win streak, weight and build, a live stamina bar and six damage pips; between them a push tug-of-war in newtons, and above them the head-to-head and what is at stake. Read-only with respect to the fight: it decides nothing, is not mirrored into Systems_SumoMatchManager, and touches no observation, mass or collider, so no brain is affected. Numbers refresh on round boundaries only; just the bars and pips move during a bout, because the six-row aggregate table that used to sit in the dock was cut for being unreadable mid-bout.")]
         public bool enableFighterPanel = true;
+
+        [Tooltip("The five fixed screen corners: game title (top-left), frame rate (top-centre), menu (top-right), the DBG button (bottom-left) and the build version (bottom-right). Drawn absolutely on the HUD's Overlay layer, so it competes with no band and pushes nothing around. Presentation only — it reads outcomes and changes nothing a referee sees.\n\nThe menu button is the pause affordance; with chrome off, pause is the hardware back key and the Escape binding only.")]
+        public bool enableScreenChrome = true;
+
+        [Tooltip("The agent telemetry panel behind the DBG button: which brain is driving each fighter and the shape of the vector it was trained against, one plain-language verdict per fighter, and 30-second graphs of stamina, mat remaining and effort.\n\nUnlike enablePerfHud this is NOT gated on a development build, and that is deliberate: the perf overlay answers a question about the BUILD and is a development aid, while this answers a question about the FIGHTERS and is worth having on the phone. It is read-only with respect to the fight and touches no observation, mass or collider, so no brain is affected.")]
+        public bool enableAgentDebug = true;
     }
 }

@@ -79,6 +79,12 @@ namespace PoSumo.EditorTools
             PlayerSettings.companyName = "Punkouter Software";
             PlayerSettings.productName = "PoSumo";
 
+            // --- Mobile player settings ----------------------------------------
+            // Applied from code on every build so a Play bundle can never ship with
+            // a stripping level or texture format someone changed in the Inspector
+            // and forgot. Logs "ANDROID SETTINGS RESULT:" with what it applied.
+            AndroidBuildSettings.Apply();
+
             // --- Signing -------------------------------------------------------
             PlayerSettings.Android.useCustomKeystore = true;
             PlayerSettings.Android.keystoreName = KEYSTORE_PATH;

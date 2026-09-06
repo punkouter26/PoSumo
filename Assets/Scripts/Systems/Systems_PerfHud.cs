@@ -232,20 +232,32 @@ namespace PoSumo
 
             hud.Stage.Add(_panel);
 
-            // The DBG toggle: lower-left of the stage, just above the dock. The
-            // stage itself is NoPick, which excludes only the stage element — a
-            // child button still receives its own taps.
-            // True lower-left screen corner: on the HudRoot overlay layer, which
-            // sits above the dock. (It was on the stage before, i.e. above the dock
-            // strip rather than in the corner.)
-            _toggle = Systems_UiKit.ChipButton("DBG", Toggle, Systems_UiKit.TOUCH_MIN);
-            _toggle.name = "DebugToggle";
-            _toggle.style.position = Position.Absolute;
-            _toggle.style.left = Systems_UiKit.SPACE_2;
-            _toggle.style.bottom = Systems_UiKit.SPACE_2;
-            _toggle.style.fontSize = Systems_UiKit.FONT_MICRO;
-            _toggle.style.opacity = 0.85f;
-            (hud.Overlay ?? hud.Stage).Add(_toggle);
+            // The DBG toggle, in the true lower-left screen corner — but ONLY when
+            // nothing else already owns that corner.
+            //
+            // The enforced HUD layout gives the bottom-left corner to
+            // Systems_ScreenChrome, whose DBG button opens the AGENT readout and
+            // which (unlike this component) ships in a release build. Two chips
+            // stacked in one corner is the defect, not the fix, so this one is built
+            // only on the no-chrome path. With chrome present, the engine panel is
+            // reached from the ENGINE row inside Systems_AgentDebug, which calls
+            // Toggle() below — so nothing is lost, it just stopped needing a corner
+            // of its own.
+            //
+            // Safe to test here: Systems_ScreenChrome is attached synchronously
+            // from the manager's Start, and this runs in a companion's Start, which
+            // is later in the same frame.
+            if (FindAnyObjectByType<Systems_ScreenChrome>() == null)
+            {
+                _toggle = Systems_UiKit.ChipButton("DBG", Toggle, Systems_UiKit.TOUCH_MIN);
+                _toggle.name = "DebugToggle";
+                _toggle.style.position = Position.Absolute;
+                _toggle.style.left = Systems_UiKit.SPACE_2;
+                _toggle.style.bottom = Systems_UiKit.SPACE_2;
+                _toggle.style.fontSize = Systems_UiKit.FONT_MICRO;
+                _toggle.style.opacity = 0.85f;
+                (hud.Overlay ?? hud.Stage).Add(_toggle);
+            }
 
             ApplyVisibility();
         }

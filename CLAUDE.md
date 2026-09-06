@@ -966,7 +966,10 @@ fraction of rounds end before `shrinkStartSeconds`". It was 6%.
 >   or back is not out until the head touches. Measured: 4/4 rounds RingOut, 0 errors.
 >   Set it `false` to get the foot rule back. The perf HUD is also hidden by default now,
 >   behind a **DBG** chip in the true lower-left screen corner (on `Systems_HudRoot.Overlay`,
->   a full-panel layer above the dock; `Systems_PerfHud.Toggle`), shows a per-agent column
+>   a full-panel layer above the dock; `Systems_PerfHud.Toggle`) — **that corner belongs to
+>   `Systems_ScreenChrome` as of 2026-09-06 and the perf HUD builds no chip of its own while
+>   chrome exists; it is reached from the ENGINE row inside `Systems_AgentDebug`. The rest of
+>   this paragraph still describes what the perf panel SHOWS, which is unchanged** — a per-agent column
 >   each (brain, mode, x/edge, height, uprightness, speed/spin, stamina, adrenaline, torque
 >   multiplier, mean |action|, foot contacts, DOWN/LIMP/FLOOR flags, dominance), and
 >   carries real render counters — note there is no plain "Draw Calls Count" in this
@@ -1175,6 +1178,60 @@ read them, and the DBG panel prints them) and a **detail card** in the stage ban
 Nobody parses a work-rate percentage while a bout is being decided; put new
 aggregate metrics on the detail card.
 
+#### The five fixed corners (`Systems_ScreenChrome`, 2026-09-06)
+
+Every screen carries the same five corner items, and one component owns all of
+them on BOTH screens: **title top-left, frame rate top-centre, menu top-right,
+DBG bottom-left, build version bottom-right** (`enableScreenChrome`).
+
+- It is **absolute on a full-bleed layer**, never a slot in the flow layout. The
+  top bar is a three-slot row whose centre carries the scorebug, and the panel
+  scales on WIDTH — a frame-rate readout docked in `TopBarCentre` competes with
+  the score digits for width at every aspect the panel resolves at.
+- The layer it attaches to **must be full-bleed AND safe-area inset**, because
+  absolute offsets resolve against the parent's PADDING box. Arena:
+  `Systems_HudRoot.Overlay`. Bracket: a sibling of the ScrollView on `screen`.
+- **The flow bands have to RESERVE the band, or they draw under it.**
+  `Systems_HudRoot.ReserveChrome(top, bottom)` pads the top bar and the dock;
+  the bracket pads its ScrollView's `marginTop` and its pinned footer's
+  `paddingBottom`. Measured at 1080x2400 without them: the scorebug under the
+  frame rate, and RESHUFFLE drawn straight across the DBG chip.
+- **Padding the ScrollView's CONTENT does not work** and looks like it does. It
+  only clears the first and last rows; everything between still scrolls
+  underneath. The bracket's bottom is not the ScrollView at all — it is the
+  pinned footer, so the reservation belongs there.
+- **The menu button IS the pause control.** The `TopBarLeft` pause chip is now
+  built only when chrome is off, so there is never a second redundant pause and
+  never zero of them. Escape and the Android back key still call `TogglePause`,
+  which is public for this.
+- **No glyphs.** The menu is three drawn bars (`Systems_UiKit.MenuButton`), for
+  the same reason `PauseButton` draws two: this project ships no font asset, and
+  a hamburger the device font lacks renders as a box.
+- The build stamp used to exist ONLY on the bracket, top-left, so the version was
+  invisible during a bout. Chrome owns it now, on both screens.
+
+`Systems_AgentDebug` is what the DBG button opens, and it is **NOT gated on a
+development build** the way `Systems_PerfHud` is — deliberately. The perf overlay
+answers a question about the BUILD and must be impossible to ship by accident;
+this answers a question about the FIGHTERS and is worth having on the phone.
+Live mode (arena) gives per fighter the brain driving it plus its vector shape,
+one plain-language verdict and one line of what that means, and 30-second graphs
+of stamina, mat remaining and effort; career mode (bracket) gives the rank / elo /
+record / streak table. `Systems_PerfHud` no longer builds a corner chip when
+chrome exists — it is reached from the ENGINE row inside this panel.
+
+Two traps paid for in that panel, both worth reusing:
+
+- **An unwritten ring-buffer slot is not a zero reading.** Painting unfilled bars
+  through the same colour ramp made the whole left-hand side of every graph
+  bright red, so a healthy fighter fifteen seconds into a round appeared to have a
+  long history of critical stamina. Track a `Count` and draw unfilled slots flat
+  and neutral, exactly as `Systems_PerfHud` does for its own empty bars.
+- **Not every meter is a resource.** Stamina and mat are: less is worse, red as
+  they run out. EFFORT is not — a fighter pushing hard is not in trouble — and on
+  the resource ramp a healthy 80% output painted bright red. It has exactly one
+  bad reading, near-zero, which is the signature of a rejected model.
+
 The card carries **three** rows — TERRITORY, KNOCKDOWNS DEALT, PUSH IN CONTACT.
 It carried six until 2026-08-02, and the test that removed the other three is
 worth reusing: SHOVES · BEST and BALANCE are already weighted into the DOMINANCE
@@ -1209,6 +1266,8 @@ a tick on one asset rather than an edit in three scenes.
 | `Systems_FeelFx` | device haptics, plus camera trauma on the discrete events (head KO, dismemberment, gib, round end). Presentation only. See *The feel pass* below |
 | `Systems_ShockwaveFx` | expanding shock rings on a head KO, a dismemberment and body-on-body contact over 6.5 m/s. Pooled quads on an additive-annulus shader; subscribes only to STATIC events, never to another companion. See *The GFX/sound pass* below |
 | `Systems_RingSqueezeCue` | two danger bands standing on the **live** edge of the mat, amber → red and pulsing as it closes. Read-only w.r.t. the fight. Added 2026-09-05 because the contraction was deciding almost every round invisibly — see *The mat is the referee* below |
+| `Systems_ScreenChrome` | the five fixed screen corners — title, frame rate, menu, DBG, version. Absolute on the HUD's Overlay layer; also attached by `Systems_TournamentBracket`, so it is the one thing identical on both screens. See *The five fixed corners* |
+| `Systems_AgentDebug` | what the DBG button opens: per-fighter brain identity, a plain-language verdict, and 30-second stamina / mat / effort graphs. **Ships in release**, unlike `Systems_PerfHud` |
 
 **Fighters can be dismembered and decapitated, and this is not cosmetic.** Measured play
 produces `[DAMAGE] Damage_Nick lost LegNear at 20.0 damage — bleeding from stump 'Pelvis'`
@@ -1447,6 +1506,29 @@ What actually landed:
 | Depth | `Systems_UiKit.Elevation` (Sunken/Base/Raised/Overlay) + `Elevate`/`ElevatedCard`. UI Toolkit has **no box-shadow**, so elevation is a bevel: light top edge, dark bottom edge, background lightening with the tier |
 | Contact grounding from real load | `Systems_BlobShadow.footLoadWeight` reads `Agent_BipedBody.FootLoadNear/Far`, which the body already samples for the contact observations. Load is GATED by height, never the reverse — a stale load on an airborne foot would paint a shadow under nothing |
 | Rolling frame graph + asset pressure | `Systems_PerfHud`: 48-bar ring buffer (12 s at the 4 Hz sample), fixed 50 ms ceiling because an auto-scaling graph makes a good run and a terrible one look identical; plus voices / particles / Light2D count, all three of which fail SILENTLY in this project |
+
+> **THE OS FONT PATH IS OFF ON ANDROID — MEASURED ON A PIXEL 9 PRO, 2026-09-06, AND IT
+> BROKE EVERY LABEL IN THE GAME.** The paragraph below argued the opposite and shipped it;
+> it is kept because the reasoning is seductive and the failure is invisible off-device.
+>
+> `Font.CreateDynamicFontFromOSFont` returns a **legacy `Font`**, and UI Toolkit in Unity 6
+> wants a `FontAsset`. Its handling of a legacy dynamic font's glyph atlas is broken on
+> device: in a release APK on the bracket screen, EVERY label rendered as scattered glyphs
+> at wildly wrong sizes and positions — the screen was unreadable. In the Editor the exact
+> same code resolves Bahnschrift/Segoe UI and looks correct, which is precisely why it
+> shipped. **The platform it was verified on is not the platform it targets.**
+>
+> `Systems_UiFonts.FromOs` now returns null on `RuntimePlatform.Android`, so the runtime
+> theme's default — a real `FontAsset` Unity ships — renders. The OS path stays for Editor
+> and desktop, where it is verified and is the whole point of judging the look before
+> licensing anything.
+>
+> Two things worth carrying forward. **A `.ttf` dropped into `Resources/Fonts/` imports as
+> a legacy `Font` too**, so it carries the identical risk — the proper fix for a licensed
+> face is a TextMeshPro `FontAsset` generated in the Editor. And the tell that isolated
+> this in one capture: the top-right menu button rendered PERFECTLY while all text failed,
+> because it is three drawn bars and not a glyph. That is the "no glyphs" rule under
+> *The five fixed corners* paying for itself.
 
 **`Systems_UiFonts` resolved live as `display=Bahnschrift ui=Segoe UI`.** The OS lookup
 runs on ANDROID too — it was `#if`'d to Editor/desktop at first, which would have shipped
@@ -1939,6 +2021,7 @@ dumping ground. Everything else goes elsewhere —
 | `BracketTestHarness` | *PoSumo → Test → Run Bracket Harness*, or `BracketTestHarness.Run()`, in Play mode on **SCN_TOURNAMENT**. Plays a whole 7-match bracket and asserts champion, title, match wins, `Systems_TournamentState.Active` cleared and `Time.timeScale` back to 1. Watches from `EditorApplication.update`, which is Editor-side and so survives the scene loads it is testing |
 | `GenerateAudio` | *Generate Audio* — synthesizes the match SFX bank in-editor; the clips are generated assets, not recordings |
 | `NormalizeVoice` | *Normalize Voice Levels* — evens out the per-fighter voice clips |
+| `AndroidBuildSettings` | *Apply Android Build Settings* — the mobile player settings, from code. **Called by BOTH Android builders**, so a build cannot ship without them. Logs `ANDROID SETTINGS RESULT:` |
 
 **Both of these write assets that then go stale silently, and both had done so.** Fixing the
 generator does nothing until the menu item is re-run, and nothing in the game warns you.

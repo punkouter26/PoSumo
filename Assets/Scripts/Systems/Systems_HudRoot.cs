@@ -64,6 +64,7 @@ namespace PoSumo
         private VisualElement _backdrop;
         private VisualElement _centre;
         private VisualElement _modal;
+        private VisualElement _topBar;
 
         /// Row across the top: pause on the left, scorebug in the middle.
         public VisualElement TopBarLeft { get; private set; }
@@ -246,7 +247,36 @@ namespace PoSumo
             bar.Add(TopBarLeft);
             bar.Add(TopBarCentre);
             bar.Add(TopBarRight);
+            _topBar = bar;
             return bar;
+        }
+
+        /// Keeps the two flow bands clear of the absolute chrome layer.
+        ///
+        /// `Systems_ScreenChrome` pins the title, the frame rate and the menu to
+        /// the TOP of the Overlay layer and the DBG button and version stamp to the
+        /// BOTTOM of it. The Overlay is a full-panel sibling of the content column,
+        /// so nothing about the flow layout knows those items are there — the
+        /// scorebug would be drawn underneath the frame-rate readout, and the dock's
+        /// live strip underneath the DBG chip and the build stamp.
+        ///
+        /// Padding rather than a margin or a fixed offset: the bands stay
+        /// self-sizing and proportional (Stage keeps its 45% floor, Dock its 28%
+        /// ceiling), and the reservation is expressed once, in points, by the only
+        /// component that knows how tall its own chrome is.
+        ///
+        /// Called with zero when there is no chrome, so this is safe to call
+        /// unconditionally and the no-chrome layout is byte-identical to before.
+        public void ReserveChrome(int topPoints, int bottomPoints)
+        {
+            if (_topBar != null)
+            {
+                _topBar.style.paddingTop = Systems_UiKit.SPACE_2 + topPoints;
+            }
+            if (Dock != null)
+            {
+                Dock.style.paddingBottom = Systems_UiKit.SPACE_3 + bottomPoints;
+            }
         }
 
         /// Zero flex basis plus equal grow: whatever slack the bar has is split

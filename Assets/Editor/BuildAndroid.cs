@@ -24,6 +24,12 @@ namespace PoSumo.EditorTools
 
             PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, APP_ID);
 
+            // The mobile player settings, applied from code on every build so an
+            // APK can never ship with a stripping level or a texture format that
+            // someone changed in the Inspector and forgot. Logs
+            // "ANDROID SETTINGS RESULT:" with what it applied.
+            AndroidBuildSettings.Apply();
+
             // Signing. ProjectSettings serializes androidUseCustomKeystore: 1 and the
             // keystore path, but Unity deliberately does NOT serialize the passwords,
             // so a build that does not supply them dies with "Unable to sign the

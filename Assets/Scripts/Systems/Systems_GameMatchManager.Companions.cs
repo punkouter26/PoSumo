@@ -98,10 +98,64 @@ namespace PoSumo
             // turn it ON in a release player.
             bool developmentBuild = Debug.isDebugBuild || Application.isEditor;
             SpawnCompanion<Systems_PerfHud>(enablePerfHud && developmentBuild, "PerfHud");
+            SpawnScreenChrome();
             SpawnCompanion<Systems_ArenaLighting>(enableLighting, "ArenaLighting");
             SpawnCompanion<Systems_CareerRecorder>(recordCareerStats, "CareerRecorder");
             SpawnCompanion<Systems_ArenaAtmosphere>(enableAtmosphere, "Atmosphere");
             SpawnCompanion<Systems_MusicDirector>(enableMusic, "Music");
+        }
+
+        /// The five fixed screen corners, and the agent telemetry panel behind the
+        /// one of them that is a debug button.
+        ///
+        /// Not a plain SpawnCompanion because both need the HUD's Overlay layer
+        /// handed to them and they have to be wired to each other — the chrome owns
+        /// the DBG button, the panel owns what it opens, and the button tints itself
+        /// from the panel's state. Safe here because BuildUi() runs before
+        /// SpawnCompanionSystems() in Start, so _hud is already built.
+        ///
+        /// The panel is deliberately NOT gated on a development build the way
+        /// Systems_PerfHud is. That gate exists because a frame-time and GC overlay
+        /// drawn over the fight is a development aid that must be impossible to ship
+        /// by forgetting a tick box. This panel answers a different question — which
+        /// brain is driving each fighter and how it is holding up — which is worth
+        /// having on the phone, is behind a button that starts closed, and costs a
+        /// display:none element plus a 2 Hz array write while it is shut.
+        private void SpawnScreenChrome()
+        {
+            if (_hud == null || _hud.Overlay == null)
+            {
+                return;
+            }
+            if (!enableScreenChrome)
+            {
+                return;
+            }
+            if (FindAnyObjectByType<Systems_ScreenChrome>() != null)
+            {
+                return;
+            }
+
+            Systems_AgentDebug debug = null;
+            if (enableAgentDebug && FindAnyObjectByType<Systems_AgentDebug>() == null)
+            {
+                debug = Systems_AgentDebug.Attach(transform, _hud.Overlay, this);
+            }
+
+            Systems_ScreenChrome chrome = Systems_ScreenChrome.Attach(
+                transform, _hud.Overlay, TogglePause,
+                debug != null ? (System.Action)debug.Toggle : null);
+
+            if (debug != null)
+            {
+                debug.BindChrome(chrome);
+            }
+
+            // Keep the scorebug out from under the frame-rate readout and the dock's
+            // live strip out from under the DBG chip and the build stamp. The chrome
+            // band is one touch target tall at each end, plus its own inset.
+            _hud.ReserveChrome(Systems_UiKit.TOUCH_MIN + Systems_UiKit.SPACE_2,
+                               Systems_UiKit.TOUCH_MIN + Systems_UiKit.SPACE_2);
         }
 
         /// Spawns one companion as a child of the manager, if its GameTuning flag is

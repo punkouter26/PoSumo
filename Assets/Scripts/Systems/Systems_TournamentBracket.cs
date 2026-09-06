@@ -190,33 +190,64 @@ namespace PoSumo
             // a row a few points too wide draws a bar across the bottom of the
             // screen. Nothing here is meant to scroll sideways.
             scroll.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
+            // The TOP chrome band is reserved by SHRINKING THE VIEWPORT, not by
+            // padding the content inside it.
+            //
+            // Padding the content only guarantees that the FIRST and LAST rows clear
+            // the chrome. Everything between them still scrolls underneath it, and
+            // measured at 1080x2400 that ran the bracket rows under the frame-rate
+            // readout. A margin takes the band out of the scroll viewport
+            // altogether, so no row can ever pass under it.
+            //
+            // The BOTTOM band is not reserved here, because the bottom of this
+            // screen does not belong to the ScrollView: the status line and the
+            // action buttons are a flow footer pinned below it (see further down),
+            // and it is that footer which has to clear the DBG chip and the build
+            // stamp. Reserving it on the scroll instead just moves the footer up and
+            // leaves it exactly as overlapped as it was — measured.
+            //
+            // The arena needs neither, because its bands are flow rather than
+            // scrolling: there, Systems_HudRoot.ReserveChrome pads the top bar and
+            // the dock and nothing can slide beneath them.
+            scroll.style.marginTop = Systems_UiKit.TOUCH_MIN + Systems_UiKit.SPACE_3;
             screen.Add(scroll);
 
-            // BUILD STAMP, top-left of the boot screen.
+            // SCREEN CHROME — the five fixed corners, identical here and in the
+            // arena: title, frame rate, menu, DBG, build version.
             //
-            // The game ships to a phone by sideload, and two installs an hour apart
-            // are indistinguishable once the APK is on the device — there is no
-            // build number anywhere on screen, and `adb shell dumpsys package` is
-            // not available to whoever is holding the phone. `Application.version`
-            // IS `PlayerSettings.bundleVersion`, so this is the shipped number
-            // rather than a constant that can drift away from it.
+            // This replaces a lone build stamp that used to be pinned top-left here
+            // and existed on NO other screen, so the version was visible on the boot
+            // screen and nowhere during a bout. One component owning all five
+            // corners on both screens is what stops that kind of split reappearing.
             //
-            // On `screen`, NOT `_root` and NOT `_content`:
-            //  - `_content` is inside the ScrollView, so the stamp would scroll off.
-            //  - `_root` is deliberately un-inset (see above), so on a notched device
-            //    a top-left absolute child lands UNDER the cutout.
+            // On `screen`, NOT `_root` and NOT `_content`, for the reasons the old
+            // stamp was:
+            //  - `_content` is inside the ScrollView, so chrome would scroll off.
+            //  - `_root` is deliberately un-inset (see above), so on a notched
+            //    device a top-left absolute child lands UNDER the cutout.
             //  - `screen` carries the safe-area inset, and absolute offsets resolve
-            //    against the parent's PADDING box, so 0,0 here is exactly the first
-            //    safe pixel.
-            // Added after the ScrollView so it draws over the content, and NoPick so
-            // it cannot eat a pointer-down meant for the fighter palette behind it.
-            Label version = Systems_UiKit.Text("v" + Application.version,
-                                               Systems_UiKit.FONT_MICRO,
-                                               Systems_UiKit.TextLow);
-            version.style.position = Position.Absolute;
-            version.style.left = Systems_UiKit.SPACE_2;
-            version.style.top = Systems_UiKit.SPACE_2;
-            screen.Add(version.NoPick());
+            //    against the parent's PADDING box, so 0,0 here is the first safe
+            //    pixel.
+            // Added after the ScrollView so it draws over the content, and the layer
+            // is NoPick so it cannot eat a pointer-down meant for the fighter
+            // palette behind it.
+            // Built here but PARENTED LAST, after the pinned footer below, so it
+            // draws over it. Added at this point in the method it sat under the
+            // footer and the DBG chip came out half-hidden behind RESHUFFLE.
+            // Attaching children to an unparented element is fine — they come with
+            // it when it is added.
+            var chromeLayer = new VisualElement().Fill().NoPick();
+            Systems_AgentDebug bracketDebug = Systems_AgentDebug.Attach(transform, chromeLayer, null);
+            Systems_ScreenChrome bracketChrome = Systems_ScreenChrome.Attach(
+                transform, chromeLayer,
+                // Resolved on press, not now: `_careerScreen` is constructed further
+                // down this method and does not exist yet at this point.
+                () => { if (_careerScreen != null) { _careerScreen.Show(); } },
+                bracketDebug != null ? (System.Action)bracketDebug.Toggle : null);
+            if (bracketDebug != null)
+            {
+                bracketDebug.BindChrome(bracketChrome);
+            }
 
             _content = scroll.contentContainer;
             // Fill the viewport when the bracket is shorter than the screen, so
@@ -322,7 +353,14 @@ namespace PoSumo
             var footer = new VisualElement();
             footer.style.paddingLeft = Systems_UiKit.SPACE_3;
             footer.style.paddingRight = Systems_UiKit.SPACE_3;
-            footer.style.paddingBottom = Systems_UiKit.SPACE_3;
+            // Clears the bottom chrome band — the DBG chip on the left and the
+            // build stamp on the right. This footer IS the bottom of the screen, so
+            // it is the element that has to make room for them; measured at
+            // 1080x2400 without this, RESHUFFLE was drawn straight across the DBG
+            // chip. One touch target plus its own inset, the same reservation
+            // Systems_HudRoot.ReserveChrome makes for the arena's dock.
+            footer.style.paddingBottom = Systems_UiKit.SPACE_3
+                                       + Systems_UiKit.TOUCH_MIN + Systems_UiKit.SPACE_2;
             footer.style.flexShrink = 0;
 
             _statusLabel = Systems_UiKit.Text("", Systems_UiKit.FONT_LEAD, Systems_UiKit.Gold);
@@ -358,6 +396,11 @@ namespace PoSumo
             footer.Add(_autoButton);
 
             screen.Add(footer);
+
+            // Chrome last, so the five corners draw above both the ScrollView and
+            // the pinned footer. It is NoPick, so being on top costs the controls
+            // underneath it nothing.
+            screen.Add(chromeLayer);
 
             // Floating ghost that follows the pointer during a drag.
             _dragGhost = MakeGhostChip(null);

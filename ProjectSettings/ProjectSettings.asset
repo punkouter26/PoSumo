@@ -11,7 +11,7 @@ PlayerSettings:
   defaultScreenOrientation: 0
   targetDevice: 2
   useOnDemandResources: 0
-  accelerometerFrequency: 60
+  accelerometerFrequency: 0
   companyName: Punkouter Software
   productName: PoSumo
   defaultCursor: {fileID: 0}
@@ -744,6 +744,7 @@ PlayerSettings:
   il2cppLTOMode: {}
   il2cppStacktraceInformation: {}
   managedStrippingLevel:
+    Android: 1
     Standalone: 0
   incrementalIl2cppBuild: {}
   suppressCommonWarnings: 1
