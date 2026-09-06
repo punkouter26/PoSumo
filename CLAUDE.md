@@ -1816,6 +1816,28 @@ against the old dynamics. The recovery is cheap: rebuild each env, warm-start fr
 shipped checkpoint, and run a short corrective pass at a reduced learning rate (1-3M steps
 against trunks of 12-45M) rather than retraining from scratch.
 
+> **Two traps measured on 2026-09-06 while extending Matt and Standard from 10M to 15M.**
+>
+> **1. Self-play ELO RESETS to `initial_elo` (1200) on `--resume`.** It is not persisted
+> in the checkpoint. The trainer prints `ELO: 1199.999` in the very next summary after
+> `Resuming training from step 9999773`. Consequence for the accept/reject rule: a
+> resumed run's ELO is NOT comparable to the ELO the same run reached before it stopped,
+> so "did it go up from where we left off" is unanswerable. Judge a resumed run on the
+> shape of its OWN curve from 1200 — which still works, because the criterion was always
+> shape rather than threshold. Measured: matt 1200 -> 1455.9, standard 1200 -> 1346.2,
+> both monotonic to the final step, against pre-stop values of 2125.9 and 1578.3 that
+> mean something entirely different.
+>
+> **2. `Start-StaminaExtension.ps1` launches with `Start-Process` and NO redirect, so a
+> trainer that dies takes its only error message with it** when its console window
+> closes. Two runs at `--num-envs=4` (8 headless players) died 69 s after launch against
+> the memory left once the Editor's helper processes were counted — `timers.json` was
+> written, so it looked like a clean shutdown, and nothing anywhere said why. The
+> diagnosis only came from relaunching by hand with
+> `-RedirectStandardOutput`/`-RedirectStandardError`. **When a wrapper launch dies
+> silently, relaunch one fighter by hand with the output captured before changing
+> anything else.** `--num-envs=2` per run fitted and completed.
+
 Restart rules: physics/observation/action changes ⇒ new run-id or `--force` (cold);
 parameter-only tweaks ⇒ `--resume`. **Kill TensorBoard *before* launching with `--force`,
 and restart it after.** It holds handles on the run dirs on Windows, and a `--force` fired
