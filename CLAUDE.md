@@ -229,7 +229,9 @@ still or twitches rather than erroring), suspect this before suspecting the brai
 
 ### 24 packages were removed on 2026-08-25 — what went, and how it was decided
 
-`manifest.json` went 58 → 34 → **39**: five had to go back, and why is the important part.
+`manifest.json` went 58 → 34 → **39**, and reads **41** as of 2026-09-05 (counted, not
+assumed: `grep -c '"com\.' Packages/manifest.json`). Five had to go back on the day, and
+why is the important part. Re-count before quoting this number — it has drifted twice.
 
 A removal must clear **four** tests. The first three are obvious and were applied:
 **no namespace reference** in `Assets/**/*.cs`, **no asset of the type it imports**, and
@@ -520,6 +522,28 @@ output layer.
   preceded it. Prose elsewhere in the repo (`MANIFEST.md`, `ROSTER.md`, the
   tooltips on `Agent_CharacterDefinition`) still says 44/45 — **the constant in
   `Agent_Biped` is the truth**. Obs count and decision period MUST match what the assigned
+
+> **THE FOUR SHIPPED `.onnx` ARE DEAD AGAINST TODAY'S CODE, measured 2026-09-05.** Every
+> training env logs this at startup, once per fighter:
+>
+>     [OBS] Matt: 51 slots (base 43 +4 contact +1 stamina +3 extended), 13 actions, decision period 3.
+>     [OBS] STALE BRAIN: 'Matt' takes 45 inputs but 'Matt' now builds 51. This fighter will
+>           NOT move — ML-Agents rejects the model and falls back to a limp heuristic, silently.
+>
+> So the game currently ships four fighters that **cannot fight**: Matt, Standard, Nick and
+> Kim all fall back to a limp heuristic, and `Bot_v01` — the hand-coded `useBot: 1` entry
+> this file elsewhere calls the "rules-based baseline" — is the ONLY thing in the roster
+> that still moves under its own power. A bracket still runs to completion, which is
+> exactly why this is easy to miss: nothing errors, and the bot wins.
+>
+> This is not a new class of bug, it is the documented one arriving: the vector went
+> 44 → 45 → 51 and "every one of those moves invalidated every brain that preceded it."
+> The `.onnx` files were never re-trained after the 51-slot move.
+>
+> **Consequence for planning:** a Rebuild01 training run is not optional polish, it is the
+> repair that makes the game playable. And per the note further down, the shipped `.onnx`
+> are NOT reproducible from anything on disk — so the four committed files are a historical
+> artefact of a vector the code no longer builds, not a fallback to return to.
   `.onnx` was trained with, or inference is silently garbage.
 - **The three mat slots are scaled by a CONSTANT `RING_REFERENCE_HALF` (3.5), not by
   the live width**, so they carry metres rather than a fraction — "1.2 m of mat ahead"
@@ -1754,7 +1778,8 @@ Training\venv\Scripts\mlagents-learn.exe Training/configs/<cfg>.yaml --run-id=<i
   --base-port=5005
 ```
 `--num-envs` is a **CPU budget, and it is not free to change**: each env is a headless
-player process, so keep it to 4-8 on this 12-core box and leave cores for the trainer's
+player process, so keep it to 4-8 on this box (**24 logical cores**, measured 2026-09-05;
+this line said 12 until then) and leave cores for the trainer's
 torch threads and TensorBoard. It is also not a pure throughput dial — ML-Agents' own docs
 are explicit that changing `--num-envs` with every hyperparameter held fixed still changes
 the resulting model, because it changes how experience is batched. The shipped four brains
@@ -1810,6 +1835,29 @@ a headless run.
 `Training/results` **is** the TensorBoard logdir, so treat it as a curated list, not a
 dumping ground. Everything else goes elsewhere —
 
+> **SUPERSEDED 2026-09-05 — `Training/venv/` and `Training/results/` were both
+> recreated, and the recreation procedure is below because it is not obvious.**
+> The venv is Python 3.10.11 + torch 2.5.1 + setuptools 69.5.1, comms API **1.5.0**
+> verified equal to `Academy.k_ApiVersion`, with all three local ml-agents patches
+> intact (they survive automatically — the install is `pip install -e` against
+> `Training/ml-agents/`, so the source tree IS the installed copy).
+>
+> **The trap that cost the first attempt: do NOT install torch with
+> `--index-url https://download.pytorch.org/whl/cpu`.** `--index-url` REPLACES PyPI
+> rather than adding to it, so every transitive build dependency is also resolved
+> from the PyTorch index — which does not carry `flit_core`. `typing_extensions`
+> then falls back to an sdist build and dies with
+> `No matching distribution found for flit_core`. Install from **PyPI** instead:
+> Windows `torch` wheels on PyPI are already CPU-only, so the special index buys
+> nothing here. Pass `-c Training/constraints.txt` on every install, as that file says.
+>
+> A second, quieter trap: a `pip` older than ~24 rejects valid wheels over name
+> normalization (`expected 'jinja2', but metadata has 'Jinja2'`) and silently
+> degrades to building from source. Upgrade `pip` first; it is not one of the pinned
+> packages and never was.
+>
+> `Training/results/` now holds `matt_rebuild01` and `standard_rebuild01`.
+>
 > **MEASURED 2026-08-26: `Training/results/` DOES NOT EXIST, and neither does
 > `Training/trunks/` or `Training/venv/`.** The four `*_tall04` trunks the next paragraph
 > describes are gone, so `<Name>Obs01.yaml`'s `--initialize-from` has nothing to load and
@@ -1933,6 +1981,23 @@ scene rather than fighting `SCN_SUMO`'s own listener.
 > switches every DLL in that folder to Editor-only INSIDE the build, after the last
 > refresh. It logs `PLUGIN PLATFORM RESULT (preprocess Android): excluded N …`; if that
 > line is missing from a build log, this is the first thing to suspect.
+>
+> **It is ANDROID-ONLY as of 2026-09-05, and widening it again breaks every desktop
+> build.** It used to run on every platform, and that silently broke the training-env
+> builds: `BUILD RESULT: Failed | errors=351`, all of them
+> `CS0234: The type or namespace name 'ReflectorNet' does not exist`, out of
+> `Library/PackageCache/com.ivanmurzak.unity.mcp@*/Runtime/`. The cause is that
+> `com.IvanMurzak.Unity.MCP.Runtime.asmdef` ships `includePlatforms: []` — so it compiles
+> into the PLAYER, not just the Editor — and lists `ReflectorNet.dll` / `McpPlugin.dll`
+> among its `precompiledReferences`. Excluding those DLLs therefore does not merely drop
+> dead weight from the player; it deletes the references out from under an assembly Unity
+> is still compiling. On Android the trade is still right (a stripping failure kills the
+> build outright, and the payload cost 96 MB of APK). On a disposable, gitignored env
+> player it is pure loss. After the narrowing: `Succeeded | errors=0 | size=216MB`.
+>
+> Note the preprocessor does NOT restore the flags afterwards, by design — so after any
+> Android build the DLLs sit Editor-only until the MCP configurator flips them back on its
+> next domain reload. If a desktop build fails on ReflectorNet, check that first.
 
 **Android signing keeps the keystore and its password outside the repo**, at
 `C:/Users/punko/OneDrive/VAULT/_CODE/` (`posumo-upload.jks` + `posumo-upload.pass`, one

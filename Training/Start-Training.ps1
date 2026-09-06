@@ -52,7 +52,12 @@ param(
     [ValidateRange(1024, 65000)][int]$BasePort = 5005,
     [string]$InitializeFrom,
     [switch]$Force,
-    [switch]$Resume
+    [switch]$Resume,
+
+    # Escape hatch for the superseded-config guard below. Deliberately NOT $Force:
+    # that one already means "mlagents --force", i.e. discard the run directory, and
+    # overloading it would make one switch mean two unrelated destructive things.
+    [switch]$AllowSuperseded
 )
 
 $ErrorActionPreference = 'Stop'
@@ -70,6 +75,30 @@ foreach ($required in @($venvPython, $learnExe, $envExe, $Config)) {
     if (-not (Test-Path $required)) {
         throw "missing: $required"
     }
+}
+
+# SUPERSEDED-CONFIG GUARD, added 2026-09-05.
+#
+# 45 of the 49 files in Training/configs carry a banner that opens "SUPERSEDED ...
+# DO NOT LAUNCH THIS FILE", because they target observation vectors, joint ranges
+# and warm-start trunks that no longer exist. Only the four *Rebuild01.yaml are
+# live. Nothing enforced that: every launcher would happily start a config whose
+# own first line says not to, and the failure is not loud. A stale config either
+# dies on an --initialize-from trunk that was pruned long ago, or it runs to
+# completion against the wrong vector and produces a brain that cannot be loaded.
+#
+# Four wrappers in this folder still exist to launch those generations
+# (Run-TallSweep, Run-Tall04Sweep, Run-StaminaPass, Extend-StaminaPass). They are
+# kept for the same reason the configs are: they are the record of what was tried.
+# The guard is what makes keeping them safe, so put the check at the choke point
+# every one of them funnels through rather than banner-ing each script.
+$configHead = (Get-Content -LiteralPath $Config -TotalCount 40) -join "`n"
+if ($configHead -match 'DO NOT LAUNCH THIS FILE' -and -not $AllowSuperseded) {
+    $why = ($configHead -split "`n" | Where-Object { $_ -match 'SUPERSEDED' } | Select-Object -First 1).Trim('# ')
+    throw ("$Config declares itself superseded and refuses to launch.`n" +
+           "  $why`n" +
+           '  The live generation is Training/configs/<Name>Rebuild01.yaml. ' +
+           'Pass -AllowSuperseded only to reproduce a historical run on purpose.')
 }
 
 # The trainer's own torch threads and TensorBoard both need cores. Over-subscribing

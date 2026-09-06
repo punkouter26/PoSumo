@@ -36,7 +36,7 @@ Training\venv\Scripts\python.exe -m tensorboard.main `
   --logdir Training/results --port 6006 --reload_interval 15
 ```
 
-### Two things about port 6006 that have each cost a run
+### Three things about port 6006 that have each cost a run
 
 - **A second bind fails quietly.** Launch a second TensorBoard while one is live and it
   does not error loudly — you notice an hour later with no graphs. `Start-StaminaExtension.ps1`
@@ -47,6 +47,20 @@ Training\venv\Scripts\python.exe -m tensorboard.main `
   contents *in place*, silently. That is not cosmetic: the surviving checkpoints outrank
   the new run's numerically for a long while, so `DeployBrain.DeployLatestCheckpoint`
   will ship a brain from the run you thought you deleted.
+
+- **"Something is listening on 6006" does NOT mean *this* campaign has graphs.** Measured
+  2026-09-05: a sibling project (`PoDecath`) was training on the same machine with its own
+  TensorBoard bound to 6006 against its own logdir. `Start-StaminaExtension.ps1` checked the
+  port, found a listener, printed `TensorBoard already listening on 6006; leaving it alone`,
+  and would have run the whole PoSumo campaign with **no graphs of its own** — while looking
+  perfectly healthy in every other respect. Since ELO is the only thing a fight run may be
+  judged on, and ELO exists only as a TensorBoard scalar, that is not a cosmetic loss: it is
+  hours of compute whose only readable outcome is the number this file forbids using.
+
+  Both wrappers now take `-TensorBoardPort`, and the "already listening" branch warns that
+  the listener must be verified to serve `Training/results`. **On a shared box, check whose
+  logdir owns 6006 before launching** — `Get-CimInstance Win32_Process -Filter "Name='python.exe'"`
+  shows the `--logdir` in the command line.
 
 ### Judging the run
 

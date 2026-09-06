@@ -58,6 +58,23 @@ param(
     [int]$MinFreeGB = 12,
     [switch]$SkipMemoryCheck,
 
+    # TensorBoard port. Parameterised on 2026-09-05 because the "is anything already
+    # on 6006?" check below is NOT a safe way to decide whether THIS campaign has
+    # graphs — it only proves SOMETHING is serving that port.
+    #
+    # Measured that day: a sibling project (PoDecath) was training on the same box
+    # with its own TensorBoard bound to 6006 against its own logdir. The check would
+    # have found it, printed "leaving it alone", and left every PoSumo run with no
+    # graphs whatsoever — while looking completely healthy. Per .claude/rules/training.md
+    # a fight run is accepted or rejected on the SHAPE OF THE ELO CURVE, and ELO exists
+    # only as a TensorBoard scalar, so that is not a cosmetic loss: it is hours of
+    # compute whose only readable outcome is mean reward, the one number the rules
+    # explicitly forbid judging by.
+    #
+    # Pass a free port when sharing the machine. The listener check still applies, so
+    # a genuine second bind on the SAME port is still avoided.
+    [ValidateRange(1024, 65000)][int]$TensorBoardPort = 6006,
+
     # Campaign selector. 'Stamina01' resumes the 15M extension; 'Gait01' starts the
     # crawling-gait fine-tune, which is a NEW run id and therefore cannot resume —
     # it warm-starts from the stamina trunk instead. Adding a campaign here is a
@@ -65,14 +82,23 @@ param(
     # 'Obs01' is the corrective run for the world-absolute observation 0 fix, and
     # carries the upright walk/stance shaping raised on 2026-08-25. New run id, so
     # it warm-starts from the tall04 trunks rather than resuming.
-    [ValidateSet('Stamina01', 'Gait01', 'Obs01', 'Assist01')]
+    # 'Rebuild01' is the live generation as of 2026-09-05. It is COLD by
+    # construction: Training/results/, Training/trunks/ and every *_tall04 trunk
+    # are absent from this machine, so there is nothing for --resume to continue
+    # and nothing for --initialize-from to load. See the cold-start branch below.
+    [ValidateSet('Stamina01', 'Gait01', 'Obs01', 'Assist01', 'Rebuild01')]
     [string]$Phase = 'Stamina01',
 
     # Source run for --initialize-from, e.g. 'stamina01'. Resolves BY BEHAVIOR NAME
     # and RELATIVE TO --results-dir, so the source must sit in Training/results and
     # carry a behavior of the same name. network_settings must match the source
     # trunk exactly (512 x 3 here) or the load fails outright.
-    [string]$InitializeFromPhase
+    [string]$InitializeFromPhase,
+
+    # See the identical guard in Start-Training.ps1. Every -Phase this script
+    # accepts EXCEPT Rebuild01 is superseded, so without this the default
+    # invocation launches a config whose own first line says not to.
+    [switch]$AllowSuperseded
 )
 
 $ErrorActionPreference = 'Stop'
@@ -108,16 +134,17 @@ if ($totalEnvs -gt ($cores - 4)) {
 # one, and only if nothing already holds 6006 — a second bind fails silently
 # enough that you notice an hour later with no graphs.
 $tbPid = $null
-$tbLive = @(Get-NetTCPConnection -State Listen -LocalPort 6006 -ErrorAction SilentlyContinue)
+$tbLive = @(Get-NetTCPConnection -State Listen -LocalPort $TensorBoardPort -ErrorAction SilentlyContinue)
 if ($tbLive.Count -gt 0) {
-    Write-Host 'TensorBoard already listening on 6006; leaving it alone.'
+    Write-Host "TensorBoard already listening on ${TensorBoardPort}; leaving it alone."
+    Write-Warning "VERIFY it serves Training/results and not another project's logdir -- if it does not, this campaign has NO graphs. Relaunch with -TensorBoardPort <free port>."
 }
 else {
-    Write-Host 'Starting TensorBoard on http://localhost:6006 ...'
+    Write-Host "Starting TensorBoard on http://localhost:${TensorBoardPort} ..."
     $tb = Start-Process -FilePath $venvPython -PassThru -WindowStyle Minimized -ArgumentList @(
         '-m', 'tensorboard.main',
         '--logdir', 'Training/results',
-        '--port', '6006',
+        '--port', "$TensorBoardPort",
         '--reload_interval', '15'
     ) -WorkingDirectory $repoRoot
     $tbPid = $tb.Id
@@ -136,6 +163,12 @@ foreach ($fighter in $Fighters) {
 
     foreach ($required in @($config, $envExe)) {
         if (-not (Test-Path $required)) { throw "missing for ${fighter}: $required" }
+    }
+
+    $configHead = (Get-Content -LiteralPath $config -TotalCount 40) -join "`n"
+    if ($configHead -match 'DO NOT LAUNCH THIS FILE' -and -not $AllowSuperseded) {
+        throw ("$config declares itself superseded and refuses to launch. " +
+               'Only -Phase Rebuild01 is live; pass -AllowSuperseded to reproduce a historical run on purpose.')
     }
 
     $maxSteps = [int]((Select-String -Path $config -Pattern '^\s+max_steps:\s*(\d+)').Matches[0].Groups[1].Value)
@@ -168,6 +201,18 @@ foreach ($fighter in $Fighters) {
         $learnArgs += "--initialize-from=$source"
         Write-Host "$runId : warm start from $source toward $maxSteps"
     }
+    elseif (-not (Test-Path $runDir)) {
+        # COLD START. Passing --resume for a run id that does not exist on disk is
+        # not a harmless no-op to rely on: there is no checkpoint, no
+        # configuration.yaml to reconcile against, and the flag's whole contract is
+        # "continue what is already there". Launching without it says plainly that
+        # this is step zero, which is the truth whenever Training/results is absent.
+        #
+        # This branch is reachable on any machine that has never trained, and after
+        # the 2026-08-25 purge that is every machine — a fresh clone has no
+        # Training/results at all (it is gitignored).
+        Write-Host "$runId : COLD start toward $maxSteps (no $runDir on disk)"
+    }
     else {
         # The guard that cost a wasted launch: a resume already AT max_steps trains
         # nothing, exits clean, and looks exactly like a successful short run.
@@ -183,7 +228,7 @@ foreach ($fighter in $Fighters) {
     $launched += [ordered]@{
         runId      = $runId
         fighter    = $fighter
-        config     = "Training/configs/${fighter}Stamina01.yaml"
+        config     = "Training/configs/${fighter}${Phase}.yaml"
         envName    = "${fighter}Env"
         numEnvs    = $NumEnvs
         basePort   = $port
@@ -197,10 +242,10 @@ foreach ($fighter in $Fighters) {
 }
 
 $session = [ordered]@{
-    campaign       = 'stamina01 extension to 15M'
+    campaign       = "$phaseSuffix"
     runs           = $launched
     tensorboardPid = $tbPid
-    tensorboardUrl = 'http://localhost:6006'
+    tensorboardUrl = "http://localhost:$TensorBoardPort"
     telemetryUrl   = 'http://127.0.0.1:8787/metrics'
     startedUtc     = (Get-Date).ToUniversalTime().ToString('o')
     stopAfterMin   = $Minutes
@@ -209,7 +254,7 @@ $session | ConvertTo-Json -Depth 5 | Set-Content -Path $sessionFile -Encoding ut
 
 Write-Host ''
 Write-Host "START RESULT: $($launched.Count) run(s) launched — $($launched.runId -join ', ')"
-Write-Host '  TensorBoard  http://localhost:6006'
+Write-Host "  TensorBoard  http://localhost:$TensorBoardPort"
 Write-Host '  Live metrics http://127.0.0.1:8787/metrics  (each env walks upward from 8787)'
 Write-Host "  Session      Training/.session.json"
 

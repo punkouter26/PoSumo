@@ -36,6 +36,33 @@ namespace PoSumo.EditorTools
 
         public void OnPreprocessBuild(BuildReport report)
         {
+            // ANDROID ONLY, and that restriction is load-bearing — do not widen it.
+            //
+            // This ran on EVERY platform until 2026-09-05, and it silently broke the
+            // Windows training-env build: `BUILD RESULT: Failed | errors=351`, all of
+            // them CS0234 "the type or namespace name 'ReflectorNet' does not exist"
+            // out of Library/PackageCache/com.ivanmurzak.unity.mcp@*/Runtime/.
+            //
+            // The cause is that `com.IvanMurzak.Unity.MCP.Runtime.asmdef` ships
+            // `includePlatforms: []` — so it compiles into the PLAYER, not just the
+            // Editor — and lists ReflectorNet.dll / McpPlugin.dll among its
+            // `precompiledReferences`. Excluding those DLLs from the player therefore
+            // does not merely drop dead weight; it deletes the references out from
+            // under an assembly Unity is still compiling. On Android that trade is
+            // still worth it (a stripping failure kills the build outright, and the
+            // Roslyn/SignalR payload cost 96 MB of APK). On a desktop env player it is
+            // pure loss: the exe is disposable, gitignored, and rebuilt from a menu
+            // item, so a few fat MCP assemblies inside it cost nothing that matters.
+            //
+            // The training envs built fine for months before the Android fix landed.
+            // This keeps that Android fix and gives the desktop builds back.
+            if (report.summary.platform != BuildTarget.Android)
+            {
+                Debug.Log($"PLUGIN PLATFORM RESULT (preprocess {report.summary.platform}): " +
+                          "skipped — Android-only, see ExcludeMcpPluginsFromPlayer");
+                return;
+            }
+
             string[] guids = AssetDatabase.FindAssets(string.Empty, new[] { PLUGIN_FOLDER });
             int changed = 0;
             for (int guidIndex = 0; guidIndex < guids.Length; guidIndex++)
