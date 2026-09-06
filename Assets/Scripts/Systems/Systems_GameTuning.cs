@@ -164,5 +164,8 @@ namespace PoSumo
 
         [Tooltip("Danger bands standing on the LIVE edge of the mat, brightening from amber to red as it closes. Presentation only: it reads the ring width and changes nothing a referee sees, so it is safe in a bracket and needs no retraining.\n\nMeasured over 17 rounds of live bracket play, 16 ran past shrinkStartSeconds and every one ended in a ring-out — the contraction, not a push, is what decides almost every round, and nothing on screen said so. Pairs with the MAT meter in the dock: this is the thing, that is the number.")]
         public bool enableRingSqueezeCue = true;
+
+        [Tooltip("The tale of the tape in the empty band between the dohyo and the dock. Per fighter: elo and banzuke rank, match record and win streak, weight and build, a live stamina bar and six damage pips; between them a push tug-of-war in newtons, and above them the head-to-head and what is at stake. Read-only with respect to the fight: it decides nothing, is not mirrored into Systems_SumoMatchManager, and touches no observation, mass or collider, so no brain is affected. Numbers refresh on round boundaries only; just the bars and pips move during a bout, because the six-row aggregate table that used to sit in the dock was cut for being unreadable mid-bout.")]
+        public bool enableFighterPanel = true;
     }
 }

@@ -858,6 +858,32 @@ namespace PoSumo
         /// overlaps the first tier. Drawing the crowd over him would hide the
         /// fighter at the most dramatic moment available; a small depth
         /// inconsistency is much the cheaper error.
+#if UNITY_EDITOR
+        /// Editor-only re-bake of JUST the foreground tiers.
+        ///
+        /// The arena is BAKED — an editor pass ran Build() once and the children
+        /// were saved into the scene — and Build() does NOT clear what is already
+        /// there, so re-running it on a baked scene duplicates the entire arena.
+        /// Changing a tier colour therefore cannot be done by editing the constants
+        /// alone; something has to replace the serialized objects. This removes the
+        /// one subtree it owns and rebuilds it, which is the whole reason it exists
+        /// rather than a call to Build().
+        /// Public rather than internal because PoSumo.Editor is a SEPARATE
+        /// assembly and `internal` is assembly-scoped, so the menu tool cannot
+        /// see it otherwise. The `#if UNITY_EDITOR` above is what keeps it out
+        /// of a player build.
+        public void RebuildForegroundTiers()
+        {
+            Transform existing = transform.Find("ForegroundTiers");
+            if (existing != null)
+            {
+                DestroyImmediate(existing.gameObject);
+            }
+
+            BuildForegroundTiers();
+        }
+#endif
+
         private void BuildForegroundTiers()
         {
             if (!deluxe)
@@ -880,7 +906,15 @@ namespace PoSumo
             // Darkening toward the viewer: the nearest tier is closest to pure
             // silhouette. Never fully black — a flat 0 reads as a hole in the
             // render rather than as a near object.
-            float[] tierValue = { 0.115f, 0.085f, 0.06f, 0.042f };
+            // RAISED 2026-09-06. The old ramp (0.115 down to 0.042) was chosen so
+            // the nearest tier sat close to pure silhouette, and against the lit
+            // dohyo it read as an unlit void rather than as a stand with people in
+            // it — measured on a live portrait capture, roughly a quarter of the
+            // frame between the dohyo base and the dock was flat near-black. These
+            // values keep the same darkening-toward-the-viewer gradient and stay
+            // far below the dohyo's own brightness, so the tiers remain background;
+            // they simply stop reading as a hole.
+            float[] tierValue = { 0.20f, 0.155f, 0.115f, 0.082f };
 
             var tierRoot = new GameObject("ForegroundTiers");
             tierRoot.transform.SetParent(transform, false);

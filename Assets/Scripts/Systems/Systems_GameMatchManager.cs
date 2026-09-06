@@ -105,6 +105,7 @@ namespace PoSumo
         private bool enableFeelFx = true;
         private bool enableShockwave = true;
         private bool enableRingSqueezeCue = true;
+        private bool enableFighterPanel = true;
         [Tooltip("Round-opening countdown length; physics and brains are held until it finishes.")]
         public int countdownSeconds = 3;
         [Tooltip("Half the gap between the fighters' neutral stand-off positions during the countdown.")]
@@ -392,6 +393,7 @@ namespace PoSumo
                 enableFeelFx = tuning.enableFeelFx;
                 enableShockwave = tuning.enableShockwave;
                 enableRingSqueezeCue = tuning.enableRingSqueezeCue;
+                enableFighterPanel = tuning.enableFighterPanel;
             }
 
             // enableLighting decides whether there is a light rig at all, and the

@@ -74,6 +74,11 @@ namespace PoSumo
             // correctness — trauma is commutative — but it keeps the reading order
             // of the two effects the same as the order they are documented in.
             SpawnCompanion<Systems_FeelFx>(enableFeelFx, "FeelFx");
+            // Draws into the shared Systems_HudRoot like Systems_FightHud does,
+            // so it needs no PanelSettings of its own and cannot fight the HUD
+            // for draw order — that was the bug three separate UIDocuments at
+            // equal sorting order caused, and one root is the fix that stuck.
+            SpawnCompanion<Systems_FighterPanel>(enableFighterPanel, "FighterPanel");
             // Also after Systems_ImpactFx, and for the same reason: both watch
             // Sensor_Impact.AnyImpact independently. The shock ring has a much
             // higher speed gate (6.5 m/s against 2.2) so the two do not fire on

@@ -59,3 +59,4 @@ MonoBehaviour:
   enableShockwave: 1
   enableFeelFx: 1
   enableRingSqueezeCue: 1
+  enableFighterPanel: 1
