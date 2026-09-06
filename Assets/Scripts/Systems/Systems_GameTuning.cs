@@ -141,7 +141,7 @@ namespace PoSumo
         [Tooltip("Backdrop parallax, haze tinting, crowd sway, light shafts.")]
         public bool enableAtmosphere = true;
         [Tooltip("Adaptive layered score.")]
-        public bool enableMusic = true;
+        public bool enableMusic = false;
         [Tooltip("Bruise decals where a fighter is hit, plus the bloody head KO. Presentation only — no referee reads it.")]
         public bool enableBodyDamage = true;
         [Tooltip("Punches and kicks drive the man they land on backwards, and a good one launches him. GAME-ONLY: the training referee has no equivalent, so no brain has fought against it. Turning this on changes who wins rounds — a launched fighter can be knocked clean off the mat.")]

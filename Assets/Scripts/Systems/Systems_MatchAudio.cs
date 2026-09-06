@@ -71,6 +71,14 @@ namespace PoSumo
 
         // Impact layers, three variants each.
         private AudioClip[] _thudLow, _thudMid, _thudDust, _scuffs, _taikos, _grunts, _breaths;
+        /// The looping crowd bed is OFF: the player asked for no background sound.
+        /// A const rather than a serialized flag, so the 42-odd stale serialized
+        /// values scattered through the scenes cannot switch it back on behind our
+        /// backs — the same trick `Systems_SoftBodyJiggle.ENABLE_JIGGLE` uses.
+        /// Every `_murmur*` call site below already null-guards, so this alone is
+        /// sufficient: nothing loads, nothing allocates, nothing plays.
+        private const bool ENABLE_AMBIENT_BED = false;
+
         private AudioClip _strain, _murmur, _gong, _ooh, _gasp, _cheer, _applause, _salt;
 
         private AudioSource[] _voices;
@@ -126,7 +134,7 @@ namespace PoSumo
             }
 
             _strain = Resources.Load<AudioClip>(AUDIO_PATH + "SFX_Strain");
-            _murmur = Resources.Load<AudioClip>(AUDIO_PATH + "SFX_CrowdMurmur");
+            _murmur = ENABLE_AMBIENT_BED ? Resources.Load<AudioClip>(AUDIO_PATH + "SFX_CrowdMurmur") : null;
             _gong = Resources.Load<AudioClip>(AUDIO_PATH + "SFX_Gong");
             _ooh = Resources.Load<AudioClip>(AUDIO_PATH + "SFX_CrowdOoh");
             _gasp = Resources.Load<AudioClip>(AUDIO_PATH + "SFX_CrowdGasp");
@@ -175,8 +183,11 @@ namespace PoSumo
             {
                 _crowdVoices[crowdVoiceIndex] = NewSource(crowdBus);
             }
-            _murmurSource = NewSource(crowdBus);
-            _murmurSource.loop = true;
+            if (ENABLE_AMBIENT_BED)
+            {
+                _murmurSource = NewSource(crowdBus);
+                _murmurSource.loop = true;
+            }
             _crowdLowPass = crowdBus.AddComponent<AudioLowPassFilter>();
             _crowdLowPass.cutoffFrequency = LPF_OPEN;
             // The crowd was the one bus with NO reverb, which is backwards: a hall

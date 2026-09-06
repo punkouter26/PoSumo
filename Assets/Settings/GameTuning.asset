@@ -50,7 +50,7 @@ MonoBehaviour:
   enableLighting: 1
   enableImpactFx: 1
   enableAtmosphere: 1
-  enableMusic: 1
+  enableMusic: 0
   enableBodyDamage: 1
   enableStrikeImpulse: 1
   enableKimarite: 1
