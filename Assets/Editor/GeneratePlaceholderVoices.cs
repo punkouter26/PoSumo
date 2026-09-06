@@ -160,6 +160,102 @@ namespace PoSumo.EditorTools
             }
         }
 
+        /// Rewrites every GENERATED placeholder with the current synthesiser, and
+        /// leaves every real recording exactly where it is.
+        ///
+        /// WHY THIS IS SAFE, and why it is not just "delete the folder and re-run".
+        /// The voice folder is a MIXTURE: 35 of the 75 clips are real recordings
+        /// (Matt and Nick complete, Kim's Happy set) and 40 are synthesised. A
+        /// blanket regenerate would silently destroy the real ones — including
+        /// Kim's 7.96 s level 5, which the audio notes call out by name.
+        ///
+        /// The two are told apart by WAV header, not by filename or length: this
+        /// generator always writes mono 44.1 kHz, while the real clips are stereo
+        /// 48 kHz (Matt, Nick) or mono 24 kHz (Kim). Anything that is not mono
+        /// 44.1 kHz is treated as hand-authored and skipped, so dropping a real
+        /// recording in at any sample rate this tool does not itself produce makes
+        /// that clip permanently safe from it.
+        [MenuItem("PoSumo/Regenerate Placeholder Voices (keeps real recordings)")]
+        public static void Regenerate()
+        {
+            try
+            {
+                Directory.CreateDirectory(VOICE_DIR);
+
+                int rewritten = 0;
+                int created = 0;
+                var kept = new List<string>();
+
+                foreach (string behavior in Behaviors)
+                {
+                    foreach (string mood in Moods)
+                    {
+                        for (int level = 1; level <= 5; level++)
+                        {
+                            string path = PathFor(behavior, mood, level);
+
+                            if (File.Exists(path))
+                            {
+                                if (!IsGeneratedPlaceholder(path))
+                                {
+                                    kept.Add($"{behavior}_{mood}_{level}");
+                                    continue;
+                                }
+
+                                Write(path, Synthesize(behavior, mood, level));
+                                rewritten++;
+                                continue;
+                            }
+
+                            Write(path, Synthesize(behavior, mood, level));
+                            created++;
+                        }
+                    }
+                }
+
+                AssetDatabase.Refresh();
+
+                Debug.Log($"VOICE REGEN RESULT: OK — rewrote {rewritten}, created {created}, " +
+                          $"kept {kept.Count} real recording(s).\n" +
+                          $"  kept: {(kept.Count == 0 ? "nothing" : string.Join(", ", kept))}\n" +
+                          "  Now run PoSumo -> Normalize Voice Levels to rebuild VoiceGains.asset.");
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"VOICE REGEN RESULT: FAILED — {e}");
+            }
+        }
+
+        /// True only for a clip this generator could have written: mono, 44.1 kHz.
+        /// Reads the RIFF header directly rather than importing the asset, so it
+        /// cannot be fooled by Unity's import settings, which are a VIEW of the file
+        /// and not the file itself.
+        private static bool IsGeneratedPlaceholder(string path)
+        {
+            try
+            {
+                using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read))
+                using (var reader = new BinaryReader(stream))
+                {
+                    if (stream.Length < 44)
+                    {
+                        return false;
+                    }
+
+                    stream.Seek(22, SeekOrigin.Begin);
+                    int channels = reader.ReadInt16();
+                    int sampleRate = reader.ReadInt32();
+                    return channels == 1 && sampleRate == SAMPLE_RATE;
+                }
+            }
+            catch
+            {
+                // Unreadable means "not ours" — the conservative answer, because the
+                // cost of a false positive here is destroying a real recording.
+                return false;
+            }
+        }
+
         private static string PathFor(string behavior, string mood, int level) =>
             Path.Combine(VOICE_DIR, $"{behavior}_{mood}_{level}.wav");
 
@@ -182,6 +278,121 @@ namespace PoSumo.EditorTools
         /// Intensity rises with `level` in three ways at once, because loudness
         /// alone reads as a volume change rather than as effort: pitch rises, the
         /// vowel opens toward /a/, and the attack sharpens.
+        /// The GESTURE of a mood, which is what actually makes a voice read as
+        /// happy or sad — not its steady-state pitch.
+        ///
+        /// The first version of this synthesiser gave every clip the same shape: one
+        /// held vowel under a decaying envelope, with only pitch and formants moving
+        /// per mood. It sounded like one instrument playing three notes, because the
+        /// cues a listener actually uses for emotion are RHYTHM and CONTOUR
+        /// DIRECTION. A cheer is short, punchy and rises; a groan is one long fall;
+        /// a taunt is several clipped syllables stepping down. Those are structural,
+        /// so they are modelled structurally here.
+        private readonly struct MoodShape
+        {
+            public readonly int Syllables;
+
+            /// Relative loudness per syllable — a cheer peaks on its LAST, a jeer on
+            /// its first.
+            public readonly float[] Gains;
+
+            /// Pitch multiplier at the start of each syllable. Direction is the cue:
+            /// up for happy, stepping down for a taunt, one long slide for sad.
+            public readonly float[] Steps;
+
+            /// Pitch movement WITHIN a syllable, as a multiplier across it.
+            public readonly float IntraGlide;
+
+            public readonly float Attack;
+            public readonly float Decay;
+            public readonly float Breath;
+            public readonly float VibratoHz;
+            public readonly float VibratoDepth;
+
+            /// A short noise burst at each syllable onset. This is what makes a
+            /// syllable read as an articulated consonant rather than a tone fading
+            /// up, and it is most of why the jeer reads as speech at all.
+            public readonly float Onset;
+
+            /// Fraction of each syllable slot spent silent, so syllables separate.
+            public readonly float Gap;
+
+            public MoodShape(int syllables, float[] gains, float[] steps, float intraGlide,
+                             float attack, float decay, float breath,
+                             float vibratoHz, float vibratoDepth, float onset, float gap)
+            {
+                Syllables = syllables;
+                Gains = gains;
+                Steps = steps;
+                IntraGlide = intraGlide;
+                Attack = attack;
+                Decay = decay;
+                Breath = breath;
+                VibratoHz = vibratoHz;
+                VibratoDepth = vibratoDepth;
+                Onset = onset;
+                Gap = gap;
+            }
+        }
+
+        private static MoodShape ShapeFor(string mood, float intensity)
+        {
+            switch (mood)
+            {
+                // A GROAN. One long syllable, a slow swell rather than a hit, and a
+                // continuous fall of nearly a third — the single most recognisable
+                // sad cue. Heavy breath and a slow, deep waver, so it sounds like a
+                // body running out of air rather than a held note.
+                case "Sad":
+                    return new MoodShape(
+                        syllables: 1,
+                        gains: new[] { 1f },
+                        steps: new[] { 1f },
+                        intraGlide: Mathf.Lerp(0.74f, 0.66f, intensity),
+                        attack: Mathf.Lerp(0.30f, 0.20f, intensity),
+                        decay: Mathf.Lerp(1.5f, 1.9f, intensity),
+                        breath: Mathf.Lerp(0.42f, 0.30f, intensity),
+                        vibratoHz: 3.2f,
+                        vibratoDepth: 0.030f,
+                        onset: 0.04f,
+                        gap: 0f);
+
+                // A JEER. Three clipped syllables stepping DOWN, each punched in and
+                // cut off, with almost no breath — the control is the insult. Nearly
+                // flat within a syllable, so it reads as delivered rather than felt.
+                case "Insult":
+                    return new MoodShape(
+                        syllables: 3,
+                        gains: new[] { 1f, 0.82f, 0.92f },
+                        steps: new[] { 1f, 0.94f, 0.88f },
+                        intraGlide: 0.97f,
+                        attack: 0.05f,
+                        decay: Mathf.Lerp(5.5f, 4.5f, intensity),
+                        breath: 0.10f,
+                        vibratoHz: 6.5f,
+                        vibratoDepth: 0.008f,
+                        onset: 0.55f,
+                        gap: 0.30f);
+
+                // A CHEER. Two syllables with the weight on the SECOND and the pitch
+                // rising into it — a rise at the end is the cue that separates
+                // delight from mere effort. Fast attack, bright, light quick vibrato.
+                default:
+                    return new MoodShape(
+                        syllables: 2,
+                        gains: new[] { 0.72f, 1f },
+                        steps: new[] { 1f, Mathf.Lerp(1.10f, 1.20f, intensity) },
+                        intraGlide: Mathf.Lerp(1.05f, 1.12f, intensity),
+                        attack: Mathf.Lerp(0.09f, 0.04f, intensity),
+                        decay: Mathf.Lerp(3.0f, 2.4f, intensity),
+                        breath: Mathf.Lerp(0.22f, 0.14f, intensity),
+                        vibratoHz: 5.8f,
+                        vibratoDepth: 0.014f,
+                        onset: 0.30f,
+                        gap: 0.14f);
+            }
+        }
+
         private static float[] Synthesize(string behavior, string mood, int level)
         {
             VoiceId id = IdFor(behavior);
@@ -189,65 +400,90 @@ namespace PoSumo.EditorTools
 
             float intensity = (level - 1) / 4f;              // 0 at L1, 1 at L5
             float length = LengthFor(mood, intensity);
+            MoodShape shape = ShapeFor(mood, intensity);
             float[] buffer = new float[Mathf.Max(1, (int)(length * SAMPLE_RATE))];
 
-            // Effort raises the fundamental. Sadness lowers it and flattens the
-            // contour; an insult sits mid and stays level, which is what makes a
-            // taunt read as controlled rather than desperate.
+            // Effort raises the fundamental. Sadness lowers it; a taunt sits mid.
             float f0 = id.F0 * MoodPitch(mood) * (1f + 0.28f * intensity);
-
             float[] formants = FormantsFor(mood, intensity, id.Tract);
 
             var r1 = Biquad.BandPass(formants[0], 7f, SAMPLE_RATE);
             var r2 = Biquad.BandPass(formants[1], 9f, SAMPLE_RATE);
             var r3 = Biquad.BandPass(formants[2], 11f, SAMPLE_RATE);
             var breathBp = Biquad.BandPass(1700f, 0.8f, SAMPLE_RATE);
+            var onsetBp = Biquad.BandPass(2600f, 1.4f, SAMPLE_RATE);
 
-            float attack = Mathf.Lerp(0.14f, 0.035f, intensity);
-            float decay = Mathf.Lerp(2.6f, 3.4f, intensity);
-            float breathAmount = Mathf.Lerp(0.30f, 0.16f, intensity)
-                                 * (mood == "Sad" ? 1.6f : 1f);
-
+            float slot = 1f / shape.Syllables;
             double phase = 0;
+
             for (int i = 0; i < buffer.Length; i++)
             {
-                float t = i / (float)SAMPLE_RATE;
-                float progress = t / length;
+                float progress = i / (float)buffer.Length;
 
-                // A rise into the vowel then a sag as air runs out, plus a slow
-                // vibrato so a held note is not a dead tone.
-                float contour = 1f
-                    + 0.15f * Mathf.Exp(-progress * 6f)
-                    - MoodSag(mood) * progress
-                    + 0.012f * Mathf.Sin(progress * Mathf.PI * 2f * 5.5f);
-                float hz = f0 * contour;
+                // Which syllable we are in, and how far through it.
+                int syllable = Mathf.Min(shape.Syllables - 1, (int)(progress / slot));
+                float within = (progress - syllable * slot) / slot;
+
+                // The gap sits at the END of each slot, so a syllable is punched in
+                // and then cut — which is what separates three jeers from one long
+                // wobble. The last syllable keeps its tail.
+                float voicedSpan = syllable == shape.Syllables - 1 ? 1f : 1f - shape.Gap;
+                if (within > voicedSpan)
+                {
+                    buffer[i] = 0f;
+                    continue;
+                }
+
+                float inSyllable = within / voicedSpan;
+
+                // Pitch: the syllable's step, glided across the syllable, plus a
+                // vibrato whose rate and depth are themselves a mood cue.
+                float hz = f0 * shape.Steps[syllable]
+                           * Mathf.Lerp(1f, shape.IntraGlide, inSyllable)
+                           * (1f + shape.VibratoDepth
+                                   * Mathf.Sin(progress * length * Mathf.PI * 2f * shape.VibratoHz));
 
                 phase += hz / SAMPLE_RATE;
-                if (phase >= 1.0) phase -= 1.0;
+                if (phase >= 1.0)
+                {
+                    phase -= 1.0;
+                }
 
-                // Sawtooth glottal source, same shape as GenerateAudio.Grunt.
+                // Sawtooth glottal source through three formant resonators.
                 float source = (float)(2.0 * phase - 1.0);
-                float voiced = r1.Process(source) * 1f
+                float voiced = r1.Process(source)
                              + r2.Process(source) * 0.5f
                              + r3.Process(source) * 0.22f;
-                float breath = breathBp.Process((float)(rng.NextDouble() * 2 - 1)) * breathAmount;
 
-                float env = Mathf.Min(1f, progress / attack) * Mathf.Exp(-progress * decay);
-                buffer[i] = (voiced + breath) * env;
+                float noise = (float)(rng.NextDouble() * 2 - 1);
+                float breath = breathBp.Process(noise) * shape.Breath;
+
+                // Consonant burst: a fast-decaying noise transient at the syllable
+                // onset. Cheap, and it is most of what makes these read as speech.
+                float onset = onsetBp.Process(noise)
+                              * shape.Onset * Mathf.Exp(-inSyllable * 42f);
+
+                float env = Mathf.Min(1f, inSyllable / shape.Attack)
+                            * Mathf.Exp(-inSyllable * shape.Decay)
+                            * shape.Gains[syllable];
+
+                buffer[i] = (voiced + breath + onset) * env;
             }
 
             // Peak below 1 so NormalizeVoice has headroom and nothing clips first.
             return Normalize(buffer, Mathf.Lerp(0.55f, 0.85f, intensity));
         }
 
-        /// Kept short on purpose — see the class note on `_nextAllowedTime`.
+        /// Kept short on purpose — see the class note on `_nextAllowedTime`. Sad runs
+        /// longest because a groan IS its length; the jeer needs room for three
+        /// syllables without hurrying them.
         private static float LengthFor(string mood, float intensity)
         {
             switch (mood)
             {
-                case "Sad":    return Mathf.Lerp(0.55f, 1.10f, intensity);
-                case "Insult": return Mathf.Lerp(0.40f, 0.75f, intensity);
-                default:       return Mathf.Lerp(0.38f, 0.90f, intensity);   // Happy
+                case "Sad":    return Mathf.Lerp(0.70f, 1.15f, intensity);
+                case "Insult": return Mathf.Lerp(0.58f, 0.95f, intensity);
+                default:       return Mathf.Lerp(0.44f, 0.80f, intensity);   // Happy
             }
         }
 
@@ -258,17 +494,6 @@ namespace PoSumo.EditorTools
                 case "Sad":    return 0.84f;
                 case "Insult": return 1.05f;
                 default:       return 1.12f;   // Happy — a win is shouted high
-            }
-        }
-
-        /// How far pitch falls across the line. A groan sags hard; a taunt holds.
-        private static float MoodSag(string mood)
-        {
-            switch (mood)
-            {
-                case "Sad":    return 0.22f;
-                case "Insult": return 0.04f;
-                default:       return 0.10f;
             }
         }
 

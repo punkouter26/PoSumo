@@ -72,20 +72,48 @@ namespace PoSumo.EditorTools
                     continue;
                 }
 
-                double sumSquares = 0.0;
                 float peak = 0f;
                 for (int dataIndex = 0; dataIndex < data.Length; dataIndex++)
                 {
                     float magnitude = Mathf.Abs(data[dataIndex]);
                     if (magnitude > peak) peak = magnitude;
-                    sumSquares += (double)data[dataIndex] * data[dataIndex];
                 }
                 if (data.Length == 0 || peak <= 1e-6f)
                 {
                     continue;   // silence: nothing to level
                 }
 
-                float rms = Mathf.Sqrt((float)(sumSquares / data.Length));
+                // RMS over VOICED samples only, and this matters more than it looks.
+                // Averaging the whole clip counts deliberate silence as quietness,
+                // so a punctuated line is scored quiet and then over-boosted. The
+                // regenerated jeers are three short syllables with 30% silence
+                // between them by design; measured full-clip they asked for up to
+                // 5.8 dB more gain than the held groans, which is exactly backwards.
+                //
+                // Tools/normalize_voice_wavs.py levels the WAV FILES on this same
+                // definition and the same 8% floor. The two must agree: if this
+                // tool measured loudness differently it would re-introduce, at
+                // playback, the differences that one removed on disk.
+                const float VOICED_FLOOR = 0.08f;
+                float floor = peak * VOICED_FLOOR;
+                double sumSquares = 0.0;
+                int voicedCount = 0;
+                for (int dataIndex = 0; dataIndex < data.Length; dataIndex++)
+                {
+                    if (Mathf.Abs(data[dataIndex]) <= floor)
+                    {
+                        continue;
+                    }
+
+                    sumSquares += (double)data[dataIndex] * data[dataIndex];
+                    voicedCount++;
+                }
+                if (voicedCount == 0)
+                {
+                    continue;
+                }
+
+                float rms = Mathf.Sqrt((float)(sumSquares / voicedCount));
                 float gain = targetLinear / Mathf.Max(1e-6f, rms);
 
                 float peakLimited = ceilingLinear / peak;
