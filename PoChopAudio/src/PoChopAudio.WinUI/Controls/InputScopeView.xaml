@@ -1,0 +1,31 @@
+<UserControl
+    x:Class="PoChopAudio.WinUI.Controls.InputScopeView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:win2d="using:Microsoft.Graphics.Canvas.UI.Xaml">
+
+    <Border Background="{ThemeResource LayerFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1" CornerRadius="6" Height="72"
+            AutomationProperties.Name="Live input scope"
+            AutomationProperties.HelpText="Shows the microphone signal as it arrives, newest on the right, with a peak-hold marker and a clip warning.">
+        <Grid>
+            <win2d:CanvasControl x:Name="Surface" Draw="OnDraw" ClearColor="Transparent" />
+
+            <Border x:Name="ClipBadge"
+                    Visibility="Collapsed" IsHitTestVisible="False"
+                    HorizontalAlignment="Right" VerticalAlignment="Top" Margin="6"
+                    Background="{ThemeResource DangerFillBrush}" CornerRadius="3" Padding="5,1"
+                    AutomationProperties.Name="Input is clipping"
+                    AutomationProperties.LiveSetting="Assertive">
+                <TextBlock Text="CLIP" Style="{ThemeResource CaptionTextBlockStyle}" FontWeight="Bold" Foreground="{ThemeResource OnDangerFillBrush}" />
+            </Border>
+
+            <TextBlock x:Name="IdleText"
+                       Text="Waiting for input…"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Style="{ThemeResource CaptionTextBlockStyle}" IsHitTestVisible="False"
+                       Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+        </Grid>
+    </Border>
+</UserControl>

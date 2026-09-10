@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\PoChopAudio.Services\PoChopAudio.Services.csproj" />
+  </ItemGroup>
+
+
+  <ItemGroup>
+    <Content Include="..\..\src\PoChopAudio.WinUI\Content\Models\u2netp.onnx"
+             Condition="Exists('..\..\src\PoChopAudio.WinUI\Content\Models\u2netp.onnx')">
+      <Link>Content\Models\u2netp.onnx</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

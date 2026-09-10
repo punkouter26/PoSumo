@@ -1,0 +1,22 @@
+bin/
+obj/
+.vs/
+.vscode/
+*.user
+publish/
+output/
+*.out
+*.err
+Matt_*.m4a
+sample.png
+
+# Fetched by ./SCRIPTS/download-models.ps1, not committed. The csproj includes it only
+# Condition="Exists(...)", and every consumer degrades when it is missing.
+src/PoChopAudio.WinUI/Content/Models/*.onnx
+
+# Re-include the .NET project files. This tree lives inside the PoSumo Unity repo,
+# whose root .gitignore drops *.csproj/*.slnx/*.sln because Unity regenerates those
+# from Assets/. Here they are authored source — without these negations the solution
+# and all four projects would be silently untracked.
+!*.csproj
+!*.slnx

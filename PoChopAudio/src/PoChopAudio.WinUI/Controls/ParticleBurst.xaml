@@ -1,0 +1,20 @@
+<UserControl
+    x:Class="PoChopAudio.WinUI.Controls.ParticleBurst"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:win2d="using:Microsoft.Graphics.Canvas.UI.Xaml"
+    IsHitTestVisible="False"
+    AutomationProperties.AccessibilityView="Raw">
+
+    <!--
+        Idle by default: the render tick is only subscribed while particles are alive. In an audio
+        app the CPU this would otherwise spend belongs to the detector and the two-pass exporter.
+
+        CanvasControl for the same reason as ShaderBackdrop - a SwapChainPanel-backed control
+        overlaying the page would paint over all of it rather than compositing on top of it.
+    -->
+    <win2d:CanvasControl x:Name="Surface"
+                         Draw="OnDraw"
+                         ClearColor="Transparent"
+                         IsHitTestVisible="False" />
+</UserControl>

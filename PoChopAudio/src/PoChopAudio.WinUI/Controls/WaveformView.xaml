@@ -1,0 +1,62 @@
+<UserControl
+    x:Class="PoChopAudio.WinUI.Controls.WaveformView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:win2d="using:Microsoft.Graphics.Canvas.UI.Xaml"
+    SizeChanged="OnSizeChanged">
+
+    <Border x:Name="RootBorder"
+            Background="{ThemeResource LayerFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1" CornerRadius="6" Height="140" Padding="0"
+            AutomationProperties.Name="Waveform"
+            AutomationProperties.HelpText="Shows the whole recording with each detected sound highlighted. Click a highlighted band to play that sound, or drag to scrub.">
+        <Grid x:Name="RootGrid">
+
+            <!--
+                The Win2D surface for the segment bands, the waveform bars and the spectrogram is
+                created in code and inserted here, not declared in XAML. Unloading has to call
+                RemoveFromVisualTree to release the Direct2D device, and that is permanent - the
+                control cannot be re-shown afterwards. Now that the card lists virtualize, a card
+                scrolled out of view is recycled and shown again with different data, so the surface
+                has to be re-creatable. See EnsureSurface in the code-behind.
+
+                It is one surface rather than elements: this used to be a Canvas holding one Line
+                UIElement per bar - roughly 270 per file at this width, rebuilt from scratch on
+                every resize and every re-split. Ten files on screen meant thousands of live
+                elements in the visual tree for a picture that never needed to be one.
+            -->
+
+            <!--
+                The playhead is a Composition visual parented here rather than a Line in the canvas
+                above, so it animates on the compositor thread and keeps moving while the UI thread
+                is busy handing back an exported clip.
+            -->
+            <Border x:Name="PlayheadHost" IsHitTestVisible="False" />
+
+            <!-- Time markers footer -->
+            <Grid VerticalAlignment="Bottom" Margin="8,0,8,4" IsHitTestVisible="False">
+                <TextBlock x:Name="StartTimeText" Text="0:00.0" Style="{ThemeResource CaptionTextBlockStyle}" HorizontalAlignment="Left" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                <TextBlock x:Name="EndTimeText" Text="0:00.0" Style="{ThemeResource CaptionTextBlockStyle}" HorizontalAlignment="Right" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+            </Grid>
+
+            <!-- Follows the pointer while hovering, naming the time under it. -->
+            <Border x:Name="HoverTip"
+                    Visibility="Collapsed" IsHitTestVisible="False"
+                    HorizontalAlignment="Left" VerticalAlignment="Top"
+                    Background="{ThemeResource SystemControlBackgroundChromeMediumBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                    CornerRadius="4" Padding="6,2" Margin="0,6,0,0">
+                <TextBlock x:Name="HoverTipText" Style="{ThemeResource CaptionTextBlockStyle}" FontFamily="Consolas, Cascadia Mono" />
+            </Border>
+
+            <Border x:Name="BusyBadge"
+                    Visibility="Collapsed" IsHitTestVisible="False"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Background="{ThemeResource SystemControlBackgroundChromeMediumBrush}"
+                    CornerRadius="4" Padding="10,4">
+                <TextBlock Text="Building frequency view…" Style="{ThemeResource CaptionTextBlockStyle}" />
+            </Border>
+        </Grid>
+    </Border>
+</UserControl>

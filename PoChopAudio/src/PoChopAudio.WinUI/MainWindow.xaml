@@ -1,0 +1,68 @@
+<Window
+    x:Class="PoChopAudio.WinUI.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:PoChopAudio.WinUI.Controls"
+    Title="PoChopAudio — Audio Chop &amp; Image Cutout">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!--
+            Drag region for the extended title bar. Keeping it a plain Grid rather than reusing the
+            NavigationView header matters: SetTitleBar needs one element whose whole area is
+            draggable, and anything interactive inside it stops being clickable.
+        -->
+        <Grid x:Name="AppTitleBar" Grid.Row="0" Height="40" Background="Transparent">
+            <StackPanel Orientation="Horizontal" Spacing="10" Margin="16,0,0,0" VerticalAlignment="Center">
+                <FontIcon Glyph="&#xE8D6;" FontSize="13" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <TextBlock Text="PoChopAudio"
+                           Style="{ThemeResource CaptionTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           VerticalAlignment="Center" />
+            </StackPanel>
+        </Grid>
+
+        <!--
+            PaneDisplayMode is Auto, not Left. Left pins the 320px pane open at every window size,
+            so a narrow window lost most of its width to navigation and the pages had no room to
+            reflow into. Auto is the control's own adaptive behaviour: the full pane above 1008px,
+            an icon-only rail down to 641px, and a hamburger below that.
+        -->
+        <NavigationView x:Name="NavView"
+                        Grid.Row="1"
+                        IsBackButtonVisible="Collapsed"
+                        IsSettingsVisible="True"
+                        PaneDisplayMode="Auto"
+                        ItemInvoked="OnNavItemInvoked">
+            <NavigationView.MenuItems>
+                <NavigationViewItem Content="Chop Audio" Tag="Chop"
+                                    AutomationProperties.Name="Chop Audio — record and split takes">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE8D6;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Cutout Studio" Tag="Cutout"
+                                    AutomationProperties.Name="Cutout Studio — take head shots and remove backgrounds">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE722;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
+
+            <!--
+                One backdrop for the whole app, behind the Frame, rather than one per page. Each
+                page used to carry its own ShaderBackdrop, so navigating rebuilt a PixelShaderEffect
+                and restarted the animation clock every time. Here it is created once and simply
+                keeps running underneath whichever page is loaded.
+            -->
+            <Grid>
+                <controls:ShaderBackdrop Intensity="0.5" />
+                <Frame x:Name="ContentFrame" Margin="0" />
+            </Grid>
+        </NavigationView>
+    </Grid>
+</Window>

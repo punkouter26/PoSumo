@@ -1,0 +1,36 @@
+<UserControl
+    x:Class="PoChopAudio.WinUI.Controls.CutoutPreview"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:win2d="using:Microsoft.Graphics.Canvas.UI.Xaml">
+
+    <Border Background="{ThemeResource LayerFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1" CornerRadius="8" Height="300">
+        <Grid x:Name="RootContainer">
+
+            <!--
+                One surface for the checkerboard, the cut-out and the edge glow. The checkerboard is
+                the point: the previous version put the cutout on a flat dark panel, which made
+                translucent hair and feathered edges invisible - exactly the thing the fine-tune
+                sliders exist to adjust.
+
+                Created in code and inserted here rather than declared in XAML, because releasing it
+                on unload is permanent and the results list virtualizes and reuses these cards.
+                See EnsureSurface in the code-behind.
+            -->
+
+            <Border Background="#99000000" CornerRadius="4" Padding="6,2"
+                    HorizontalAlignment="Right" VerticalAlignment="Top" Margin="10"
+                    IsHitTestVisible="False">
+                <TextBlock Text="Cut out" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="White" FontWeight="SemiBold" />
+            </Border>
+
+            <ToggleButton x:Name="EdgeToggle" Content="Edge" FontSize="12" Padding="8,2"
+                          HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="10"
+                          Checked="OnRedrawRequested" Unchecked="OnRedrawRequested"
+                          AutomationProperties.Name="Highlight the edge of the cut-out mask"
+                          ToolTipService.ToolTip="Outline exactly where the mask boundary landed" />
+        </Grid>
+    </Border>
+</UserControl>
