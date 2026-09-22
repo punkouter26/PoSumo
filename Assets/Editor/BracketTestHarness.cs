@@ -101,6 +101,11 @@ namespace PoSumo.EditorTools
 
             Debug.Log("BRACKET HARNESS: starting a full bracket from " +
                       $"match {Systems_TournamentState.CurrentMatch}.");
+            // Count console output for the whole bracket so the result line carries
+            // a `console:` tally — the 2026-09-06 stale-brain failure ran a full
+            // bracket to completion with all four models rejected and nothing
+            // asserted on the console.
+            ConsoleSentinel.Start();
             bracket.PressAction();
             EditorApplication.update += Tick;
         }
@@ -209,6 +214,30 @@ namespace PoSumo.EditorTools
                                     "complete bracket.");
             }
 
+            // Static-event leak probe. Back on the bracket, every arena companion
+            // (referee included) has been destroyed and unsubscribed in OnDisable —
+            // so Systems_BodyDamage's three statics must carry ZERO handlers. A
+            // surviving static handler here is exactly the "destroyed object held
+            // by a static event across a scene load" leak, which domain-reload-off
+            // makes permanent for the rest of the session.
+            string[] damageEvents = { "Knockout", "Dismembered", "Gibbed" };
+            for (int index = 0; index < damageEvents.Length; index++)
+            {
+                int subscribers = EventLeakProbe.StaticSubscribers(
+                    typeof(Systems_BodyDamage), damageEvents[index]);
+                if (subscribers > 0)
+                {
+                    problems.AppendLine($"  - Systems_BodyDamage.{damageEvents[index]} still carries " +
+                                        $"{subscribers} handler(s) after returning to the bracket — " +
+                                        "a scene object leaked into a static event.");
+                }
+                else if (subscribers < 0)
+                {
+                    problems.AppendLine($"  - Systems_BodyDamage.{damageEvents[index]}: backing field " +
+                                        "not found by the leak probe (declaration shape changed?).");
+                }
+            }
+
             string careerLine = "  career: (no champion to look up)";
             if (champion != null)
             {
@@ -229,19 +258,26 @@ namespace PoSumo.EditorTools
                 }
             }
 
-            bool ok = problems.Length == 0;
+            bool ok = problems.Length == 0 && ConsoleSentinel.Errors == 0;
+            if (problems.Length == 0 && ConsoleSentinel.Errors > 0)
+            {
+                problems.AppendLine("  - the console carried errors during the run (see samples below).");
+            }
+            ConsoleSentinel.Stop();
             Debug.Log($"BRACKET HARNESS RESULT: {(ok ? "PASS" : "FAIL")} — " +
                       $"champion {(champion != null ? champion.behaviorName : "NONE")} " +
                       $"over {_matchesObserved} matches in {Time.realtimeSinceStartup - _startedAt:F0}s\n" +
                       Log + careerLine +
-                      (ok ? string.Empty : "\nPROBLEMS:\n" + problems));
+                      (ok ? string.Empty : "\nPROBLEMS:\n" + problems) +
+                      $"\n{ConsoleSentinel.Tally()}");
         }
 
         private static void Fail(string why)
         {
             EditorApplication.update -= Tick;
             _running = false;
-            Debug.LogError($"BRACKET HARNESS RESULT: FAIL — {why}\n{Log}");
+            ConsoleSentinel.Stop();
+            Debug.LogError($"BRACKET HARNESS RESULT: FAIL — {why}\n{Log}{ConsoleSentinel.Tally()}");
         }
     }
 }

@@ -59,6 +59,10 @@ namespace PoSumo.EditorTools
 
             _manager.RoundEnded += OnRoundEnded;
             _manager.MatchEnded += OnMatchEnded;
+            // Count console output for the whole run so the result line carries a
+            // `console:` tally — a tally reached while the console filled with
+            // errors used to look like a clean bill of health.
+            ConsoleSentinel.Start();
             Debug.Log($"HARNESS: running {matches} matches — {_manager.nameA} vs {_manager.nameB}");
         }
 
@@ -105,12 +109,13 @@ namespace PoSumo.EditorTools
         {
             _manager.RoundEnded -= OnRoundEnded;
             _manager.MatchEnded -= OnMatchEnded;
+            ConsoleSentinel.Stop();
             int winsA = _manager.MatchWinsA - _baseWinsA;
             int winsB = _manager.MatchWinsB - _baseWinsB;
             Debug.Log($"HARNESS RESULT: {_manager.nameA} {winsA} — {winsB} {_manager.nameB} " +
                       $"over {_matchesSeen} matches / {_roundsSeen} rounds | " +
-                      $"longest FIGHT {_manager.LongestRound:F1}s (no clock)" +
-                      $"\n{Log}");
+                      $"longest FIGHT {_manager.LongestRound:F1}s (no clock)\n" +
+                      $"{Log}{ConsoleSentinel.Tally()}");
         }
     }
 }

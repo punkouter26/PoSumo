@@ -180,6 +180,17 @@ namespace PoSumo
 
             x += W_ELO * (_eloA - _eloB) / 400f;
 
+            // One sanitize on the blended score, the Reward_Context.San pattern:
+            // everything feeding x is clamped or divided by a floored constant
+            // EXCEPT the dominance feed, which is a computed property off the fight
+            // HUD. A NaN there would otherwise ride the logistic, the EMA and the
+            // clamp straight into a permanently blank bar — Clamp never rescues
+            // NaN, every comparison against it is false.
+            if (!float.IsFinite(x))
+            {
+                x = 0f;
+            }
+
             float target = 1f / (1f + Mathf.Exp(-LOGISTIC_GAIN * x));
 
             // EMA on the sample cadence. exp() per sample is nothing at 10 Hz.

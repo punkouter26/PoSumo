@@ -133,6 +133,9 @@ namespace PoSumo
         private bool enableCaster = true;
         private bool enableArenaMutators = true;
         private bool enableBiometrics = true;
+        private bool enablePostFx = true;
+        private bool enableLanterns = true;
+        private bool enableHitSmear = true;
         [Tooltip("Round-opening countdown length; physics and brains are held until it finishes.")]
         public int countdownSeconds = 3;
         [Tooltip("Half the gap between the fighters' neutral stand-off positions during the countdown.")]
@@ -429,6 +432,9 @@ namespace PoSumo
                 enableCaster = tuning.enableCaster;
                 enableArenaMutators = tuning.enableArenaMutators;
                 enableBiometrics = tuning.enableBiometrics;
+                enablePostFx = tuning.enablePostFx;
+                enableLanterns = tuning.enableLanterns;
+                enableHitSmear = tuning.enableHitSmear;
                 // Pure-logic config, not a companion: the storylines class has no
                 // lifecycle, so the switch is delivered to the type itself.
                 Systems_Storylines.Enabled = tuning.enableStorylines;
@@ -1186,13 +1192,39 @@ namespace PoSumo
         /// hardware back key still call it too — three doors, one room.
         public void TogglePause()
         {
-            if (_phase == Phase.MatchOver) return;   // result card owns that moment
+            if (!PauseAllowedFor(_phase)) return;    // that phase owns the screen
             _paused = !_paused;
             if (_paused) _hud.ShowModal(_pauseCard); else _hud.HideModal();
             // Restore to 1 rather than to the pre-pause value: presentation slow-mo
             // ends on a realtime timer that keeps running while paused, so the saved
             // value would be stale.
             Time.timeScale = _paused ? 0f : 1f;
+        }
+
+        /// Phases that refuse pause, as data rather than a scattered `if`.
+        ///
+        /// MatchOver is the only entry today: the result card owns that moment, and
+        /// a PAUSED card stacked under REMATCH/CONTINUE with the finish dimmed
+        /// behind both is a dead end — the pause card hides the modal layer's only
+        /// other member and nothing on screen says how to get back. Every other
+        /// phase (countdown, walk-in, grace, the slow-motion finish) pauses
+        /// cleanly: Update runs at timeScale 0, so resume still works, and
+        /// Systems_MatchPresentation's realtime slow-motion timer deliberately
+        /// keeps running past a pause while RestoreTimeScale refuses to fight one.
+        /// Adding a new Phase here means deciding its entry in this table, not
+        /// discovering it in play.
+        private static readonly Phase[] PAUSE_BLOCKED_PHASES = { Phase.MatchOver };
+
+        private static bool PauseAllowedFor(Phase phase)
+        {
+            for (int index = 0; index < PAUSE_BLOCKED_PHASES.Length; index++)
+            {
+                if (PAUSE_BLOCKED_PHASES[index] == phase)
+                {
+                    return false;
+                }
+            }
+            return true;
         }
 
         /// Global mute, persisted across scenes and sessions.
@@ -1436,7 +1468,28 @@ namespace PoSumo
             // Android maps its hardware back button onto escapeKey, so this is the
             // system-back handler as well as the desktop shortcut. Update still runs
             // at timeScale 0, so it can also un-pause.
-            if (BackPressed()) TogglePause();
+            if (BackPressed()) HandleBackKey();
+        }
+
+        /// What the hardware back key / Escape actually does, per screen state.
+        ///
+        /// Previously it routed straight to TogglePause, which means an open pause
+        /// card was dismissed only by accident (TogglePause happened to be its own
+        /// inverse) and a back press at the result card was silently swallowed by
+        /// the MatchOver guard — a dead key with no explanation. The routing now
+        /// follows the layer that owns the screen, in the order the player sees
+        /// them: an open PAUSED card is dismissed by back (back = dismiss, the
+        /// platform convention), the result card is left alone — rematching a
+        /// decided match from a pocket press would be destructive and CONTINUE is
+        /// a deliberate tap — and otherwise back opens pause, as before.
+        private void HandleBackKey()
+        {
+            if (_hud != null && _hud.ModalShown && IsPaused)
+            {
+                TogglePause();   // dismiss the pause card — back closes what it opened
+                return;
+            }
+            TogglePause();       // result card: no-op via the phase guard; otherwise pause
         }
 
         private bool BackPressed()

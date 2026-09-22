@@ -205,10 +205,43 @@ namespace PoSumo
             left.style.width = Length.Percent(COL_SIDE);
             centre.style.width = Length.Percent(COL_CENTRE);
             right.style.width = Length.Percent(COL_SIDE);
+            // THE CELLS MUST HUG THEIR TRACKS, and until 2026-09-22 the Label ones
+            // did not. The runtime theme gives Labels horizontal margins
+            // (measured: 1.7pt left, 3.3pt right at panel scale), and a Triplet's
+            // three cells are percent widths summing to exactly 100% — so every
+            // Label cell's margins landed OUTSIDE the row. Measured on the fight
+            // HUD's detail card at 1080x2400: all four Triplet rows laid their
+            // content out to 496pt in a 484pt row, with the right-hand value
+            // hanging 12pt past the card's content edge — precisely the grid this
+            // row exists to enforce, broken in every row.
+            //
+            // Zeroing the HORIZONTAL margins only: they are what escapes the
+            // track. Cell padding is inside the percent width and is the label's
+            // breathing room, and vertical margins are part of every screen's
+            // spacing rhythm — neither caused the overflow and neither moves.
+            // This is the same workaround the kit's buttons already apply to
+            // themselves (ChipButton/QuietButton/PauseButton/MenuButton zero
+            // marginLeft/Right); Labels in a Triplet are grid cells and need it
+            // for the same reason.
+            CellInTrack(left);
+            CellInTrack(centre);
+            CellInTrack(right);
             row.Add(left);
             row.Add(centre);
             row.Add(right);
             return row;
+        }
+
+        /// Strips a Triplet cell's horizontal margins so percent tracks sum to
+        /// 100% of the row. See Triplet.
+        private static void CellInTrack(VisualElement cell)
+        {
+            if (cell == null)
+            {
+                return;
+            }
+            cell.style.marginLeft = 0;
+            cell.style.marginRight = 0;
         }
 
         public static Label Text(string content, int fontSize, Color color, bool bold = false)
@@ -379,12 +412,80 @@ namespace PoSumo
                 .Ease(Easing.OutQuad);
         }
 
+        /// The exit half of FadeIn/RiseIn: fade to transparent, THEN display:none.
+        /// Hiding directly is one frame of hard cut and it is the only motion in
+        /// the game that had none — every card that ever left the screen just
+        /// stopped existing between two frames.
+        ///
+        /// The completion guard is load-bearing: if something re-SHOWS the element
+        /// while this fade is running (a round restarts mid-fade), the completed
+        /// callback must not hide it out from under the new state. It only hides
+        /// when the element is still, measurably, fully transparent — i.e. this
+        /// animation is the last writer.
+        public static void FadeOutHide(this VisualElement element, int durationMs = MOTION_FAST)
+        {
+            if (element.resolvedStyle.display == DisplayStyle.None)
+            {
+                return;
+            }
+            float from = element.resolvedStyle.opacity;
+            element.experimental.animation
+                .Start(from, 0f, durationMs, (target, value) => target.style.opacity = value)
+                .Ease(Easing.OutQuad)
+                .onAnimationCompleted += () =>
+                {
+                    if (element.resolvedStyle.opacity <= 0.02f)
+                    {
+                        element.style.display = DisplayStyle.None;
+                        // Reset for the next RiseIn, which animates opacity from 0.
+                        element.style.opacity = 1f;
+                    }
+                };
+        }
+
         // ---- Controls -------------------------------------------------------
+
+        /// How long a decision button refuses a second click, in milliseconds.
+        ///
+        /// REMATCH has already double-fired once: Update's raw tap-to-continue read
+        /// `Pointer.current.press.wasPressedThisFrame` — the device, which knows
+        /// nothing about the button under the finger — so press-down reset the match
+        /// and the button's own `clicked` reset it again on release. That specific
+        /// race is guarded inside ResetMatch by phase, but every decision button in
+        /// the game (REMATCH, RESUME, CONTINUE, QUIT, START TOURNAMENT, RESHUFFLE,
+        /// the ladder tiers) is a once-per-decision action, so the guard belongs
+        /// here in the kit rather than at every call site. On a touch screen a
+        /// jittery double-tap otherwise toggles pause open and shut or starts and
+        /// restarts a bracket with no visual difference between the two taps.
+        ///
+        /// Deliberately NOT applied to ChipButton / QuietButton / PauseButton /
+        /// MenuButton: those are quick-toggle affordances (DBG, STATS, sound), and
+        /// a cooldown on them reads as dropped input.
+        private const int DECISION_COOLDOWN_MS = 400;
+
+        /// Wraps `onClick` so it fires at most once per cooldown window. The
+        /// closure is created once per button at build time and the clock is
+        /// realtime, so a paused game (timeScale 0 — exactly when RESUME matters)
+        /// still re-arms the button.
+        private static System.Action GuardClick(System.Action onClick, int cooldownMs)
+        {
+            long nextAllowedRealtimeMs = 0L;
+            return () =>
+            {
+                long nowMs = (long)(Time.realtimeSinceStartupAsDouble * 1000.0);
+                if (nowMs < nextAllowedRealtimeMs)
+                {
+                    return;
+                }
+                nextAllowedRealtimeMs = nowMs + cooldownMs;
+                onClick();
+            };
+        }
 
         /// The one call-to-action on a screen: gold, tall, unmissable.
         public static Button PrimaryButton(string text, System.Action onClick)
         {
-            var button = new Button(onClick) { text = text };
+            var button = new Button(GuardClick(onClick, DECISION_COOLDOWN_MS)) { text = text };
             StyleButton(button, Gold, OnGold, 72, FONT_TITLE);
             return button;
         }
@@ -392,7 +493,7 @@ namespace PoSumo
         /// The secondary choice next to a PrimaryButton.
         public static Button GhostButton(string text, System.Action onClick)
         {
-            var button = new Button(onClick) { text = text };
+            var button = new Button(GuardClick(onClick, DECISION_COOLDOWN_MS)) { text = text };
             StyleButton(button, new Color(0.22f, 0.2f, 0.21f), TextMid, 64, FONT_LEAD);
             return button;
         }

@@ -84,7 +84,16 @@ namespace PoSumo
         /// Full-panel layer above the dock and the modals, for corner-anchored
         /// controls. Absolute children resolve against the whole screen.
         public VisualElement Overlay { get; private set; }
+        /// The safe-area-inset layer everything in-flow is laid out through.
+        /// Read-only surface for layout audits (the editor FlowTestHarness and
+        /// Tools/portrait_check.py assert on its resolved padding when a fake
+        /// device cutout is active) — the HUD stays the only writer.
+        public VisualElement ContentLayer { get; private set; }
 
+        /// True while any modal dialog (result card, pause menu) is on screen.
+        /// The Android back key reads this to decide between dismissing the open
+        /// dialog and opening pause, instead of guessing from manager state.
+        public bool ModalShown { get; private set; }
         /// Returns the scene's HUD root, building it if this is the first caller.
         /// `settings` is only consulted when the root does not exist yet.
         public static Systems_HudRoot Ensure(Transform owner, PanelSettings settings)
@@ -128,6 +137,7 @@ namespace PoSumo
             // on the document root, which is what put it there.
             VisualElement content = new VisualElement().Fill().NoPick();
             root.Add(content);
+            ContentLayer = content;
 
             _backdrop = new VisualElement().Fill();
             _backdrop.style.backgroundColor = Systems_UiKit.Backdrop;
@@ -347,6 +357,7 @@ namespace PoSumo
             {
                 element.RiseIn(48f);
             }
+            ModalShown = true;
         }
 
         /// Hides every dialog and drops the backdrop. Instant on the way out: the
@@ -358,6 +369,7 @@ namespace PoSumo
                 _modal[childIndex].style.display = DisplayStyle.None;
             }
             _backdrop.style.display = DisplayStyle.None;
+            ModalShown = false;
         }
     }
 }

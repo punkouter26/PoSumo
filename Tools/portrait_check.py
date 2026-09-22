@@ -49,9 +49,11 @@ import unity  # noqa: E402  -- Tools/unity.py, the bridge client
 
 
 # Real device aspects, not round numbers. 9:16 is the panel reference, 9:20 is an
-# ordinary modern phone, and 3:4 is a tablet in portrait -- the case the HUD's
-# DOCK_MAX_PERCENT floor exists for, and the one nobody ever looks at.
-DEFAULT_SIZES = ["1080x1920", "1080x2400", "1200x1600"]
+# ordinary modern phone, 9:21 is the tallest mainstream class (21:9), and 3:4 is a
+# tablet in portrait -- the case the HUD's DOCK_MAX_PERCENT floor exists for, and
+# the one nobody ever looks at. 1080x2520 is the aspect that once only got an
+# ad-hoc look (1440x3088 during the loop audit) and then nothing at all.
+DEFAULT_SIZES = ["1080x1920", "1080x2400", "1200x1600", "1080x2520"]
 
 
 def _exec(code: str, timeout: float = 120.0) -> str:
@@ -129,10 +131,16 @@ var docs = UnityEngine.Object.FindObjectsByType<UnityEngine.UIElements.UIDocumen
     UnityEngine.FindObjectsSortMode.None);
 var sb = new System.Text.StringBuilder();
 int flagged = 0;
+var scrollviews = new System.Collections.Generic.Dictionary<string, int>();
 System.Action<UnityEngine.UIElements.VisualElement, string> walk = null;
 walk = (e, path) => {
     var r = e.resolvedStyle;
     if (r.display == UnityEngine.UIElements.DisplayStyle.None) return;
+    if (e is UnityEngine.UIElements.ScrollView) {
+        string doc = path.Length > 0 ? path : "root";
+        scrollviews.TryGetValue(doc, out int n);
+        scrollviews[doc] = n + 1;
+    }
     // A ScrollView and its content container are SUPPOSED to hold more than they
     // show -- that is the entire point of one, and flagging them would mean the
     // audit reports a finding precisely when scrolling has been fixed. Everything
@@ -143,28 +151,48 @@ walk = (e, path) => {
                  || e.ClassListContains("unity-scroll-view__content-viewport");
     if (!scroller && e.childCount > 0 && r.height > 1f) {
         float lowest = 0f;
+        float furthest = 0f;
         for (int i = 0; i < e.childCount; i++) {
             var c = e[i].resolvedStyle;
             if (c.display == UnityEngine.UIElements.DisplayStyle.None) continue;
             if (e[i].resolvedStyle.position == UnityEngine.UIElements.Position.Absolute) continue;
             float bottom = c.top + c.height;
             if (bottom > lowest) lowest = bottom;
+            float right = c.left + c.width;
+            if (right > furthest) furthest = right;
         }
         // 1.5pt of slack: sub-pixel rounding is normal and is not a finding.
+        // VERTICAL overflow is the flex-shrink compression signature; HORIZONTAL
+        // overflow is the fixed-width-chip signature (a chip wider than its row
+        // pushed the winner chip off its card once already). Both gate.
         if (lowest > r.height + 1.5f) {
             flagged++;
-            sb.Append("  OVERFLOW " + path + " " + e.GetType().Name
+            sb.Append("  OVERFLOW-V " + path + " " + e.GetType().Name
                 + " height=" + r.height.ToString("F0")
                 + " content=" + lowest.ToString("F0")
                 + " over=" + (lowest - r.height).ToString("F0")
                 + " children=" + e.childCount
                 + " flexShrink=" + r.flexShrink.ToString("F0") + "\n");
         }
+        if (furthest > r.width + 1.5f) {
+            flagged++;
+            sb.Append("  OVERFLOW-H " + path + " " + e.GetType().Name
+                + " width=" + r.width.ToString("F0")
+                + " content=" + furthest.ToString("F0")
+                + " over=" + (furthest - r.width).ToString("F0")
+                + " children=" + e.childCount + "\n");
+        }
     }
     for (int i = 0; i < e.childCount; i++) walk(e[i], path + "/" + i);
 };
 foreach (var d in docs) walk(d.rootVisualElement, d.gameObject.name);
 sb.Insert(0, "documents=" + docs.Length + " overflowing=" + flagged + "\n");
+foreach (var kv in scrollviews) {
+    // Not a failure on its own (the bracket legitimately scrolls, and the agent
+    // debug panel may) -- but an arena screen carrying a ScrollView is how the
+    // single-screen rule quietly dies, so it is printed on every run.
+    sb.Append("  NOTE scrollviews=" + kv.Value + " under '" + kv.Key + "'\n");
+}
 return sb.ToString();
 '''
 
@@ -191,7 +219,37 @@ def scene_state() -> str:
     )
 
 
-def run_size(width: int, height: int, out_dir: str, play: bool) -> dict:
+def hud_padding() -> tuple[float, float]:
+    """Resolved safe-area padding of the HUD content layer, in points.
+
+    The Editor's Screen.safeArea is always the full window, so the ONLY way to
+    verify the inset path off-device is Systems_SafeArea.SafeAreaOverride -- a
+    fake cutout the watcher applies in the OS value's place. Returns (-1, -1)
+    when the HUD has not built.
+    """
+    out = _exec(
+        'var h = UnityEngine.Object.FindAnyObjectByType<PoSumo.Systems_HudRoot>();'
+        ' if (h == null || h.ContentLayer == null) return "-1|-1";'
+        ' return h.ContentLayer.resolvedStyle.paddingTop.ToString("F1") + "|" +'
+        ' h.ContentLayer.resolvedStyle.paddingBottom.ToString("F1");'
+    )
+    try:
+        top, _, bottom = out.strip().partition("|")
+        return float(top), float(bottom)
+    except ValueError:
+        return (-1.0, -1.0)
+
+
+def toggle_pause() -> str:
+    return _exec(
+        'var m = UnityEngine.Object.FindAnyObjectByType<PoSumo.Systems_GameMatchManager>();'
+        ' if (m == null) return "no-manager";'
+        ' m.TogglePause();'
+        ' return "paused=" + m.IsPaused;'
+    )
+
+
+def run_size(width: int, height: int, out_dir: str, play: bool, notch: bool) -> dict:
     tag = f"{width}x{height}"
     print(f"\n=== {tag} " + "=" * (60 - len(tag)))
 
@@ -209,6 +267,8 @@ def run_size(width: int, height: int, out_dir: str, play: bool) -> dict:
     print("".join("    " + line + "\n" for line in bracket_audit.strip().splitlines()))
 
     arena_audit = ""
+    pause_audit = ""
+    notch_state = "skipped"
     if play:
         _exec('var b = UnityEngine.Object.FindAnyObjectByType<PoSumo.Systems_TournamentBracket>();'
               ' if (b != null) b.PressAction(); return "started";')
@@ -220,9 +280,47 @@ def run_size(width: int, height: int, out_dir: str, play: bool) -> dict:
         print("  ARENA AUDIT:")
         print("".join("    " + line + "\n" for line in arena_audit.strip().splitlines()))
 
+        # PAUSE state. The idle captures never show the modal layer: the dim
+        # backdrop plus a bottom-anchored card padded by the Dock's live height,
+        # which is a different number on every aspect the panel resolves at.
+        print("  " + str(toggle_pause()))
+        time.sleep(1.2)
+        shot(os.path.join(out_dir, f"pause_{tag}.png"), settle=2.0)
+        pause_audit = audit_overflow()
+        print("  PAUSE AUDIT:")
+        print("".join("    " + line + "\n" for line in pause_audit.strip().splitlines()))
+        print("  " + str(toggle_pause()))
+        time.sleep(0.5)
+
+        if notch:
+            # FAKE CUTOUT. 48 px top (punch-hole) + 48 px bottom (gesture bar) in
+            # the real Screen.safeArea's own pixel units. Gates twice: the inset
+            # must actually move the content layer, and the HUD must not overflow
+            # with it applied.
+            _exec('PoSumo.Systems_SafeArea.SafeAreaOverride = new UnityEngine.Rect('
+                  '0f, 48f, UnityEngine.Screen.width, UnityEngine.Screen.height - 96f);'
+                  ' return "notch-on";')
+            time.sleep(1.2)
+            top, bottom = hud_padding()
+            notch_state = f"paddingTop={top} paddingBottom={bottom}"
+            print("  NOTCH SIM: " + notch_state)
+            shot(os.path.join(out_dir, f"notch_{tag}.png"), settle=2.0)
+            notch_audit = audit_overflow()
+            for line in notch_audit.splitlines():
+                if "OVERFLOW" in line:
+                    # Fold into pause_audit's gate by appending a labelled line.
+                    pause_audit += "NOTCH " + line + "\n"
+                    print("    " + line)
+            if top <= 0.5 or bottom <= 0.5:
+                pause_audit += f"NOTCH-FAIL inset did not move the content layer ({notch_state})\n"
+            _exec('PoSumo.Systems_SafeArea.SafeAreaOverride = default(UnityEngine.Rect);'
+                  ' return "notch-off";')
+            time.sleep(0.6)
+
     _exec("UnityEditor.EditorApplication.isPlaying = false; return \"stop\";")
     time.sleep(2.5)
-    return {"size": tag, "bracket": bracket_audit, "arena": arena_audit}
+    return {"size": tag, "bracket": bracket_audit, "arena": arena_audit,
+            "pause": pause_audit, "notch": notch_state}
 
 
 def main() -> int:
@@ -233,6 +331,8 @@ def main() -> int:
     ap.add_argument("--out", default="Temp/portrait", help="directory for the PNGs")
     ap.add_argument("--no-play", action="store_true",
                     help="audit the bracket layout only; do not run a match")
+    ap.add_argument("--no-notch", action="store_true",
+                    help="skip the fake-cutout pass (SafeAreaOverride + padding gate)")
     args = ap.parse_args()
 
     sizes = []
@@ -245,19 +345,27 @@ def main() -> int:
 
     results = []
     for w, h in sizes:
-        results.append(run_size(w, h, args.out, play=not args.no_play))
+        results.append(run_size(w, h, args.out, play=not args.no_play,
+                                notch=not args.no_play and not args.no_notch))
 
     print("\n" + "=" * 66)
     bad = 0
     for r in results:
-        for label in ("bracket", "arena"):
+        for label in ("bracket", "arena", "pause"):
             text = r[label] or ""
             for line in text.splitlines():
                 if "OVERFLOW" in line:
                     bad += 1
                     print(f"{r['size']:>10} {label:<8} {line.strip()}")
-    print(f"\n{bad} overflowing element(s) across {len(results)} size(s).")
-    print(f"PNGs in {args.out}/")
+                if "NOTCH-FAIL" in line:
+                    bad += 1
+                    print(f"{r['size']:>10} notch     {line.strip()}")
+    print(f"\n{bad} finding(s) across {len(results)} size(s).")
+    print("PNGs in {}/".format(args.out))
+    # The gate: any overflow (vertical OR horizontal) at ANY audited aspect, or a
+    # fake cutout that failed to inset the HUD or overflowed it, is a hard
+    # failure. The single-screen rule is enforced here, at the tool, because
+    # nothing in the UI itself can detect the compression.
     return 1 if bad else 0
 
 
