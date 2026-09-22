@@ -69,6 +69,14 @@ namespace PoSumo
         private const float LPF_OPEN = 22000f;
         private const float LPF_SLOWMO = 900f;
 
+        /// Fired when a voice line ACTUALLY starts playing, carrying the clip
+        /// length. STATIC on purpose: Systems_MatchAudio subscribes and ducks the
+        /// SFX and crowd beds under speech, and neither companion should reach
+        /// into the other — they meet on this shared surface exactly the way the
+        /// three impact watchers meet on Sensor_Impact.AnyImpact. A fighter with
+        /// no clips never fires it, so a silent roster costs the beds nothing.
+        public static event System.Action<float> LineStarted;
+
         private AudioLowPassFilter _lowPass;
 
         private Systems_VoiceGains _gains;
@@ -405,6 +413,7 @@ namespace PoSumo
             _source.volume = volume * (_gains != null ? _gains.GainFor(clip.name) : 1f)
                            * Systems_AudioMix.VoiceLevel;
             _source.Play();
+            LineStarted?.Invoke(clip.length);
         }
 
         /// Pan by position in the ring, relative to the arena centre rather than

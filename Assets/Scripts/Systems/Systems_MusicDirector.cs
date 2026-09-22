@@ -27,6 +27,8 @@ namespace PoSumo
         public float fadeSeconds = 1.8f;
         [Tooltip("Extra fade time when a layer is coming down, so exits are gentler than entrances.")]
         public float releaseMultiplier = 1.6f;
+        [Tooltip("How much the broadcast tension meter (Systems_TensionEngine.Tension01 — a close fight on the scoreboard) drives the tension layer, on top of the in-fight signals below. 0 = the old behaviour, driven only by match point, edge danger and crowd support. Cached lookup, same one-signal rule as the crowd read: when the engine is off the layer simply loses one of its reasons.")]
+        [Range(0f, 1f)] public float broadcastTensionWeight = 0.45f;
 
         private const string AUDIO_PATH = "Audio/";
 
@@ -149,6 +151,26 @@ namespace PoSumo
         private Systems_CrowdMomentum _crowd;
         private bool _crowdSearched;
 
+        /// The broadcaster's read of how decided the fight ISN'T — a smoothed
+        /// win-probability that already folds dominance, stamina, mat-behind and
+        /// the Elo prior. When IT is tense the score should be, even while nobody
+        /// is near an edge: two evenly-matched fighters grinding in the middle are
+        /// the most tense thing sumo has and the old three signals read none of it.
+        private Systems_TensionEngine _tensionEngine;
+        private bool _tensionEngineSearched;
+
+        private float BroadcastTension01()
+        {
+            if (!_tensionEngineSearched)
+            {
+                _tensionEngineSearched = true;
+                _tensionEngine = FindAnyObjectByType<Systems_TensionEngine>();
+            }
+            // Null whenever enableTensionEngine is off — the layer simply loses one
+            // of its four reasons rather than erroring.
+            return _tensionEngine != null ? _tensionEngine.Tension01 * broadcastTensionWeight : 0f;
+        }
+
         private float CrowdSupport01()
         {
             if (!_crowdSearched)
@@ -221,18 +243,22 @@ namespace PoSumo
                 _drums.target = 1f;
                 // Tension used to be BINARY on match point, so most of most matches
                 // played the same three layers flat. It is now continuous and takes
-                // the loudest of three independent reasons to be tense:
+                // the loudest of FOUR independent reasons to be tense:
                 //
                 //   match point   - the round can end the match
                 //   edge danger   - someone is close to being pushed out
                 //   crowd support - the underdog is being roared back in
+                //   broadcast     - the win-probability meter says it is anyone's
                 //
                 // Max rather than sum: these overlap constantly (a cornered fighter
                 // is usually also the one the crowd is behind) and adding them would
                 // peg the layer for most of a bout, which is the same flatness in a
-                // new costume.
-                _tension.target = Mathf.Max(matchPoint ? 1f : 0f,
-                                            Mathf.Max(EdgeDanger01(), CrowdSupport01()));
+                // new costume. The broadcast signal is pre-scaled by its weight so
+                // a knife-edge fight alone cannot quite pin the layer — something
+                // CONCRETE still has to happen to reach full tension.
+                _tension.target = Mathf.Max(
+                    Mathf.Max(matchPoint ? 1f : 0f, BroadcastTension01()),
+                    Mathf.Max(EdgeDanger01(), CrowdSupport01()));
             }
             else
             {

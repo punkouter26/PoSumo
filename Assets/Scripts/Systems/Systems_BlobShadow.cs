@@ -63,9 +63,19 @@ namespace PoSumo
             {
                 for (int columnIndex = 0; columnIndex < S; columnIndex++)
                 {
-                    float d = Vector2.Distance(new Vector2(columnIndex + 0.5f, rowIndex + 0.5f), new Vector2(S / 2f, S / 2f));
-                    float a = Mathf.Clamp01(1f - d / r);
-                    tex.SetPixel(columnIndex, rowIndex, new Color(1f, 1f, 1f, a * a));
+                    float d = Vector2.Distance(new Vector2(columnIndex + 0.5f, rowIndex + 0.5f), new Vector2(S / 2f, S / 2f)) / r;
+                    // Two-lobe falloff instead of the old single squared ramp: a
+                    // tight bright CORE inside a broad soft POOL. A one-tap ramp
+                    // spends its whole gradient on the outer edge, so a planted
+                    // foot read the same as a hovering one at the centre of the
+                    // patch — the exact cue this system exists to carry. The core
+                    // dies by 45% of the radius, the pool follows a smoothstep out
+                    // to the rim, and the sum is clamped so the centre cannot
+                    // clip past full alpha.
+                    float pool = 1f - Mathf.SmoothStep(0f, 1f, d);
+                    float core = 1f - Mathf.SmoothStep(0f, 0.45f, d);
+                    float a = Mathf.Clamp01(pool * 0.72f + core * 0.45f);
+                    tex.SetPixel(columnIndex, rowIndex, new Color(1f, 1f, 1f, a));
                 }
             }
             tex.Apply();

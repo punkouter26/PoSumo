@@ -466,11 +466,18 @@ namespace PoSumo
         {
             if (_detailCard == null || _detailVisible == visible) return;
             _detailVisible = visible;
-            _detailCard.style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
             if (visible)
             {
+                _detailCard.style.display = DisplayStyle.Flex;
                 RefreshDetail();
                 _detailCard.RiseIn(24f);
+            }
+            else
+            {
+                // Animated exit instead of a hard cut. FadeOutHide's completion
+                // guard keeps a stale hide from killing a card that was re-shown
+                // mid-fade (round restarts can land inside the 140 ms window).
+                _detailCard.FadeOutHide();
             }
         }
 

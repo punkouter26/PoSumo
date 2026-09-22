@@ -85,6 +85,9 @@ namespace PoSumo
             // the same contacts except during a genuine slam, which is exactly
             // when both are wanted.
             SpawnCompanion<Systems_ShockwaveFx>(enableShockwave, "ShockwaveFx");
+            // The directed middle tier between ImpactFx's flash and the shockwave
+            // ring — same static event, tighter gate, and aimed along the blow.
+            SpawnCompanion<Systems_HitSmear>(enableHitSmear, "HitSmear");
             SpawnCompanion<Systems_RingSqueezeCue>(enableRingSqueezeCue, "RingSqueezeCue");
             // ---- Spectator layer. All read-only w.r.t. the fight except the
             // mutators (game-only, like StrikeImpulse). Spawn ORDER matters
@@ -114,6 +117,10 @@ namespace PoSumo
             SpawnCompanion<Systems_PerfHud>(enablePerfHud && developmentBuild, "PerfHud");
             SpawnScreenChrome();
             SpawnCompanion<Systems_ArenaLighting>(enableLighting, "ArenaLighting");
+            // Both AFTER the rig: lanterns hang around a built arena, and PostFx
+            // reads ArenaLighting.Instance.PostProfile, which its Awake builds.
+            SpawnCompanion<Systems_ArenaLanterns>(enableLighting && enableLanterns, "ArenaLanterns");
+            SpawnCompanion<Systems_PostFx>(enableLighting && enablePostFx, "PostFx");
             SpawnCompanion<Systems_CareerRecorder>(recordCareerStats, "CareerRecorder");
             SpawnCompanion<Systems_ArenaAtmosphere>(enableAtmosphere, "Atmosphere");
             SpawnCompanion<Systems_MusicDirector>(enableMusic, "Music");

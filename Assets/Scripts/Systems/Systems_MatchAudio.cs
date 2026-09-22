@@ -88,6 +88,8 @@ namespace PoSumo
         public float panWidth = 3.4f;
         [Tooltip("Reverb wetness. This is a big wooden hall, not a studio.")]
         public float reverbLevel = -1200f;
+        [Tooltip("Width (m) of the tawara band inside the live rim. A body part slamming the BAND is hitting the straw bales, not the clay, and gets a sharper, higher, almost dust-free knock instead of a dull clay thud. Reads the LIVE ring half-width, so it stays correct as the mat shrinks.")]
+        public float tawaraBandWidth = 1.2f;
 
         private const string AUDIO_PATH = "Audio/";
         private const int VOICE_COUNT = 10;
@@ -283,11 +285,20 @@ namespace PoSumo
             _nextBreathTime = Time.time + breathInterval;
         }
 
-        private void OnEnable() { Sensor_Impact.AnyImpact += OnImpact; }
+        private void OnEnable()
+        {
+            Sensor_Impact.AnyImpact += OnImpact;
+            // A spoken line ducks the room — the beds pull down for as long as the
+            // clip roughly lasts, so speech always wins over the bed. The event is
+            // on FighterVoice as a STATIC: neither companion reaches into the
+            // other, they meet on a shared surface like every impact watcher does.
+            Systems_FighterVoice.LineStarted += OnVoiceLine;
+        }
 
         private void OnDisable()
         {
             Sensor_Impact.AnyImpact -= OnImpact;
+            Systems_FighterVoice.LineStarted -= OnVoiceLine;
             if (_manager != null)
             {
                 _manager.RoundStarted -= OnRoundStarted;
@@ -295,6 +306,14 @@ namespace PoSumo
                 _manager.MatchEnded -= OnMatchEnded;
                 _manager.MatchReset -= OnMatchReset;
             }
+        }
+
+        /// Speech owns the room while it is speaking. Duck (not mute) by a
+        /// fraction, for a window proportional to the clip but capped — a level-5
+        /// match-win line runs 8 s and must not hold the whole mix down for it.
+        private void OnVoiceLine(float clipSeconds)
+        {
+            Duck(0.45f, Mathf.Min(1.8f, clipSeconds * 0.55f));
         }
 
         // ------------------------------------------------------------- events
@@ -405,6 +424,21 @@ namespace PoSumo
         private static bool IsStatic(Collision2D c) =>
             c.rigidbody == null || c.rigidbody.bodyType == RigidbodyType2D.Static;
 
+        /// True when a world x sits inside the low-friction tawara band at the
+        /// CURRENT live rim. Reads the manager's live half-width rather than the
+        /// configured one, because the rim this has to describe is the one the mat
+        /// has right now — the shrink moves it every second after the eighth.
+        private bool OnTawara(float worldX)
+        {
+            if (_manager == null || tawaraBandWidth <= 0f)
+            {
+                return false;
+            }
+            float half = _manager.CurrentRingHalfWidth;
+            float distance = Mathf.Abs(worldX - _manager.transform.position.x);
+            return distance >= half - tawaraBandWidth && distance <= half + tawaraBandWidth * 0.5f;
+        }
+
         private void OnImpact(Sensor_Impact sensor, Collision2D c)
         {
             float speed = c.relativeVelocity.magnitude;
@@ -423,10 +457,22 @@ namespace PoSumo
                     return;
                 }
                 // Body part slamming the ground: dusty and dull, no flesh slap.
+                // Unless it landed on the TAWARA — the straw bales ring sharper and
+                // drier than clay, and that difference is free material-aware
+                // detail from the collision point the physics already computed.
                 if (speed > 2f && now >= _nextThudTime)
                 {
                     _nextThudTime = now + 0.06f;
-                    PlayLayeredThud(speed, 0.75f, pan, slapScale: 0.4f, dustScale: 1.4f);
+                    if (OnTawara(c.GetContact(0).point.x))
+                    {
+                        // Higher pitch (smaller resonator), no slap, barely any
+                        // dust tail: a knock on straw, not a body on clay.
+                        PlayLayeredThud(speed, 1.3f, pan, slapScale: 0.12f, dustScale: 0.25f);
+                    }
+                    else
+                    {
+                        PlayLayeredThud(speed, 0.75f, pan, slapScale: 0.4f, dustScale: 1.4f);
+                    }
                     MaybeGrunt(sensor.owner, speed * 0.8f, pan);
                 }
                 return;

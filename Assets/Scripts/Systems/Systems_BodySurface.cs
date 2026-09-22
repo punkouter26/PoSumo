@@ -66,6 +66,8 @@ namespace PoSumo
         [Range(0.5f, 8f)] public float detailScale = 1.6f;
         [Tooltip("Broad warm silhouette wrap that separates two clinched bodies. Written once in Start.")]
         [Range(0f, 2f)] public float backLight = 0.35f;
+        [Tooltip("Blend the shared cylinder normal map toward a per-part PROCEDURAL capsule normal, computed in the shader from each part's UV and world aspect. 1 = fully procedural: a thigh lights as a tube, the trunk as a rounded slab, the head as a ball, instead of every part lighting as the same tube. Costs no texture fetch and no per-part material, so SRP batching is untouched. Written once in Start.")]
+        [Range(0f, 1f)] public float proceduralNormals = 1f;
 
         // Writing a float into a material every frame is a CPU-side property-block
         // update and a shader constant upload; below this delta nobody can see the
@@ -79,6 +81,7 @@ namespace PoSumo
         private static readonly int DetailId = Shader.PropertyToID("_Detail");
         private static readonly int DetailScaleId = Shader.PropertyToID("_DetailScale");
         private static readonly int BackLightId = Shader.PropertyToID("_BackLight");
+        private static readonly int NormalProcId = Shader.PropertyToID("_NormalProc");
 
         private Material _material;
         private Systems_GameMatchManager _manager;
@@ -148,6 +151,10 @@ namespace PoSumo
             if (_material.HasProperty(BackLightId))
             {
                 _material.SetFloat(BackLightId, backLight);
+            }
+            if (_material.HasProperty(NormalProcId))
+            {
+                _material.SetFloat(NormalProcId, proceduralNormals);
             }
 
             _manager = FindAnyObjectByType<Systems_GameMatchManager>();

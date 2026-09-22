@@ -36,6 +36,12 @@ namespace PoSumo
         [Tooltip("Pulses per second once the mat is closing. 0 disables the pulse and leaves a steady band.")]
         public float pulseHz = 1.4f;
 
+        [Header("Squeeze dust")]
+        [Tooltip("Clay dust puffs per second, per rim, at a fully closed mat. The contraction decides almost every round, so the EDGE should shed clay like the active thing it is, not sit there as a painted band. Rate scales with how closed the mat is; 0 disables.")]
+        public float squeezeDustHz = 5f;
+        [Tooltip("Dust puffs only once the mat is at least this far closed (0-1), or the opening stand-off smokes for nothing.")]
+        [Range(0f, 1f)] public float squeezeDustOnset = 0.12f;
+
         [Tooltip("Sorting order for the bands. Above the arena dressing and below the fighters (whose parts run 0-3 and whose head is 4), so a band never draws over a body.")]
         public int sortingOrder = -1;
 
@@ -47,6 +53,8 @@ namespace PoSumo
         private SpriteRenderer _left;
         private SpriteRenderer _right;
         private static Sprite _edgeFade;
+        private float _lastClosed = -1f;
+        private float _dustDebt;
 
         /// A 1-px-tall horizontal gradient: opaque at the outer edge, transparent
         /// inward. Drawn per side and mirrored, so the band sits ON the rim and
@@ -129,6 +137,48 @@ namespace PoSumo
             float z = _manager.transform.position.z;
             _left.transform.position = new Vector3(centreX - half, topY, z);
             _right.transform.position = new Vector3(centreX + half, topY, z);
+
+            EmitSqueezeDust(closed01, centreX, half, topY, z);
+        }
+
+        /// Clay shedding off the two rims while the mat contracts. Rate-limited on
+        /// the REALTIME clock (a slow-mo finish must not spray dust in slow motion)
+        /// and gated on the closure ACTUALLY INCREASING, so a round parked at the
+        /// stand-off emits nothing. Emission goes through Systems_DustPuff.Burst,
+        /// which is the shared static every dust caller uses — no second particle
+        /// system, no second texture, no new draw-call cost beyond the puffs
+        /// themselves.
+        private void EmitSqueezeDust(float closed01, float centreX, float half, float topY, float z)
+        {
+            if (squeezeDustHz <= 0f || closed01 < squeezeDustOnset)
+            {
+                _lastClosed = closed01;
+                return;
+            }
+
+            // Only closing mat sheds. `closed01` is monotonic through a round, but
+            // the walk-in widens the ring first, so guard the direction anyway.
+            bool closing = _lastClosed >= 0f && closed01 > _lastClosed;
+            _lastClosed = closed01;
+            if (!closing)
+            {
+                return;
+            }
+
+            // Debt accumulator: carries fractional puffs across frames so the rate
+            // is exact without a per-frame allocation or a coroutine.
+            float strength = (closed01 - squeezeDustOnset) / (1f - squeezeDustOnset);
+            _dustDebt += squeezeDustHz * strength * Time.unscaledDeltaTime;
+            while (_dustDebt >= 1f)
+            {
+                _dustDebt -= 1f;
+                int count = 2 + Mathf.RoundToInt(3f * strength);
+                Vector3 position = new Vector3(
+                    centreX + (Random.value < 0.5f ? -half : half) + Random.Range(-0.1f, 0.1f),
+                    topY + Random.Range(0f, 0.05f),
+                    z);
+                Systems_DustPuff.Burst(position, count);
+            }
         }
     }
 }

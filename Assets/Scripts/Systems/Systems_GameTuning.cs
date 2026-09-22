@@ -136,8 +136,14 @@ namespace PoSumo
         public bool enableVoice = true;
         [Tooltip("2D light rig plus the post-processing volume.\n\nMUST STAY ON. The full rig (key, rims, global, volumetrics) has been on since 2026-08-25 and the old LightingEffects / FlatBodyShading switches on Systems_ArenaLighting were deleted — but every sprite in the arena uses a LIT material, and with no Light2D at all they render solid black. This switch decides whether there is a rig at all.")]
         public bool enableLighting = true;
+        [Tooltip("Event post-processing on the arena's existing volume: a chromatic-aberration + vignette punch on KOs and dismemberments, and a desaturated look while a slow-motion finish runs. Drives the profile Systems_ArenaLighting already builds — no renderer feature, no extra blit. Rides enableLighting too: no volume, nothing to drive.")]
+        public bool enablePostFx = true;
+        [Tooltip("Warm corner lanterns that flicker like a live venue and flare with crowd support and round ends. Small on purpose: they punctuate the rig, they do not light the fight. Cast shadows stay off — the edge-on dohyo can show no projected shadow regardless of light count.")]
+        public bool enableLanterns = true;
         [Tooltip("Dust and sweat bursts scaled by hit strength.")]
         public bool enableImpactFx = true;
+        [Tooltip("A one-quad radial STREAK burst at solid-strike contact points, aimed along the blow — the directed middle tier between ImpactFx's particle flash and ShockwaveFx's slam ring. Presentation only; subscribes to the impact static like the other two.")]
+        public bool enableHitSmear = true;
         [Tooltip("Backdrop parallax, haze tinting, crowd sway, light shafts.")]
         public bool enableAtmosphere = true;
         [Tooltip("Adaptive layered score.")]

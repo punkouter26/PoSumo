@@ -35,6 +35,15 @@ Shader "PoSumo/BodyLit"
         _NormalMap("Normal Map", 2D) = "bump" {}
         [MaterialToggle] _ZWrite("ZWrite", Float) = 0
 
+        [Header(Normal Source)]
+        // 0 = sample _NormalMap (the shared horizontal-cylinder sweep),
+        // 1 = compute a capsule normal per part from its UV and WORLD quad aspect.
+        // The cylinder map lights every part as the same tube; the procedural one
+        // lets a limb read as a limb, the trunk as a rounded slab and the head as
+        // a ball, with no extra texture fetch and no per-part material. Written
+        // once per fighter by Systems_BodySurface.
+        _NormalProc("Procedural Normal Blend", Range(0, 1)) = 0
+
         [Header(Rim)]
         _RimColor("Rim Colour", Color) = (0.55, 0.7, 1.0, 1)
         _RimStrength("Rim Strength", Range(0, 3)) = 0.22
@@ -109,6 +118,10 @@ Shader "PoSumo/BodyLit"
             {
                 COMMON_2D_LIT_OUTPUTS
                 half4 color        : COLOR;
+                // World-space quad size (width, height) of THIS part, computed in
+                // the vertex stage from the instance matrix. Per-instance data, so
+                // the per-part procedural normal below needs no per-part material.
+                half2 quadScaleWS  : TEXCOORD8;
             };
 
             #include "Packages/com.unity.render-pipelines.universal/Shaders/2D/Include/Lit2DCommon.hlsl"
@@ -131,6 +144,7 @@ Shader "PoSumo/BodyLit"
                 half _BackLight;
                 half _Detail;
                 half _DetailScale;
+                half _NormalProc;
             CBUFFER_END
 
             // Cheap hash for grit and sweat sparkle. Deterministic per texel, so
@@ -138,6 +152,38 @@ Shader "PoSumo/BodyLit"
             half Hash21(half2 p)
             {
                 return frac(sin(dot(p, half2(41.7h, 289.3h))) * 43758.5453h);
+            }
+
+            // A capsule normal in sprite tangent space, derived from the UV and the
+            // part's WORLD aspect. The shared cylinder map lights every part as the
+            // same horizontal tube; this one knows whether it is shading a thigh,
+            // a trunk slab or a near-spherical head. Convention matches the
+            // sampled map exactly — x sweeps across the width (|x| is the rim/
+            // edge term's silhouette input), y stays flat, z is out of the screen
+            // and feeds the sweat/wet specular bands. No texture fetch.
+            half3 CapsuleNormal(half2 uv, half2 quadScaleWS)
+            {
+                half aspect = max(quadScaleWS.x, 1e-3h) / max(quadScaleWS.y, 1e-3h);
+                // Part space: [-1..1] tall, [-aspect..aspect] wide.
+                half2 p = (uv - 0.5h) * half2(aspect, 1.0h) * 2.0h;
+
+                // Vertical spine between the two cap centres; the cap radius is the
+                // tube radius, so a wide slab becomes a rounded box and a 1:1 part
+                // degenerates into a ball.
+                half r = min(aspect * 0.5h, 0.5h) * 0.96h;
+                half halfLen = max(1.0h - r, 0.06h);
+
+                // Closest point on the spine segment, then the direction out.
+                half along = saturate((p.y + halfLen) / (2.0h * halfLen));
+                half2 d = p - half2(0.0h, -halfLen + along * 2.0h * halfLen);
+                half dist = max(length(d), 1e-4h);
+
+                half nx = d.x / dist;
+                half rr = saturate(dist / max(r, 1e-4h));
+                // Floor z slightly above zero so the silhouette edge (rr -> 1)
+                // never feeds a degenerate normal into the lighting.
+                half nz = sqrt(max(1.0h - rr * rr, 0.04h));
+                return half3(nx, 0.0h, nz);
             }
 
             Varyings BodyVertex(Attributes input)
@@ -148,6 +194,13 @@ Shader "PoSumo/BodyLit"
 
                 Varyings o = CommonLitVertex(input);
                 o.color = input.color * _Color * unity_SpriteColor;
+                // World-space extents of the sprite quad: the LENGTH of each basis
+                // column, i.e. the transform scale with no rotation or shear. This
+                // is per-instance data, so every part of every body gets its own
+                // aspect without a material or a property block.
+                o.quadScaleWS = half2(
+                    length(float3(UNITY_MATRIX_M._m00_m10_m20)),
+                    length(float3(UNITY_MATRIX_M._m01_m11_m21)));
                 return o;
             }
 
@@ -155,7 +208,11 @@ Shader "PoSumo/BodyLit"
             {
                 half4 main = input.color * SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv);
                 const half4 mask = SAMPLE_TEXTURE2D(_MaskTex, sampler_MaskTex, input.uv);
-                const half3 normalTS = UnpackNormal(SAMPLE_TEXTURE2D(_NormalMap, sampler_NormalMap, input.uv));
+                half3 normalTS = UnpackNormal(SAMPLE_TEXTURE2D(_NormalMap, sampler_NormalMap, input.uv));
+                // _NormalProc blends the shared cylinder sweep toward the per-part
+                // capsule. Uniform lerp then renormalise: branchless on a scalar
+                // every part of the frame shares.
+                normalTS = normalize(lerp(normalTS, CapsuleNormal(input.uv, input.quadScaleWS), _NormalProc));
 
                 half grit = Hash21(input.uv * 128.0h);
 
@@ -301,6 +358,7 @@ Shader "PoSumo/BodyLit"
                 half _BackLight;
                 half _Detail;
                 half _DetailScale;
+                half _NormalProc;
             CBUFFER_END
 
             Varyings NormalsRenderingVertex(Attributes input)
@@ -368,6 +426,7 @@ Shader "PoSumo/BodyLit"
                 half _BackLight;
                 half _Detail;
                 half _DetailScale;
+                half _NormalProc;
             CBUFFER_END
 
             Varyings UnlitVertex(Attributes input)
