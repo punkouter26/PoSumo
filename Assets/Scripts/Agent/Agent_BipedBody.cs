@@ -1328,6 +1328,51 @@ namespace PoSumo
             }
         }
 
+        /// Per-joint fatigue, 0 fresh .. 1 spent. Read by Systems_JointHeatmap at
+        /// 10 Hz — the SAME array IntegrateFatigue maintains, so the heatmap adds
+        /// no new state and cannot drift from what the motors actually apply.
+        public float JointFatigue(int jointIndex)
+        {
+            if (_fatigue == null || jointIndex < 0 || jointIndex >= _fatigue.Length) return 0f;
+            return _fatigue[jointIndex];
+        }
+
+        /// The load term IntegrateFatigue charged this step, 0..1 of the joint's
+        /// torque budget. Isometric bracing is a near-zero action at a near-maximum
+        /// value here, which is exactly the effort the heatmap exists to show.
+        public float JointLoad01(int jointIndex)
+        {
+            if (IsLimp || Joints == null || jointIndex < 0 || jointIndex >= Joints.Length)
+            {
+                return 0f;
+            }
+            HingeJoint2D joint = Joints[jointIndex];
+            if (joint == null || !joint.enabled || !joint.useMotor
+                || _maxTorque == null || jointIndex >= _maxTorque.Length
+                || _maxTorque[jointIndex] <= 0f)
+            {
+                return 0f;
+            }
+            return Mathf.Clamp01(Mathf.Abs(joint.GetMotorTorque(Time.fixedDeltaTime))
+                                 / _maxTorque[jointIndex]);
+        }
+
+        /// JOINT_DEFS count and the part each joint DRIVES, so a consumer can map
+        /// joint-level stress onto the rendered body without hardcoding indices
+        /// the table has reordered before.
+        public static int JointCount => JOINT_DEFS.Length;
+        public static int JointChildPart(int jointIndex) => JOINT_DEFS[jointIndex].child;
+        public static bool JointPowered(int jointIndex) => JOINT_DEFS[jointIndex].powered;
+
+        /// The resting colour of one part's art renderer — the team colour times
+        /// the part's tint, exactly what Build() wrote. Systems_JointHeatmap lerps
+        /// FROM this so the heat ramp cannot shift a fighter's identity.
+        public Color PartBaseColor(int partIndex)
+        {
+            float tint = PART_DEFS[partIndex].tint;
+            return new Color(teamColor.r * tint, teamColor.g * tint, teamColor.b * tint, 1f);
+        }
+
         /// Integrates one physics step of the fatigue model for every powered joint.
         ///
         /// Load is read from `GetMotorTorque`, the torque the solver ACTUALLY applied

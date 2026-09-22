@@ -86,6 +86,20 @@ namespace PoSumo
             // when both are wanted.
             SpawnCompanion<Systems_ShockwaveFx>(enableShockwave, "ShockwaveFx");
             SpawnCompanion<Systems_RingSqueezeCue>(enableRingSqueezeCue, "RingSqueezeCue");
+            // ---- Spectator layer. All read-only w.r.t. the fight except the
+            // mutators (game-only, like StrikeImpulse). Spawn ORDER matters
+            // between the first three and the two that read them: components
+            // created earlier in this same Start pass get their Start first, and
+            // Caster/DirectorAI look the tension engine up with
+            // FindAnyObjectByType in Start — so the engine must exist before
+            // they run. FightHud itself is built by the manager's own BuildUi
+            // pass and looked up, not spawned here.
+            SpawnCompanion<Systems_TensionEngine>(enableTensionEngine, "TensionEngine");
+            SpawnCompanion<Systems_BiometricsCard>(enableBiometrics, "BiometricsCard");
+            SpawnCompanion<Systems_JointHeatmap>(enableJointHeatmap, "JointHeatmap");
+            SpawnCompanion<Systems_Caster>(enableCaster, "Caster");
+            SpawnCompanion<Systems_DirectorAI>(enableDirectorAI, "DirectorAI");
+            SpawnCompanion<Systems_ArenaMutators>(enableArenaMutators, "ArenaMutators");
             // ANDed with the build type, not left to the flag alone. `enablePerfHud`
             // defaults TRUE in code and is ABSENT from GameTuning.asset, so the code
             // default is what actually runs — and Systems_PerfHud carries no guard of

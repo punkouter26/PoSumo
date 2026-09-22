@@ -54,21 +54,56 @@ namespace PoSumo
         /// visuals AND collider change together, and the tawara ride the
         /// moving edge. Used by the training referee's per-round platform
         /// width randomization.
+        /// Below this half-width (metres) the mat is WITHDRAWN outright instead
+        /// of surviving as a clamp-sized sliver: the platform collider is
+        /// disabled and the clay visuals hidden, so anything still balanced on
+        /// it drops onto the arena floor and the existing ring-out rules —
+        /// foot-below-mat and any-part-floor-contact — end the round physically.
+        ///
+        /// WHY. The old floor clamp at 0.1 left a 20 cm pillar, and OutOfRing is
+        /// purely vertical: two fighters clinched on top of it form a stable
+        /// arch, nobody's foot ever goes below the mat surface, the clock is
+        /// off, and the round simply cannot end. Measured in play as a permanent
+        /// stall with both fighters "floating" over the crowd.
+        private const float VANISH_HALF = 0.12f;
+
         public void SetPlatformHalfWidth(float half)
         {
-            half = Mathf.Clamp(half, 0.1f, groundWidth * 0.5f);
-            if (Mathf.Abs(half - _currentHalf) < 0.0005f) return;
+            half = Mathf.Clamp(half, 0f, groundWidth * 0.5f);
+            bool vanishNow = half < VANISH_HALF;
+            bool vanishWas = _currentHalf >= 0f && _currentHalf < VANISH_HALF;
+            // Skip only when the change is invisible AND does not cross the
+            // vanish boundary — the boundary itself is always applied.
+            if (vanishNow == vanishWas && Mathf.Abs(half - _currentHalf) < 0.0005f) return;
             _currentHalf = half;
 
-            float width = half * 2f;
+            float width = Mathf.Max(0.02f, half * 2f);
             if (_platform != null)
+            {
                 _platform.localScale = new Vector3(width, platformDrop, 1f);
+                // THE SUPPORT. Disabled when the clay is gone — that is the whole
+                // mechanic: withdraw the floor, let gravity be the referee. Every
+                // caller that re-widens the mat (round reset, walk-in widen,
+                // training randomization) comes back through here above the
+                // threshold, so the floor re-arms itself for free.
+                var support = _platform.GetComponent<BoxCollider2D>();
+                if (support != null) support.enabled = !vanishNow;
+                var supportRenderer = _platform.GetComponent<SpriteRenderer>();
+                if (supportRenderer != null) supportRenderer.enabled = !vanishNow;
+            }
             if (_surface != null)
+            {
                 _surface.localScale = new Vector3(width, 0.08f, 1f);
+                _surface.gameObject.SetActive(!vanishNow);
+            }
             if (_baseLip != null)
+            {
                 _baseLip.localScale = new Vector3(width + 0.7f, 0.16f, 1f);
+                _baseLip.gameObject.SetActive(!vanishNow);
+            }
 
             EnsureTawaraBands(half);
+            if (vanishNow) return;   // no clay left — the bales went with it
 
             float tawaraHalf = half - 0.3f; // bales stay on the clay, at the edge
             for (int tawaraIndex = 0; tawaraIndex < _tawara.Count; tawaraIndex++)
@@ -219,6 +254,14 @@ namespace PoSumo
         /// and the fighter slides out instead of gripping.
         public void EnsureTawaraBands(float half)
         {
+            // No clay, no bales: the vanish path hides them with the mat, and
+            // they come back on the next call above the threshold.
+            if (half < VANISH_HALF)
+            {
+                if (_bandLeft != null) _bandLeft.gameObject.SetActive(false);
+                if (_bandRight != null) _bandRight.gameObject.SetActive(false);
+                return;
+            }
             if (tawaraBandWidth <= 0.001f)
             {
                 if (_bandLeft != null) _bandLeft.gameObject.SetActive(false);

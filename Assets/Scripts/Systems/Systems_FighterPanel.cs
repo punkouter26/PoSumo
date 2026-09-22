@@ -48,6 +48,7 @@ namespace PoSumo
         private Systems_HudRoot _hud;
         private VisualElement _panel;
         private Label _stakes;
+        private Label _story;
         private Side _sideA, _sideB;
         private VisualElement _pushFillA, _pushFillB;
         private Label _pushLabelA, _pushLabelB;
@@ -324,6 +325,25 @@ namespace PoSumo
                 : "EXHIBITION";
 
             _stakes.text = stage + "  ·  " + head;
+
+            // Same inputs the caster opens with, so the two cannot tell different
+            // stories about the same bout. Gated on the storylines switch, which
+            // the match manager sets from GameTuning in Start.
+            if (_story == null)
+            {
+                return;
+            }
+            string story = Systems_Storylines.PreFight(nameA, nameB,
+                DisplayName(fighterA), DisplayName(fighterB));
+            if (story != null)
+            {
+                _story.text = story;
+                _story.style.display = DisplayStyle.Flex;
+            }
+            else
+            {
+                _story.style.display = DisplayStyle.None;
+            }
         }
 
         /// The only per-tick paint: two stamina bars, the push tug-of-war, and the
@@ -482,6 +502,16 @@ namespace PoSumo
             _stakes.style.unityTextAlign = TextAnchor.MiddleCenter;
             _stakes.style.marginBottom = Systems_UiKit.SPACE_1;
             card.Add(_stakes);
+
+            // The storyline line, one step below the stakes: RUBBER MATCH, a live
+            // streak, an upset watch. Pure logic from Systems_Storylines over the
+            // career record; hidden entirely when the pair has no story worth a
+            // line, so a first meeting looks exactly as it did before.
+            _story = Systems_UiKit.Caption(string.Empty, Systems_UiKit.FONT_MICRO, Systems_UiKit.Gold, true);
+            _story.style.unityTextAlign = TextAnchor.MiddleCenter;
+            _story.style.marginBottom = Systems_UiKit.SPACE_1;
+            _story.style.display = DisplayStyle.None;
+            card.Add(_story);
 
             VisualElement left = Systems_UiKit.Column();
             VisualElement centre = Systems_UiKit.Column();

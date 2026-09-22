@@ -62,3 +62,10 @@ MonoBehaviour:
   enableFighterPanel: 1
   enableScreenChrome: 1
   enableAgentDebug: 1
+  enableTensionEngine: 1
+  enableJointHeatmap: 1
+  enableDirectorAI: 1
+  enableCaster: 1
+  enableStorylines: 1
+  enableArenaMutators: 1
+  enableBiometrics: 1

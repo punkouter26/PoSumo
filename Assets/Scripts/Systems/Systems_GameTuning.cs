@@ -173,5 +173,21 @@ namespace PoSumo
 
         [Tooltip("The agent telemetry panel behind the DBG button: which brain is driving each fighter and the shape of the vector it was trained against, one plain-language verdict per fighter, and 30-second graphs of stamina, mat remaining and effort.\n\nUnlike enablePerfHud this is NOT gated on a development build, and that is deliberate: the perf overlay answers a question about the BUILD and is a development aid, while this answers a question about the FIGHTERS and is worth having on the phone. It is read-only with respect to the fight and touches no observation, mass or collider, so no brain is affected.")]
         public bool enableAgentDebug = true;
+
+        [Header("Spectator layer (all read-only w.r.t. the fight)")]
+        [Tooltip("Broadcast win-probability meter in the dock: a smoothed logistic blend over dominance, stamina, mat-behind and the career Elo prior. Systems_DirectorAI and Systems_Caster read its numbers. Read-only with respect to the fight — it decides nothing and is not mirrored into Systems_SumoMatchManager.")]
+        public bool enableTensionEngine = true;
+        [Tooltip("The muscle cam: limb tint driven by per-joint fatigue and instantaneous motor load, drawn through SpriteRenderer.vertex colour so no material is cloned and the SRP batcher keeps the shared body material. Read-only with respect to the fight.")]
+        public bool enableJointHeatmap = true;
+        [Tooltip("In-fight storytelling camera: comeback close-ups, blowout wides, separation and clinch shots, chosen from the tension reading. Deliberately SILENT during finishes and the ceremony — Systems_MatchPresentation and the referee own those moments. Read-only with respect to the fight.")]
+        public bool enableDirectorAI = true;
+        [Tooltip("Play-by-play caster: short text lines assembled from round events, fatigue and odds thresholds, body-damage statics and the mutator telegraphs. Read-only with respect to the fight.")]
+        public bool enableCaster = true;
+        [Tooltip("Emergent storylines (head-to-head series, streaks, upset watch, titles) computed pure from Systems_CareerStats and shown by the fighter panel and the caster. No lifecycle of its own — this switch only gates whether its lines appear.")]
+        public bool enableStorylines = true;
+        [Tooltip("GAME-ONLY, like enableStrikeImpulse: once a round, with ~3 s of telegraph, either a slick salt patch appears on the clay or the shrinking mat briefly contracts several times faster. Systems_SumoMatchManager has no equivalent, so no brain has trained against a mutator — do not port this into the training referee without making it observable, which it cannot be.")]
+        public bool enableArenaMutators = true;
+        [Tooltip("Biometrics card in the dock: a 27-second stamina history per fighter plus peak impact delivered and the crowd-adrenaline peak, drawn PerfHud-style as fixed ring bars written only when a value moves. Read-only with respect to the fight.")]
+        public bool enableBiometrics = true;
     }
 }

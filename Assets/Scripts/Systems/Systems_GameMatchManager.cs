@@ -81,6 +81,23 @@ namespace PoSumo
         /// Falls back to `ringHalfWidth` before the first tick has applied
         /// anything (`_appliedHalfWidth` starts at -1).
         public float CurrentRingHalfWidth => _appliedHalfWidth >= 0f ? _appliedHalfWidth : ringHalfWidth;
+
+        // TAWARA CRUMBLE (Systems_ArenaMutators). A game-only boost to the
+        // contraction rate, applied as an accumulated EXTRA closure on top of the
+        // normal ShrinkTarget so the curve stays continuous — no jump, no snap —
+        // and PublishRingHalfWidth keeps informing the agents' edge observations
+        // exactly as it does for the ordinary shrink. Cleared at every round open.
+        private float _crumbleRate, _crumbleLeft, _crumbleExtra;
+
+        /// Temporarily close the mat faster, on top of the normal contraction.
+        /// Called by Systems_ArenaMutators (game-only); `extraMetresPerSecond` is
+        /// added to the contraction rate for `seconds` of round time.
+        public void AccelerateShrink(float extraMetresPerSecond, float seconds)
+        {
+            if (extraMetresPerSecond <= 0f || seconds <= 0f) return;
+            _crumbleRate = extraMetresPerSecond;
+            _crumbleLeft = seconds;
+        }
         public PanelSettings panelSettings;
         public Systems_GameTuning tuning;
         // Companion spawn toggles now live on GameTuning.asset
@@ -108,6 +125,14 @@ namespace PoSumo
         private bool enableFighterPanel = true;
         private bool enableScreenChrome = true;
         private bool enableAgentDebug = true;
+        // Spectator layer. All read-only with respect to the fight except the
+        // mutators, which are game-only by design (see Systems_ArenaMutators).
+        private bool enableTensionEngine = true;
+        private bool enableJointHeatmap = true;
+        private bool enableDirectorAI = true;
+        private bool enableCaster = true;
+        private bool enableArenaMutators = true;
+        private bool enableBiometrics = true;
         [Tooltip("Round-opening countdown length; physics and brains are held until it finishes.")]
         public int countdownSeconds = 3;
         [Tooltip("Half the gap between the fighters' neutral stand-off positions during the countdown.")]
@@ -398,6 +423,15 @@ namespace PoSumo
                 enableFighterPanel = tuning.enableFighterPanel;
                 enableScreenChrome = tuning.enableScreenChrome;
                 enableAgentDebug = tuning.enableAgentDebug;
+                enableTensionEngine = tuning.enableTensionEngine;
+                enableJointHeatmap = tuning.enableJointHeatmap;
+                enableDirectorAI = tuning.enableDirectorAI;
+                enableCaster = tuning.enableCaster;
+                enableArenaMutators = tuning.enableArenaMutators;
+                enableBiometrics = tuning.enableBiometrics;
+                // Pure-logic config, not a companion: the storylines class has no
+                // lifecycle, so the switch is delivered to the type itself.
+                Systems_Storylines.Enabled = tuning.enableStorylines;
             }
 
             // enableLighting decides whether there is a light rig at all, and the
@@ -1486,6 +1520,11 @@ namespace PoSumo
                         _phase = Phase.Fighting;
                         _elapsed = 0f;
                         _gibbedA = _gibbedB = false;
+                        // Fresh mat clock, fresh crumble: a boost left armed by a
+                        // round that ended mid-crumble must not leak into this one.
+                        _crumbleRate = 0f;
+                        _crumbleLeft = 0f;
+                        _crumbleExtra = 0f;
                         StartCountdown();
                         RoundStarted?.Invoke();
                     }
@@ -1653,6 +1692,20 @@ namespace PoSumo
             // the floor is gone about 33 s in.
             float target = Systems_RingShrink.ShrinkTarget(ringHalfWidth, shrinkToHalfWidth,
                                                           _elapsed, shrinkStartSeconds, shrinkSeconds);
+
+            // The crumble's extra closure ACCUMULATES rather than scaling the
+            // rate, so the edge never moves backwards and the curve stays
+            // continuous through the boost and past its end. Floored at 0, not
+            // at a sliver: Systems_SumoArena.VANISH_HALF withdraws the platform
+            // collider below 0.12 m, so the last centimetres of contraction end
+            // the round physically instead of leaving a pillar two fighters can
+            // clinch on top of forever.
+            if (_crumbleLeft > 0f)
+            {
+                _crumbleLeft -= Time.fixedDeltaTime;
+                _crumbleExtra += _crumbleRate * Time.fixedDeltaTime;
+            }
+            target = Mathf.Max(0f, target - _crumbleExtra);
 
             // 1 cm of hysteresis: below that the contraction is invisible and only
             // costs a collider rebuild.
