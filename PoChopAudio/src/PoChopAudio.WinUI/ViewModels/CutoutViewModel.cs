@@ -5,8 +5,10 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media.Imaging;
 using PoChopAudio.Services.Cutout;
 using PoChopAudio.Services.Dsp;
+using PoChopAudio.WinUI.Common;
 using PoChopAudio.WinUI.Models;
 using PoChopAudio.WinUI.Services;
+using Windows.Storage.Pickers;
 
 namespace PoChopAudio.WinUI.ViewModels;
 
@@ -153,6 +155,99 @@ public partial class CutoutViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasFiles));
     }
 
+    /// <summary>
+    /// Cuts out images that already exist on disk instead of shooting them with the camera.
+    ///
+    /// The page used to be camera-only, which made it useless for a set of photos that was already
+    /// taken — the source images for a character's face ladder, say, which arrive named
+    /// <c>&lt;Name&gt;_Happy_1</c> and so carry the naming the app is otherwise asking the user to
+    /// type. There is no second pipeline behind this: a picked file becomes the same in-memory
+    /// bytes a capture becomes, and <see cref="AddPhotoAsync(byte[], string)"/> is shared.
+    /// </summary>
+    [RelayCommand]
+    public async Task ImportPhotosAsync()
+    {
+        if (Host is null) return;
+
+        ErrorMessage = null;
+        var picker = new FileOpenPicker();
+        WindowHelper.InitWithWindow(picker, Host);
+        picker.SuggestedStartLocation = PickerLocationId.PicturesLibrary;
+
+        foreach (var extension in ImageDecoder.SupportedExtensions)
+        {
+            picker.FileTypeFilter.Add(extension);
+        }
+
+        var picked = await picker.PickMultipleFilesAsync();
+        if (picked is null || picked.Count == 0) return;
+
+        await ImportPathsAsync(picked.Select(file => file.Path));
+    }
+
+    /// <summary>
+    /// The drag-and-drop and picker entry point. Paths, not <c>StorageFile</c>s, because the
+    /// drop handler only ever has paths — and because reading through <see cref="File"/> keeps
+    /// this on the same code path the picker uses.
+    /// </summary>
+    public async Task ImportPathsAsync(IEnumerable<string> filePaths)
+    {
+        ErrorMessage = null;
+
+        var available = CutoutLimits.MaxBatchFiles - Files.Count;
+        if (available <= 0)
+        {
+            ErrorMessage = $"Batch limit reached (maximum {CutoutLimits.MaxBatchFiles} photos allowed).";
+            return;
+        }
+
+        // Only formats the decoder actually reads, checked here rather than inside the pipeline so
+        // a drop of a whole folder reports "3 of 12 skipped" instead of twelve failed rows.
+        var accepted = filePaths
+            .Where(path => !string.IsNullOrEmpty(path))
+            .Where(path => ImageDecoder.IsSupportedExtension(Path.GetExtension(path)))
+            .ToList();
+
+        var skipped = filePaths.Count(path => !string.IsNullOrEmpty(path)) - accepted.Count;
+        var toAdd = accepted.Take(available).ToList();
+
+        if (toAdd.Count == 0)
+        {
+            ErrorMessage = accepted.Count == 0
+                ? "None of those files are an image format this app reads."
+                : $"Batch limit reached (maximum {CutoutLimits.MaxBatchFiles} photos allowed).";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            foreach (var path in toAdd)
+            {
+                try
+                {
+                    var bytes = await File.ReadAllBytesAsync(path, _cts.Token);
+                    await AddPhotoAsync(bytes, Path.GetFileNameWithoutExtension(path) + ".png");
+                }
+                catch (Exception exception)
+                {
+                    // One unreadable file is a flagged row, never a fatal batch — the same rule the
+                    // audio side holds to.
+                    ErrorMessage = $"Could not read {Path.GetFileName(path)}: {exception.Message}";
+                }
+            }
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+
+        if (skipped > 0)
+        {
+            ErrorMessage = $"Skipped {skipped} file(s) that are not a supported image format.";
+        }
+    }
+
     [RelayCommand]
     public async Task SaveAllToFolderAsync()
     {
@@ -242,10 +337,24 @@ public partial class CutoutViewModel : ObservableObject, IDisposable
     /// <summary>Adds one in-memory photo and cuts it out. Nothing touches disk or a network.</summary>
     private async Task AddPhotoAsync(byte[] png)
     {
+        await AddPhotoAsync(png, $"photo_{Files.Count + 1}.png");
+    }
+
+    /// <summary>
+    /// The one place a photo enters the batch, whether it came off the camera or an imported file.
+    /// </summary>
+    /// <param name="fileName">
+    /// Name the cut-out is saved under. For an imported file this is the source name with a
+    /// <c>.png</c> extension, so <c>grandma_happy1.jpg</c> saves as <c>grandma_happy1.png</c> and a
+    /// batch of takes arrives already named — which is the whole point of importing rather than
+    /// photographing a screen.
+    /// </param>
+    private async Task AddPhotoAsync(byte[] png, string fileName)
+    {
         var item = new CutoutFileItem
         {
             Owner = this,
-            FileName = $"photo_{Files.Count + 1}.png",
+            FileName = fileName,
             Bytes = png.Length,
             Status = ItemProcessingStatus.Analyzing,
             OriginalPngBytes = png,

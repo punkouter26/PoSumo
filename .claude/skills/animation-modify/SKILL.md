@@ -1,6 +1,8 @@
 ---
 name: animation-modify
 description: Apply a batch of modifications to a Unity `AnimationClip` — set/remove float curves, clear all curves, set frame rate / wrap mode / legacy flag, add or clear animation events. Use 'animation-get-data' first to discover valid curve bindings.
+metadata:
+  generated-by: mcp-plugin-dotnet
 ---
 
 # Animation / Modify

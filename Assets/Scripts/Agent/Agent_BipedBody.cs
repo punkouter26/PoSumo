@@ -275,9 +275,19 @@ namespace PoSumo
         // and resets Parts[]. A neck wired in halfway leaves the head still
         // simulating after the match-end freeze. It needs its own pass.
 
-        /// Head draw order. Must stay ABOVE the largest `sorting` in PART_DEFS
-        /// (currently 3, the near arms) or the face is occluded mid-fight — see
-        /// the note at the head's SpriteRenderer in Build().
+        /// Head draw order, and the layer table it lives in. Art direction
+        /// (requested 2026-09-22) is the classic side-view read: the NEAR arm crosses
+        /// IN FRONT of the face, the FAR arm behind it. So the layers are:
+        ///
+        ///   far limbs -3/-2, trunk 0, near legs 2, HEAD 4, head decals 5, NEAR ARM 6.
+        ///
+        /// The head stays above everything except the near arm and its own decals;
+        /// the head's SpriteMask clips only the decals (the limbs use
+        /// SpriteMaskInteraction.None), so the arm passing over the face is not
+        /// clipped by the mask. The earlier invariant - head above the largest
+        /// sorting in PART_DEFS - was what stopped the face vanishing behind an arm
+        /// in a clinch; the near arm deliberately outranks it now, and the FAR arm
+        /// at -3 still reads as the arm on the other side of the body.
         private const int HEAD_SORTING = 4;
 
         private struct PartDef
@@ -333,8 +343,8 @@ namespace PoSumo
             new PartDef("LowerBack", 0.30f,  0.14f,   7f,  0f,    1.195f,  0, 0.97f),
             new PartDef("UpperBack", 0.31f,  0.14f,   7f,  0f,    1.324f,  0, 0.99f),
             new PartDef("Chest",     0.34f,  0.18f,  13f,  0f,    1.471f,  0, 1f),
-            new PartDef("UArmNear",  0.10f,  0.327f,  2.5f, 0f,   1.308f,  3, 0.9f),
-            new PartDef("FArmNear",  0.09f,  0.28f,   1.8f, 0f,   1.004f,  3, 0.9f),
+            new PartDef("UArmNear",  0.10f,  0.327f,  2.5f, 0f,   1.308f,  6, 0.9f),
+            new PartDef("FArmNear",  0.09f,  0.28f,   1.8f, 0f,   1.004f,  6, 0.9f),
             new PartDef("UArmFar",   0.10f,  0.327f,  2.5f, 0f,   1.308f, -3, 0.76f),
             new PartDef("FArmFar",   0.09f,  0.28f,   1.8f, 0f,   1.004f, -3, 0.76f),
             // TOES (metatarsophalangeal segment). APPENDED, never inserted: Parts[3]
@@ -735,21 +745,23 @@ namespace PoSumo
                     head.transform.SetParent(go.transform, false);
                     head.transform.localPosition = new Vector3(0f, 0.25f / d.h, 0f);
                     var hsr = head.AddComponent<SpriteRenderer>();
-                    // ABOVE EVERY PART, and that is the whole point. This was 1
-                    // for the life of the project, while PART_DEFS gives the near
-                    // arms sorting 3 and the near leg 2 — so the face was drawn
-                    // UNDER six renderers per fighter, on BOTH fighters, since the
-                    // two share one sorting layer and one set of order values. In a
-                    // clinch the arms live at head height, so the head vanished
-                    // behind an arm or a thigh at unpredictable moments and came
-                    // back when the grip changed. Reported as "the head texture
-                    // sometimes goes invisible in a fight"; measured 2026-09-05.
+                    // Layering (rewritten 2026-09-22 when the near arm moved above
+                    // the head): the head outranks the trunk, the legs and the FAR
+                    // arm, but deliberately NOT the NEAR arm — the requested read is
+                    // one arm in front of the face, one behind. History this
+                    // replaces: the head sat at 1 for the life of the project while
+                    // the near arms carried 3, so the face drew under six renderers
+                    // per fighter and vanished in every clinch ("the head texture
+                    // sometimes goes invisible in a fight", measured 2026-09-05).
+                    // Raising it to 4 over-corrected for one release: BOTH arms then
+                    // drew behind the face, which read as flat. The current table:
                     //
-                    // The face is the one thing a viewer tracks and the only part
-                    // carrying a fighter's identity, so it wins every overlap.
-                    // Head damage decals ride host.sortingOrder + 1, so they follow
-                    // it up automatically. Nothing else on a fighter sits between 4
-                    // and the atmosphere's foreground haze at 20.
+                    //   far limbs -3/-2 < trunk 0 < near legs 2 < HEAD 4
+                    //   < head decals 5 < NEAR ARM 6 < foreground haze 20.
+                    //
+                    // Head damage decals ride host.sortingOrder + 1 and follow it up
+                    // automatically; slot 5 is kept clear of body parts so a bruise
+                    // never ties with a limb.
                     hsr.sortingOrder = HEAD_SORTING;
                     // UNLIT, unlike every other part. The head carries a photograph
                     // of a face; the rest of the body is flat tinted primitives that

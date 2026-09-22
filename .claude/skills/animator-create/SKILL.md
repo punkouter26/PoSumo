@@ -1,6 +1,8 @@
 ---
 name: animator-create
 description: Create empty Unity `AnimatorController` assets at the given project paths. Each path must start with `Assets/` and end with `.controller`. Missing intermediate folders are created recursively. Pair with 'animator-modify' to add layers/states/parameters.
+metadata:
+  generated-by: mcp-plugin-dotnet
 ---
 
 # Animator / Create

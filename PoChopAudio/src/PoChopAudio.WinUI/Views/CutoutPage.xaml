@@ -15,7 +15,13 @@
         nothing.
     -->
 
-    <Grid>
+    <!--
+        AllowDrop is on the whole page, not on the viewfinder, so a photo can be dropped anywhere
+        on it. The Chop page binds its own drop to a DropArea border because that page has a
+        scroller's worth of other content; here the page has one job and dropping anywhere is
+        unambiguous.
+    -->
+    <Grid AllowDrop="True" DragOver="OnDragOver" Drop="OnDrop">
         <VisualStateManager.VisualStateGroups>
             <VisualStateGroup>
                 <!--
@@ -73,7 +79,7 @@
 
                 <StackPanel Grid.Row="0" Spacing="2">
                     <TextBlock Text="Head shots" Style="{ThemeResource TitleTextBlockStyle}" />
-                    <TextBlock Text="Take a photo and the background comes off automatically. Nothing leaves this machine."
+                    <TextBlock Text="Take a photo, or drop in one you already have, and the background comes off automatically. Nothing leaves this machine."
                                Style="{StaticResource HintText}" />
                 </StackPanel>
 
@@ -103,6 +109,19 @@
                                 AutomationProperties.Name="Take a photo and remove its background"
                                 Command="{x:Bind ViewModel.TakePhotoCommand}"
                                 IsEnabled="{x:Bind ViewModel.IsCapturing, Mode=OneWay, Converter={StaticResource InvertBool}}" />
+
+                        <!--
+                            The way in for photos that already exist. Deliberately a secondary
+                            button: the camera is still the primary act, and this must not read as
+                            a competing accent. IsEnabled is bound to the same busy flag the camera
+                            uses, because both paths write into Files and cut out through the one
+                            CutoutService.
+                        -->
+                        <Button x:Name="ImportPhotosButton" Content="Import photos…"
+                                HorizontalAlignment="Stretch" Height="40"
+                                AutomationProperties.Name="Choose image files and remove their backgrounds"
+                                Command="{x:Bind ViewModel.ImportPhotosCommand}"
+                                IsEnabled="{x:Bind ViewModel.IsBusy, Mode=OneWay, Converter={StaticResource InvertBool}}" />
 
                         <!--
                             The Health page used to be where a missing model was reported. With that page
@@ -264,7 +283,7 @@
                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
                         <TextBlock Text="No photos yet" HorizontalAlignment="Center"
                                    Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                        <TextBlock Text="Line yourself up in the viewfinder above and press TAKE PHOTO. Each shot appears here with its background already removed."
+                        <TextBlock Text="Line yourself up in the viewfinder above and press TAKE PHOTO, drop image files anywhere on this page, or pick them with Import photos. Each shot appears here with its background already removed."
                                    Style="{StaticResource HintText}"
                                    TextAlignment="Center" MaxWidth="440" />
                     </StackPanel>

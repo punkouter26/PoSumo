@@ -1,6 +1,8 @@
 ---
 name: animator-get-data
 description: Inspect a Unity `AnimatorController` asset — controller name, every parameter (name, type, defaults), every layer with its state machine, every state, and every transition. Pair with 'animator-modify' to write changes back.
+metadata:
+  generated-by: mcp-plugin-dotnet
 ---
 
 # Animator / Get Data

@@ -1,6 +1,8 @@
 ---
 name: animation-get-data
 description: Inspect a Unity `AnimationClip` asset — name, length, frame rate, wrap mode, looping/legacy/humanMotion flags, local bounds, and the full set of float curves, object-reference curves, and events. Pair with 'animation-modify' to write changes back.
+metadata:
+  generated-by: mcp-plugin-dotnet
 ---
 
 # Animation / Get Data

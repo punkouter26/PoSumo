@@ -1,6 +1,8 @@
 ---
 name: animator-modify
 description: Apply a batch of modifications to a Unity `AnimatorController` — add/remove parameters, layers, states, and transitions; set default states; set state motion/speed. Use 'animator-get-data' first to discover valid names.
+metadata:
+  generated-by: mcp-plugin-dotnet
 ---
 
 # Animator / Modify

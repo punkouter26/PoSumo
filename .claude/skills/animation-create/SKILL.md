@@ -1,6 +1,8 @@
 ---
 name: animation-create
 description: Create empty Unity `AnimationClip` assets at the given project paths. Each path must start with `Assets/` and end with `.anim`. Missing intermediate folders are created recursively. Pair with 'animation-modify' to populate curves and events.
+metadata:
+  generated-by: mcp-plugin-dotnet
 ---
 
 # Animation / Create

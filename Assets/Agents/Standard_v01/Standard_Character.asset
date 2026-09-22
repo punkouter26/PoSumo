@@ -14,11 +14,17 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Agent_CharacterDefinition
   behaviorName: Standard
   teamColor: {r: 0.2, g: 0.5, b: 0.3, a: 1}
-  headSprite: {fileID: 0}
+  headSprite: {fileID: 21300000, guid: c8f33e616b8c8154aa3b266b161e8412, type: 3}
   faceArtFacesLeft: 0
-  faceNeutralName: 
-  faceHappyNames: []
-  faceSadNames: []
+  faceNeutralName: Standard_Neutral
+  faceHappyNames:
+  - Standard_Happy_1
+  - Standard_Happy_2
+  - Standard_Happy_3
+  faceSadNames:
+  - Standard_Sad_1
+  - Standard_Sad_2
+  - Standard_Sad_3
   massScale: 1
   widthScale: 1
   torqueScale: 1

@@ -7,6 +7,7 @@ using PoChopAudio.WinUI.Common;
 using PoChopAudio.WinUI.Models;
 using PoChopAudio.WinUI.Services;
 using PoChopAudio.WinUI.ViewModels;
+using Windows.ApplicationModel.DataTransfer;
 using Windows.Graphics.Imaging;
 
 namespace PoChopAudio.WinUI.Views;
@@ -242,5 +243,39 @@ public sealed partial class CutoutPage : Page
         var index = Math.Clamp((int)(norm * (PentatonicScale.Length - 1)), 0, PentatonicScale.Length - 1);
         ViewModel.Cues.PlayPluck(PentatonicScale[index], 0.16f);
         _lastPluckTime = now;
+    }
+
+    /// <summary>
+    /// Accepts a drop anywhere on the page. The caption names what will happen rather than saying
+    /// "copy", because the result is destructive of the background, not a copy of a file.
+    /// </summary>
+    private void OnDragOver(object sender, DragEventArgs e)
+    {
+        e.AcceptedOperation = DataPackageOperation.Copy;
+        e.DragUIOverride.Caption = "Remove the background";
+        e.DragUIOverride.IsCaptionVisible = true;
+    }
+
+    private async void OnDrop(object sender, DragEventArgs e)
+    {
+        // Drop has no command equivalent: the paths only exist inside the event args. Everything
+        // inside is guarded, because an exception escaping an async void handler reaches the
+        // runtime's unhandled hook and takes the process down.
+        try
+        {
+            if (e.DataView.Contains(StandardDataFormats.StorageItems))
+            {
+                var items = await e.DataView.GetStorageItemsAsync();
+                var paths = items.Select(item => item.Path).Where(path => !string.IsNullOrEmpty(path)).ToList();
+                if (paths.Count > 0)
+                {
+                    await ViewModel.ImportPathsAsync(paths);
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            ViewModel.ErrorMessage = $"Could not add the dropped files: {exception.Message}";
+        }
     }
 }
