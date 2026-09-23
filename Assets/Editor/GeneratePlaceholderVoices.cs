@@ -35,7 +35,7 @@ namespace PoSumo.EditorTools
     ///
     ///     Assets/Resources/Audio/Voice/(Behavior)_(Happy|Sad|Insult)_(1-5).wav
     ///
-    /// where the behavior is `behaviorName` on the character asset — Matt, Standard,
+    /// where the behavior is `behaviorName` on the character asset — Matt, Grandma,
     /// Nick, Kim — not the folder or asset name.
     ///
     /// Two rules from `CLAUDE.md` shape the output and both are load-bearing:
@@ -68,7 +68,7 @@ namespace PoSumo.EditorTools
         /// ragdoll. Measured in a played bracket it won its quarterfinal 2-0 by
         /// ring-out. It is the project's rules-based baseline and it fights, so a
         /// silent fighter was the odd one out rather than the correct default.
-        private static readonly string[] Behaviors = { "Matt", "Standard", "Nick", "Kim", "Bot" };
+        private static readonly string[] Behaviors = { "Matt", "Grandma", "Nick", "Kim", "Bot" };
 
         private static readonly string[] Moods = { "Happy", "Sad", "Insult" };
 
@@ -97,7 +97,7 @@ namespace PoSumo.EditorTools
             {
                 case "Kim":      return new VoiceId(196f, 1.14f, 21);
                 case "Nick":     return new VoiceId(128f, 1.04f, 37);
-                case "Standard": return new VoiceId(110f, 1.00f, 53);
+                case "Grandma": return new VoiceId(110f, 1.00f, 53);
                 case "Matt":     return new VoiceId(98f,  0.94f, 71);
                 // Lowest and flattest of the five. Bot is the machine in the
                 // bracket, so it reads as gruff and unbothered next to four

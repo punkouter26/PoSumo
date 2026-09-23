@@ -49,7 +49,7 @@ MonoBehaviour:
   enableVoice: 1
   enableLighting: 1
   enableImpactFx: 1
-  enableAtmosphere: 1
+  enableAtmosphere: 0
   enableMusic: 0
   enableBodyDamage: 1
   enableStrikeImpulse: 1
@@ -63,7 +63,7 @@ MonoBehaviour:
   enableScreenChrome: 1
   enableAgentDebug: 1
   enableTensionEngine: 1
-  enableJointHeatmap: 1
+  enableJointHeatmap: 0
   enableDirectorAI: 1
   enableCaster: 1
   enableStorylines: 1

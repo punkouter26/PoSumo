@@ -71,7 +71,7 @@ footer{margin-top:48px;padding:20px 32px;color:var(--muted);font-size:12px;borde
       <tr><td><code>SCN_TOURNAMENT</code></td><td><code>Assets/Scenes/</code></td><td>0</td><td>Editor on boot / standalone launch</td><td><span class="tag build">Build</span></td></tr>
       <tr><td><code>SCN_SUMO</code></td><td><code>Assets/Scenes/</code></td><td>1</td><td><code>Systems_TournamentBracket</code> per match</td><td><span class="tag build">Build</span></td></tr>
       <tr><td><code>SCN_TRAIN_MATT</code></td><td><code>Assets/Scenes/Training/</code></td><td>none</td><td><code>BuildTrainingEnv</code> -&gt; <code>Builds/MattEnv/MattEnv.exe</code></td><td><span class="tag train">Training</span></td></tr>
-      <tr><td><code>SCN_TRAIN_STANDARD</code></td><td><code>Assets/Scenes/Training/</code></td><td>none</td><td><code>BuildTrainingEnv</code> -&gt; <code>Builds/StandardEnv/StandardEnv.exe</code></td><td><span class="tag train">Training</span></td></tr>
+      <tr><td><code>SCN_TRAIN_GRANDMA</code></td><td><code>Assets/Scenes/Training/</code></td><td>none</td><td><code>BuildTrainingEnv</code> -&gt; <code>Builds/GrandmaEnv/GrandmaEnv.exe</code></td><td><span class="tag train">Training</span></td></tr>
       <tr><td><code>SCN_TRAIN_NICK</code></td><td><code>Assets/Scenes/Training/</code></td><td>none</td><td><code>BuildTrainingEnv</code> -&gt; <code>Builds/NickEnv/NickEnv.exe</code></td><td><span class="tag train">Training</span></td></tr>
       <tr><td><code>SCN_TRAIN_KIM</code></td><td><code>Assets/Scenes/Training/</code></td><td>none</td><td><code>BuildTrainingEnv</code> -&gt; <code>Builds/KimEnv/KimEnv.exe</code></td><td><span class="tag train">Training</span></td></tr>
       <tr><td><code>SCN_BOT</code></td><td><code>Assets/Scenes/</code></td><td>none</td><td>nothing (deliberately brainless Bot_v01 companion)</td><td><span class="tag stale">Tracked, not loaded</span></td></tr>
@@ -170,9 +170,9 @@ new GameObject("AudioListener").AddComponent&lt;AudioListener&gt;();</code></pre
     </table>
 
     <h3>The "no character assigned" trap</h3>
-    <p><code>SCN_TRAIN_STANDARD</code> currently contains <b>zero</b> references to <code>Standard_Character.asset</code> - eight fields sit at <code>character: {fileID: 0}</code>. The other three training scenes reference theirs correctly. Verified by GUID-grepping the saved <code>.unity</code> file. It is harmless <i>by coincidence</i> (Standard's sheet is byte-identical to <code>Agent_Biped</code>'s code defaults), but it becomes a real bug the moment anyone tunes the sheet.</p>
+    <p><code>SCN_TRAIN_GRANDMA</code> currently contains <b>zero</b> references to <code>Grandma_Character.asset</code> - eight fields sit at <code>character: {fileID: 0}</code>. The other three training scenes reference theirs correctly. Verified by GUID-grepping the saved <code>.unity</code> file. It is harmless <i>by coincidence</i> (Grandma's sheet is byte-identical to <code>Agent_Biped</code>'s code defaults), but it becomes a real bug the moment anyone tunes the sheet.</p>
     <pre><code># Verify a scene's character assignment by reading the saved .unity file
-grep -n 'character:' Assets/Scenes/Training/SCN_TRAIN_STANDARD.unity</code></pre>
+grep -n 'character:' Assets/Scenes/Training/SCN_TRAIN_GRANDMA.unity</code></pre>
   </div>
 </section>
 

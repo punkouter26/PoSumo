@@ -27,7 +27,7 @@ where they touch code, the code is still the ground truth for what currently *is
   | Fighter kind | Colour |
   |---|---|
   | Heuristic hand-coded bot (`useBot: 1`, driven by `Agent_Bot`) | **RED** |
-  | The standard / reference RL brain, before any creature variation | **GREEN**, no texture |
+  | The reference RL brain (Grandma, fka Standard), before any creature variation | **GREEN**, no texture |
   | Custom RL variations | custom texture, supplied by the user |
 
 - **Every RL app in this family carries the same cast:** one heuristic coded bot, one
@@ -57,7 +57,7 @@ where they touch code, the code is still the ground truth for what currently *is
 
 > **Bot is now red; Matt still collides with it (2026-09-05).** `Bot_Character.asset`
 > `teamColor` was blue `(0.16, 0.45, 1)` and is now red `(0.85, 0.16, 0.14)`, satisfying the
-> rule. `Standard_Character.asset` is green `(0.2, 0.5, 0.3)` and was already correct. But
+> rule. `Grandma_Character.asset` (renamed from `Standard_Character.asset` on 2026-09-22) is green `(0.2, 0.5, 0.3)` and was already correct. But
 > **`Matt_Character.asset` is `(0.85, 0.25, 0.2)`** — a red within a rounding error of the
 > bot's, so a Bot-v-Matt bout renders two near-identical fighters. Matt is an RL variation,
 > and variation appearance is the user's to choose, so it was left alone rather than
@@ -115,7 +115,10 @@ the `.cs` is what a NEW scene inherits, so both have to be right.
 > `<name>_fatigue01` at a reduced learning rate. Note this does NOT by itself fix the
 > ring-out rate: measured play at 3.5 gave 29% ring-outs against 57% `downOutSeconds`.
 
-There are four **trained** fighters — **Matt**, **Standard**, **Nick**, **Kim** — each
+There are four **trained** fighters — **Matt**, **Grandma** (renamed from `Standard`
+on 2026-09-22; behavior name, folder, asset, ONNX, faces, live config and env all
+follow the new name, the training scene keeps its legacy `SCN_TRAIN_GRANDMA`
+name), **Nick**, **Kim** — each
 with an `.onnx`, a `*_Character.asset` and a `MANIFEST.md`. `Assets/Agents/ROSTER.md` is
 the roster overview; there is no code mirror of it.
 
@@ -137,7 +140,7 @@ An Error-level line that is routinely false is worse than no line: it teaches wh
 reading the console to skip real ones.
 
 Consequence: the 8-slot bracket no longer seeds four fighters twice each. With five
-entries it draws Standard ×2, Matt ×2, Nick ×2, Kim ×1, Bot ×1.
+entries it draws Grandma ×2, Matt ×2, Nick ×2, Kim ×1, Bot ×1.
 
 `ROSTER.md` and the four per-fighter `MANIFEST.md` files were rewritten on 2026-08-02 and
 now describe 45 obs, one unified brain each, and the `*_unifiedNN` runs that actually back
@@ -738,7 +741,7 @@ offsets a sumo arena, and the walk lane proves this project does exactly that.
 **`Agent_CharacterDefinition.driveReward` was 0 on every fighter** for the whole life of
 the project, so the drive term in `Reward_SumoObjective` — the only term that pays for
 sumo's actual winning mechanic, sustained two-footed push — never contributed to any
-brain. **It is live as of Rebuild01**: Matt 0.004, Standard 0.004, Kim 0.006 (the anchor),
+brain. **It is live as of Rebuild01**: Matt 0.004, Grandma 0.004, Kim 0.006 (the anchor),
 Nick 0.003 (the light mobile one). It is a character-asset value and not a YAML key, so
 it cannot be swept from a config; the clean attribution if Rebuild01's ELO is ambiguous
 is a re-run with the field back at 0.
@@ -1669,7 +1672,7 @@ a scene that produced a shipped brain is the only way to reproduce it.
 
 | Scene | Purpose |
 |---|---|
-| `SCN_TRAIN_MATT` / `SCN_TRAIN_STANDARD` / `SCN_TRAIN_NICK` / `SCN_TRAIN_KIM` | **unified** self-play sumo + walk, one per fighter |
+| `SCN_TRAIN_MATT` / `SCN_TRAIN_GRANDMA` / `SCN_TRAIN_NICK` / `SCN_TRAIN_KIM` | **unified** self-play sumo + walk, one per fighter |
 
 Matt's scene was `SCN_TRAIN_MATT_AGGR` (and its env `MattAggrEnv`) until 2026-08-02 — the
 only fighter whose scene carried a suffix, breaking the `SCN_TRAIN_<NAME>` schema this file
@@ -2052,13 +2055,14 @@ generator does nothing until the menu item is re-run, and nothing in the game wa
 paragraph said "Matt and Nick have all three, Kim has Happy only, Standard has none" until
 then, which was true on 2026-08-15 and stopped being true without the text moving.
 
-Face art is still uneven and that IS still the case: only **Kim, Matt and Nick have it**
-(7 PNGs each — neutral, happy 1-3, sad 1-3). Standard has no face art.
-`Systems_FighterVoice` and `Systems_FaceMood` both disable themselves rather than warn, so
-a silent, faceless fighter looks intentional. The bracket seeds all four twice.
+Face art coverage changed twice in one day. Grandma's 7 PNGs landed 2026-09-22
+(`Grandma_Neutral`, `_Happy_1-3`, `_Sad_1-3` — the character was renamed from
+`Standard` the same day), so she now has art alongside **Kim, Matt and Nick** (7
+PNGs each). `Systems_FighterVoice` and `Systems_FaceMood` both disable themselves
+rather than warn, so a silent, faceless fighter looks intentional. The bracket seeds all four twice.
 
 **A missing set and an incomplete set behave differently, and only one of them is quiet.**
-`LoadSet` returns null when it finds *zero* clips — no log line, which is why Standard and
+`LoadSet` returns null when it finds *zero* clips — no log line, which is why Grandma and
 Kim's Sad/Insult are silent rather than noisy. Find 1-4 of 5 and it `Debug.LogWarning`s on
 every match. So a partially-delivered set is worse than none: fill all five levels or
 leave the set empty, never in between. Naming is exact —

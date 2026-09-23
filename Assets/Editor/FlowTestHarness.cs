@@ -2,6 +2,7 @@ using System.Text;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.UIElements;
 
 namespace PoSumo.EditorTools
 {
@@ -245,6 +246,11 @@ namespace PoSumo.EditorTools
                     }
                     if (!_skipFightStages)
                     {
+                        // Audited WHILE LIVE as well as while paused: the merged
+                        // instrument strip is at its fullest here (mannequins +
+                        // MAT + win-prob + sparklines) and the band contract is
+                        // checked against a fighting round, not a frozen one.
+                        Audit("live fight");
                         PauseCycle("fight");
                     }
                     Enter(Stage.Spam);
@@ -413,25 +419,88 @@ namespace PoSumo.EditorTools
             Finish();
         }
 
+        /// The zero-scroll + band + corner gate (checklist #3/#4), on top of the
+        /// overflow walk: no VISIBLE ScrollView anywhere in the arena document
+        /// (the only one that exists is Systems_AgentDebug's, behind the DBG
+        /// toggle — a drill-down diagnostic, closed in every state this harness
+        /// stands in), the dock and stage band contract, and the five-corner
+        /// anchor contract (counted out of HudOverflowAudit's CORNER- findings).
         private static void Audit(string when)
         {
             string report = HudOverflowAudit.Run();
-            int flagged = CountOverflowLines(report);
-            Check(flagged == 0, "HUD layout at " + when + " has no overflowing elements");
+            int flagged = CountFindings(report);
+            Check(flagged == 0, "HUD layout at " + when + " has no overflowing elements or corner violations");
             if (flagged > 0)
             {
                 Problems.Append("  HUD audit at ").Append(when).Append(":\n").Append(report);
             }
+
+            int scrolls = CountVisibleScrollViews();
+            Check(scrolls == 0, "zero visible ScrollViews at " + when + " (zero-scroll constraint; saw " + scrolls + ")");
+
+            if (_hud != null)
+            {
+                float panel = _hud.ContentLayer.resolvedStyle.height;
+                if (panel > 1f)
+                {
+                    float dock = _hud.Dock.resolvedStyle.height;
+                    float stage = _hud.Stage.resolvedStyle.height;
+                    Check(dock <= panel * 0.28f + 2f,
+                          "dock <= 28% of the panel at " + when + " (dock=" + dock.ToString("F0") +
+                          " panel=" + panel.ToString("F0") + ")");
+                    Check(stage >= panel * 0.45f - 2f,
+                          "stage >= 45% of the panel at " + when + " (stage=" + stage.ToString("F0") +
+                          " panel=" + panel.ToString("F0") + ")");
+                }
+            }
         }
 
-        private static int CountOverflowLines(string report)
+        private static int CountFindings(string report)
+        {
+            int count = 0;
+            count += CountOccurrences(report, "OVERFLOW-");
+            count += CountOccurrences(report, "CORNER-");
+            return count;
+        }
+
+        private static int CountOccurrences(string report, string marker)
         {
             int count = 0;
             int index = 0;
-            while ((index = report.IndexOf("OVERFLOW-", index)) >= 0)
+            while ((index = report.IndexOf(marker, index)) >= 0)
             {
                 count++;
-                index += 9;
+                index += marker.Length;
+            }
+            return count;
+        }
+
+        /// Visible ScrollView frames across every UIDocument — display:none
+        /// subtrees skipped, exactly like the overflow walk.
+        private static int CountVisibleScrollViews()
+        {
+            UIDocument[] docs = Object.FindObjectsByType<UIDocument>();
+            int count = 0;
+            for (int docIndex = 0; docIndex < docs.Length; docIndex++)
+            {
+                if (docs[docIndex] != null && docs[docIndex].rootVisualElement != null)
+                {
+                    count += CountVisibleScrollViews(docs[docIndex].rootVisualElement);
+                }
+            }
+            return count;
+        }
+
+        private static int CountVisibleScrollViews(VisualElement element)
+        {
+            if (element == null || element.resolvedStyle.display == DisplayStyle.None)
+            {
+                return 0;
+            }
+            int count = element is ScrollView ? 1 : 0;
+            for (int childIndex = 0; childIndex < element.childCount; childIndex++)
+            {
+                count += CountVisibleScrollViews(element[childIndex]);
             }
             return count;
         }

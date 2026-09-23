@@ -38,7 +38,7 @@
 param(
     [ValidateRange(1, 48)][double]$Hours = 8,
     [ValidateRange(1, 8)][int]$NumEnvs = 4,
-    [string[]]$Batch1 = @('Standard', 'Matt'),
+    [string[]]$Batch1 = @('Grandma', 'Matt'),
     [string[]]$Batch2 = @('Nick', 'Kim')
 )
 

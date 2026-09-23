@@ -83,7 +83,7 @@ footer{margin-top:48px;padding:20px 32px;color:var(--muted);font-size:12px;borde
   <h2>Tier 1 - Executive Summary</h2>
   <div class="tier tier1">
     <h3>What PoSumo is, in 30 seconds</h3>
-    <p>PoSumo is a <b>physics-ragdoll sumo game</b> where each wrestler is a <b>14-part 2D biped</b> (pelvis, 4-segment torso, 2 legs x 3 segments, 2 arms x 2 segments) controlled end-to-end by a <b>neural network policy</b>. Four fighters are shipped (<b>Matt, Standard, Nick, Kim</b>) plus a deliberately brainless <b>Bot</b>. Brains are trained with <b>PPO self-play</b> via the ML-Agents Python trainer (<code>mlagents-learn</code>) and inferred at runtime through <b>Unity InferenceEngine (Sentis)</b>.</p>
+    <p>PoSumo is a <b>physics-ragdoll sumo game</b> where each wrestler is a <b>14-part 2D biped</b> (pelvis, 4-segment torso, 2 legs x 3 segments, 2 arms x 2 segments) controlled end-to-end by a <b>neural network policy</b>. Four fighters are shipped (<b>Matt, Grandma, Nick, Kim</b>) plus a deliberately brainless <b>Bot</b>. Brains are trained with <b>PPO self-play</b> via the ML-Agents Python trainer (<code>mlagents-learn</code>) and inferred at runtime through <b>Unity InferenceEngine (Sentis)</b>.</p>
 
     <h4>Game flow</h4>
     <p>The game always boots into the <b>tournament bracket scene</b> (<code>SCN_TOURNAMENT</code>). The bracket seeds each character twice into an 8-slot single-elimination, loads <code>SCN_SUMO</code> for each bout, the referee scores a winner, then the bracket advances. Each match is a best-of-(<code>tournamentPointsToWin = 2</code>) of rounds; each round is a refereed bout on a raised dohyo.</p>

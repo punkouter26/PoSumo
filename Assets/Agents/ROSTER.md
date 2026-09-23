@@ -11,14 +11,14 @@ the bracket's entrants are assigned in the scene.
 | Fighter | Behavior | Folder | Colour | Physique | Identity | Brain (run) |
 |---|---|---|---|---|---|---|
 | MATT | `Matt` | Matt_v01 | red | 1.00 / 1.00 / 1.00 | aggressive baseline — highest impact reward | `matt_unified02` (15.0M) |
-| STANDARD | `Standard` | Standard_v01 | green | 1.00 / 1.00 / 1.00 | neutral reference; no face art and no voice clips | `standard_unified01` (15.0M) |
+| GRANDMA | `Grandma` | Grandma_v01 | green | 1.00 / 1.00 / 1.00 | neutral reference — renamed from `Standard` 2026-09-22; face art added same day | `standard_unified01` (15.0M, run id under the old name) |
 | NICK | `Nick` | Nick_v01 | blue | 0.72 / 0.82 / 0.85 | mobile lightweight — highest cadence, no deep-stance requirement | `nick_unified01` (15.0M) |
 | KIM | `Kim` | Kim_v01 | purple | 1.45 / 1.30 / 1.50 | heavyweight anchor — deep stance, does not chase | `kim_unified01` (15.0M) |
 
 **One brain per fighter, covering both walking and fighting.** The walk and fight
 policies were merged: a task flag in the observation vector tells the two jobs
 apart. There is no separate walk brain, walk config, walk scene or walk `.onnx`
-any more, and `Standard` no longer lends its gait to anyone.
+any more, and `Grandma` no longer lends its gait to anyone.
 
 Audio and art coverage is uneven, and that is the current state rather than a bug
 — `Systems_FighterVoice` and `Systems_FaceMood` each disable themselves rather
@@ -29,7 +29,23 @@ than warn, so a silent, faceless fighter looks intentional:
 | Matt | yes (fallback constants — his asset leaves the name fields empty) | yes (15) |
 | Nick | yes | yes (15) |
 | Kim | yes | none |
-| Standard | none | none |
+| Grandma | yes (added 2026-09-22 — her 7 PNGs landed in `Assets/Art/Faces/`) | none |
+
+## Clothing (visual only)
+
+Each `<Name>_Character.asset` carries a `clothing` block — garment plus colour per
+body region. The fabric pattern itself is generated in code by `Agent_Fabric`
+(denim twill, fleece, wool, canvas…) so no fighter ships a texture asset, and
+`Agent_BipedBody.PartColor` decides which part each garment covers. Clothing
+touches no mass, no collider and no observation, so it cannot invalidate a brain.
+
+| Fighter | Legs | Torso | Arms | Feet |
+|---|---|---|---|---|
+| Matt | jeans (indigo) | white tee | — | white sneakers |
+| Grandma (formerly Standard) | grey sweatpants | beige knit sweater | long sleeves | cream socks |
+| Nick | navy shorts | light tank | — | light sneakers |
+| Kim | dark mawashi | — (bare chest) | — | — (barefoot) |
+| Bot | charcoal shorts | red singlet | — | dark boots |
 
 Physique is mass / width / torque scale. Each folder's `MANIFEST.md` holds the
 full spec and the exact retrain command.

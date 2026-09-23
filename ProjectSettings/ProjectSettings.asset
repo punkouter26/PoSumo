@@ -717,7 +717,7 @@ PlayerSettings:
   webEnableSubmoduleStrippingCompatibility: 0
   webProgressiveAssetLoading: 0
   scriptingDefineSymbols:
-    Android: SENTIS_ANALYTICS_ENABLED;APP_UI_EDITOR_ONLY;UNITY_MCP_READY;UNITY_MCP_DEPS_4
+    Android: SENTIS_ANALYTICS_ENABLED;APP_UI_EDITOR_ONLY;UNITY_MCP_DEPS_4
     EmbeddedLinux: UNITY_MCP_READY;UNITY_MCP_DEPS_4
     GameCoreScarlett: UNITY_MCP_READY;UNITY_MCP_DEPS_4
     GameCoreXboxOne: UNITY_MCP_READY;UNITY_MCP_DEPS_4

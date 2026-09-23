@@ -10,30 +10,23 @@ namespace PoSumo
     ///   KD        — knockdowns dealt
     ///   PUSH      — time-averaged bar, averaged only while in contact
     ///
-    /// Two surfaces, split by whether the fight is happening right now.
+    /// Two surfaces, split by whether the fight is happening right now — plus one
+    /// reparenting at match end:
     ///
-    /// This began as two mirrored per-wrestler panels; folding them into ONE
-    /// comparison table with the metric name down the middle made the comparison
-    /// the layout instead of a job for the reader, in half the width and half the
-    /// elements. But the table that produced was ~484pt tall and was pinned to the
-    /// dock with no way to hide it — 39% of a 9:16 panel and about 52% of a 4:3
-    /// tablet in portrait, permanently, over the bottom of the dohyo and the
-    /// fighters' legs. Seven aggregate metrics is a between-rounds read; nobody
-    /// parses a work-rate percentage while a bout is being decided.
-    ///
-    /// The card was then cut from six rows to three. SHOVES and BALANCE are already
-    /// weighted into the DOMINANCE bar that is on screen the entire match, so
-    /// printing them again was the card restating its own inputs; WORK RATE was a
-    /// number no player ever acted on, and it cost a 13-iteration loop per fighter
-    /// per frame to produce.
-    ///
-    /// So:
-    ///   LIVE STRIP (dock, always on) — the two damage mannequins flanking a single
-    ///     DOMINANCE tug-of-war bar, plus the round footer. ~115pt, ~9% of the
-    ///     panel, and every element on it is a shape rather than a number.
-    ///   DETAIL CARD (stage, between rounds only) — the full aggregate table, shown
-    ///     on RoundEnded and MatchEnded and hidden again on RoundStarted. It lives
-    ///     in the band that was previously empty for the whole match.
+    ///   LIVE STRIP (dock, always on) — the two damage mannequins flanking the
+    ///     MAT meter, plus the round footer. Since the zero-scroll consolidation
+    ///     it is ALSO the host for the two telemetry companions: the
+    ///     win-probability row (Systems_TensionEngine) mounts into
+    ///     `TensionAnchor` under the MAT meter, and each fighter's biometrics
+    ///     caption + stamina sparkline (Systems_BiometricsCard) mounts into
+    ///     `BioAnchorA`/`BioAnchorB` under its mannequin. The dock went from
+    ///     three stacked cards to one instrument.
+    ///   DETAIL CARD (stage, between rounds only) — the full aggregate table,
+    ///     shown on RoundEnded and hidden again on RoundStarted. On MatchEnded it
+    ///     MOVES INTO the manager's result card (`ResultStatsHost`) instead of
+    ///     standing down: results merged with telemetry, one surface, one
+    ///     dismissal — and it comes back to the Stage holder on the next
+    ///     MatchReset.
     ///
     /// UI Toolkit only, drawn into the shared Systems_HudRoot.
     public sealed class Systems_FightHud : MonoBehaviour
@@ -89,6 +82,42 @@ namespace PoSumo
 
         private Systems_HudRoot _hud;
 
+        // ---- Telemetry anchors (one-strip dock) --------------------------------
+        //
+        // The dock used to carry THREE stacked cards: this live strip plus a
+        // Systems_TensionEngine card and a Systems_BiometricsCard card. The
+        // zero-scroll consolidation merged them into this one instrument strip, so
+        // the two companions now draw INTO these anchors instead of mounting cards
+        // of their own. Their GameTuning flags are unchanged — when a companion is
+        // off or absent, its anchor simply stays empty.
+        //
+        // Created in Awake, not in BuildUi: a companion's Start may run before
+        // this component's, and both look this component up with
+        // FindAnyObjectByType<Systems_FightHud>() — so the anchors must exist by
+        // the time any Start runs, and Awake guarantees that ordering. (Property
+        // initializers looked equivalent but measured NULL on the live scene
+        // instance in the first harness run — both companions silently fell back
+        // to standalone dock cards. Awake assignment is the path this project
+        // already trusts everywhere.) An anchor built early and parented later
+        // carries any children with it — attaching children to an unparented
+        // element is fine in UI Toolkit.
+
+        /// Centre column, under the MAT meter: the win-probability row.
+        public VisualElement TensionAnchor { get; private set; }
+
+        /// Under the left mannequin: that fighter's biometrics caption + sparkline.
+        public VisualElement BioAnchorA { get; private set; }
+
+        /// Under the right mannequin.
+        public VisualElement BioAnchorB { get; private set; }
+
+        private void Awake()
+        {
+            TensionAnchor = Systems_UiKit.Column(Align.Center).NoPick();
+            BioAnchorA = Systems_UiKit.Column(Align.Center).NoPick();
+            BioAnchorB = Systems_UiKit.Column(Align.Center).NoPick();
+        }
+
         // Live strip
         private VisualElement _liveCard;
         private Label _footer;
@@ -102,6 +131,12 @@ namespace PoSumo
 
         // Between-rounds detail
         private VisualElement _detailCard;
+        /// The absolute holder in the Stage band — the card returns here from the
+        /// result card on the next MatchReset.
+        private VisualElement _detailHolder;
+        /// True while the table lives inside the manager's result card instead of
+        /// the Stage holder (results merged with telemetry at match end).
+        private bool _inResultCard;
         private bool _detailVisible;
         private ComparePair _territory, _knockdowns;
         private BarPair _push;
@@ -173,10 +208,17 @@ namespace PoSumo
             _aggA.Reset();
             _aggB.Reset();
             _samples = 0;
+            // A rematch takes the table OUT of the previous match's result card
+            // and back to the Stage holder, hidden — otherwise the next match
+            // would play with the last one's stats parked in a modal host.
+            MoveDetailToStage();
         }
 
         private void OnRoundStarted()
         {
+            // Belt and braces with ResetAggregates: whatever path gets us back
+            // into a live round, the stats table belongs to the Stage again.
+            MoveDetailToStage();
             ShowDetail(false);
             ResolveBodies();
         }
@@ -184,7 +226,7 @@ namespace PoSumo
         /// Caches the two `Agent_BipedBody`s off the manager's current wrestlers.
         ///
         /// Called on every RoundStarted rather than lazily from FixedUpdate, so the
-        /// 50 Hz sampling path carries no GetComponent at all once a round is live.
+        /// 50 Hz sampling path carries no GetComponent at once a round is live.
         /// FixedUpdate still re-resolves if either cache is null — the first physics
         /// step can land before the first RoundStarted, and a destroyed body reads
         /// as null through Unity's == override after a scene load.
@@ -201,15 +243,73 @@ namespace PoSumo
         /// here until the next countdown.
         private void OnRoundEnded(Agent_Biped winner, Agent_Biped loser) { ShowDetail(true); }
 
-        /// Match end belongs to the result card, so the detail table stands down.
+        /// Match end belongs to the result card — and since the zero-scroll
+        /// consolidation the table MOVES INTO it rather than standing down.
         ///
-        /// Both used to appear at once, in different layers: the table pinned high
-        /// over the dohyo and the result modal low, with a dead band between them
-        /// and no relationship between the two. Two surfaces competing for the same
-        /// moment read as one broken screen. The table is still the between-rounds
-        /// read above, which is where it is actually studied — at match end the
-        /// verdict is what matters and the modal already dims the arena behind it.
-        private void OnMatchEnded(Agent_Biped winner) { ShowDetail(false); }
+        /// It used to hide here: the table pinned high over the dohyo and the
+        /// result modal low, two surfaces competing for the same moment with a
+        /// dead band between them. Merging results with telemetry (checklist #1)
+        /// means the aggregate table becomes a section OF the result card — one
+        /// surface, one dismissal. Falls back to the old hide when the manager has
+        /// no stats host (defensive: a scene-built manager without the field).
+        private void OnMatchEnded(Agent_Biped winner)
+        {
+            if (!MoveDetailToResult())
+            {
+                ShowDetail(false);
+            }
+        }
+
+        // ---- Detail-card routing (Stage holder <-> result card) ---------------
+
+        /// Reparents the stats table into the manager's result card and shows it.
+        /// Returns false when there is no host to move to.
+        private bool MoveDetailToResult()
+        {
+            if (_detailCard == null)
+            {
+                return false;
+            }
+            if (_inResultCard)
+            {
+                return true;
+            }
+            if (manager == null || manager.ResultStatsHost == null)
+            {
+                return false;
+            }
+            _detailCard.RemoveFromHierarchy();
+            // Inside the card it shares the card's width instead of floating at
+            // 92% of the Stage.
+            _detailCard.style.width = Length.Percent(100f);
+            manager.ResultStatsHost.Add(_detailCard);
+            _inResultCard = true;
+            _detailVisible = false;
+            // A pending FadeOutHide (from the round start that hid it) must not
+            // hide it out from under the card: this is the "re-shown mid-fade"
+            // case the fade's completion guard exists for, and opacity is reset
+            // so any in-flight fade sees a non-transparent element and stands down.
+            _detailCard.style.opacity = 1f;
+            _detailCard.style.display = DisplayStyle.Flex;
+            RefreshDetail();
+            return true;
+        }
+
+        /// Returns the table to the Stage holder, hidden. Idempotent.
+        private void MoveDetailToStage()
+        {
+            if (_detailCard == null || !_inResultCard || _detailHolder == null)
+            {
+                return;
+            }
+            _detailCard.RemoveFromHierarchy();
+            _detailCard.style.width = Length.Percent(92f);
+            _detailCard.style.display = DisplayStyle.None;
+            _detailCard.style.opacity = 1f;
+            _detailHolder.Add(_detailCard);
+            _inResultCard = false;
+            _detailVisible = false;
+        }
 
         // ---- Build ---------------------------------------------------------
 
@@ -226,16 +326,23 @@ namespace PoSumo
             BuildDetailCard();
         }
 
-        /// The always-on strip: damage left, dominance centre, damage right, in one
-        /// row the height of a mannequin. Everything here is readable at a glance
-        /// without reading — two figures changing colour and a bar leaning one way.
+        /// The always-on strip: damage left, MAT + win-prob centre, damage right,
+        /// in one card. Everything here is readable at a glance without reading —
+        /// two figures changing colour, a bar shrinking from both ends, a meter
+        /// leaning one way, and two sparklines tracing stamina.
         private void BuildLiveStrip()
         {
             // Raised, not Overlay: the live strip is docked furniture that is
             // always on screen, so it belongs to the page rather than floating
             // over it. The result card below is the one that floats.
+            //
+            // Padding diet (zero-scroll consolidation): SPACE_4/SPACE_2 ->
+            // SPACE_3/SPACE_1. The strip now carries the mannequins, the MAT
+            // meter, the win-probability row AND both biometrics sparklines — the
+            // merged instrument is taller than the old strip, so its own frame
+            // gives back what it gained. Touch targets are untouched.
             _liveCard = Systems_UiKit.ElevatedCard(Systems_UiKit.Elevation.Raised).NoPick();
-            _liveCard.Pad(Systems_UiKit.SPACE_4, Systems_UiKit.SPACE_2);
+            _liveCard.Pad(Systems_UiKit.SPACE_3, Systems_UiKit.SPACE_1);
             _liveCard.style.marginBottom = Systems_UiKit.SPACE_2;
 
             _mannA = BuildMannequin(out VisualElement figureA);
@@ -247,21 +354,21 @@ namespace PoSumo
             // no fighter identity of their own — left and right were two identical
             // green figures. A team-coloured base under each one labels it without
             // touching the damage ramp, which has to stay readable as damage.
+            // The biometrics anchor rides below the base: that fighter's PK/AD
+            // caption and stamina sparkline live here now (was a third dock card).
             VisualElement left = Systems_UiKit.Column(Align.Center).NoPick();
             left.Add(figureA);
             left.Add(TeamBase(manager.colorA));
+            left.Add(BioAnchorA);
             VisualElement right = Systems_UiKit.Column(Align.Center).NoPick();
             right.Add(figureB);
             right.Add(TeamBase(manager.colorB));
+            right.Add(BioAnchorB);
 
             // The centre used to carry the DOMINANCE tug-of-war bar and its two
             // numbers. Removed 2026-08-26 at the player's request: DominanceA/B are
             // still computed every step — Systems_CrowdMomentum and
             // Systems_FaceMood read them — and the DBG panel prints them.
-            //
-            // It was then left as an EMPTY column inside the Triplet, which still
-            // reserves COL_CENTRE of the strip's width: a wide dead gap between the
-            // two mannequins, visible in any capture of a live bout.
             //
             // It now carries the MAT meter, which is the one number this game was
             // not showing and badly needed. Measured over 17 logged rounds, 16 of
@@ -293,13 +400,17 @@ namespace PoSumo
             _matFill.Round(3);
             _matTrack.Add(_matFill);
             centre.Add(_matTrack);
+            // The win-probability row (Systems_TensionEngine) mounts here — the
+            // second dock card merged into the strip. Empty when the companion's
+            // flag is off; costs one empty element.
+            centre.Add(TensionAnchor);
 
             _liveCard.Add(Systems_UiKit.Triplet(left, centre, right));
 
-            // One footer for the whole strip. Was "MATCHES 0-0 · LONGEST RD 0s",
-            // which reset every match and so read 0-0 through the whole bout while
-            // the career screen said 68 matches. The round number and the target
-            // are what a viewer actually needs.
+            // One footer for the whole strip. Compact badges (checklist #2): the
+            // verbose "ROUND 2 · FIRST TO 3" is a 200pt string in a micro slot;
+            // "R2 · FT3" says the same at half the width, and FIRST TO is a rule
+            // the pause card still states in full.
             _footer = Systems_UiKit.Caption("", Systems_UiKit.FONT_MICRO, Systems_UiKit.TextLow);
             _footer.style.marginTop = Systems_UiKit.SPACE_1;
             _liveCard.Add(_footer);
@@ -315,7 +426,10 @@ namespace PoSumo
             // read as being in front of the fight, not part of the dock.
             _detailCard = Systems_UiKit
                 .ElevatedCard(Systems_UiKit.Elevation.Overlay, Systems_UiKit.RADIUS_LG).NoPick();
-            _detailCard.Pad(Systems_UiKit.SPACE_4, Systems_UiKit.SPACE_3);
+            // Padding diet: SPACE_4/SPACE_3 -> SPACE_3/SPACE_2. The card moved
+            // INTO the result card at match end, where every point of its frame
+            // comes straight off the modal's budget.
+            _detailCard.Pad(Systems_UiKit.SPACE_3, Systems_UiKit.SPACE_2);
             _detailCard.style.width = Length.Percent(92);
             _detailCard.style.maxWidth = 520;
             _detailCard.style.display = DisplayStyle.None;
@@ -360,7 +474,7 @@ namespace PoSumo
             // The holder is what carries `alignItems: Center`: an absolutely
             // positioned element does not inherit the parent's centring, so the card
             // alone would have pinned to the left edge. Bottom offset (not 0) keeps
-            // it clear of the Dock's live DOMINANCE strip directly below — absolute
+            // it clear of the Dock's live strip directly below — absolute
             // offsets resolve against the parent's PADDING box, and Stage has no
             // padding, so `bottom: 0` is precisely the Dock's top edge.
             var holder = new VisualElement().NoPick();
@@ -370,6 +484,7 @@ namespace PoSumo
             holder.style.bottom = Systems_UiKit.SPACE_3;
             holder.style.alignItems = Align.Center;
             holder.Add(_detailCard);
+            _detailHolder = holder;
             _hud.Stage.Add(holder);
         }
 
@@ -397,7 +512,9 @@ namespace PoSumo
             Label name = Systems_UiKit.Caption(label, Systems_UiKit.FONT_SMALL, Systems_UiKit.TextLow);
 
             VisualElement row = Systems_UiKit.Triplet(pair.a, name, pair.b);
-            row.style.height = valueSize + 10;
+            // +6, not +10: padding diet (checklist #2). The row is one line of
+            // 24pt type — four points of lead was spacing, not air.
+            row.style.height = valueSize + 6;
             _detailCard.Add(row);
             return pair;
         }
@@ -712,7 +829,7 @@ namespace PoSumo
             if (round != _shownRound)
             {
                 _shownRound = round;
-                _footer.text = $"ROUND {round} · FIRST TO {manager.PointsToWin}";
+                _footer.text = $"R{round} · FT{manager.PointsToWin}";
             }
 
             PaintMannequin(_mannA, _mannShownA, _bodyA);

@@ -11,7 +11,7 @@ chasing. She does not come to you.
 | Observations / actions | 45 / 13 (`extendedObservations = true`, decision period 3) |
 | Build | massScale 1.45, widthScale 1.30, torqueScale 1.50 (~101 kg, sumo belly) |
 | Brain | `Kim.onnx` ← `kim_unified01` final export (15.0M, cold) |
-| Training scene / env | `SCN_TRAIN_KIM` → `Builds/KimEnv` (spars against Standard) |
+| Training scene / env | `SCN_TRAIN_KIM` → `Builds/KimEnv` (spars against Grandma) |
 | Config | `Training/configs/KimUnified01.yaml` |
 | Faces | `Assets/Resources/Faces/Kim_*.png`, named on the character asset |
 | Voice | **Happy only** (2026-08-15): `Resources/Audio/Voice/Kim_Happy_1..5.wav`. No Sad or Insult set, so she is silent when losing or taunting — that is a complete absence (`found == 0`), which the loader returns as null without warning, not a partial set |

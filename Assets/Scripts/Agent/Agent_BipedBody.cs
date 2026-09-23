@@ -29,11 +29,25 @@ namespace PoSumo
 
         public int facingSign = 1;
         /// One base colour per fighter, taken from the character sheet in Awake, and
-        /// used by EVERY body part. The head is the only exception — it carries that
-        /// fighter's face art instead. The per-part `tint` in PART_DEFS only shades
-        /// this one colour for near/far depth; it never introduces a second hue, so
-        /// a wrestler always reads as a single identifiable colour.
+        /// used by every body part the character's `clothing` does NOT cover. The
+        /// head is the only unconditional exception — it carries that fighter's face
+        /// art instead. The per-part `tint` in PART_DEFS only shades this one colour
+        /// for near/far depth; it never introduces a second hue, so bare skin always
+        /// reads as a single identifiable colour.
         public Color teamColor = new Color(0.85f, 0.25f, 0.2f);
+
+        /// The character's outfit, read once in Awake before Build(). A body with no
+        /// character sheet (a bare training-scene biped) stays unclothed. Visual
+        /// only: it changes a part's texture and renderer colour and nothing else —
+        /// no mass, no collider, no observation — so it cannot invalidate a brain.
+        private Agent_ClothingSpec _clothing;
+
+        /// Set by `Systems_MatchRoster` on the second side of a MIRROR match, next
+        /// to `teamColorOverride`, so the challenger's outfit tells itself apart from
+        /// the original's as well. A hue rotation alone cannot separate two grey
+        /// sweatpants (a hue shift on a near-neutral colour is still that colour),
+        /// so the mirror side's garments are darkened too — see GarmentColor.
+        [System.NonSerialized] public float clothingMirrorShift = 0f;
 
         /// Wins over `character.teamColor` when set, and set by nothing except
         /// `Systems_MatchRoster` on the second side of a MIRROR match (the bracket
@@ -497,6 +511,12 @@ namespace PoSumo
             {
                 teamColor = teamColorOverride.Value;
             }
+            // After the character block (the outfit lives on the sheet) and after
+            // the override block (a mirror challenger shifts its garments too), but
+            // before Build(), which is what paints them.
+            _clothing = character != null && character.clothing != null
+                      ? character.clothing
+                      : new Agent_ClothingSpec();
             Build();
         }
 
@@ -677,10 +697,17 @@ namespace PoSumo
                 // exact rectangle (BoxCollider2D); limbs get the ellipse that a
                 // unit CapsuleCollider2D becomes under the part's own scale. Only
                 // the head is exempt: it carries face art on a CircleCollider2D.
-                sr.sprite = d.circle ? CircleSprite()
+                //
+                // Clothing swaps the TEXTURE inside that silhouette and never the
+                // silhouette itself: Agent_Fabric draws the same ellipse or
+                // rectangle with a weave pattern in its RGB, so no collider moves
+                // and no trained brain can be invalidated by what a fighter wears.
+                Color partColor = PartColor(index, out Agent_Fabric.Weave weave);
+                sr.sprite = weave != Agent_Fabric.Weave.None ? Agent_Fabric.Sprite(weave, boxy)
+                          : d.circle ? CircleSprite()
                           : boxy ? SquareSprite()
                           : BoxSprite();
-                sr.color = new Color(teamColor.r * d.tint, teamColor.g * d.tint, teamColor.b * d.tint, 1f);
+                sr.color = new Color(partColor.r * d.tint, partColor.g * d.tint, partColor.b * d.tint, 1f);
                 sr.sortingOrder = d.sorting;
                 // This fighter's body material so the light rig shapes the limbs and
                 // the sweat/clay terms apply; the per-part tint stays on the
@@ -1364,13 +1391,141 @@ namespace PoSumo
         public static int JointChildPart(int jointIndex) => JOINT_DEFS[jointIndex].child;
         public static bool JointPowered(int jointIndex) => JOINT_DEFS[jointIndex].powered;
 
-        /// The resting colour of one part's art renderer — the team colour times
-        /// the part's tint, exactly what Build() wrote. Systems_JointHeatmap lerps
-        /// FROM this so the heat ramp cannot shift a fighter's identity.
+        /// The resting colour of one part's art renderer — exactly what Build()
+        /// wrote: the garment colour where clothing covers the part, the team colour
+        /// where it does not, times the part's tint. Systems_JointHeatmap restores
+        /// FROM this, so it must agree with Build() or the heat ramp would strip a
+        /// fighter's outfit every time it cleared.
         public Color PartBaseColor(int partIndex)
         {
+            Color baseColor = PartColor(partIndex, out _);
             float tint = PART_DEFS[partIndex].tint;
-            return new Color(teamColor.r * tint, teamColor.g * tint, teamColor.b * tint, 1f);
+            return new Color(baseColor.r * tint, baseColor.g * tint, baseColor.b * tint, 1f);
+        }
+
+        /// Colour and fabric for one PART_DEFS index — the single place that decides
+        /// who wears what, called by Build() and by PartBaseColor so the two can
+        /// never disagree.
+        ///
+        /// Index map (append-only; see PART_DEFS):
+        ///   0 pelvis · 1/4 thighs · 2/5 shins · 3/6 feet · 7-9 trunk
+        ///   10/12 upper arms · 11/13 forearms · 14/15 toes
+        ///
+        /// Coverage: jeans and sweatpants run to the ankle while shorts and the
+        /// mawashi stop at the thigh; a short sleeve stops at the elbow and a long
+        /// sleeve does not; every torso garment covers all three trunk segments;
+        /// every foot garment covers feet and toes alike. Sleeves take the torso
+        /// garment's weave, because a sleeve is the continuation of the shirt — a
+        /// cardigan's arms are knitted, not jersey. The head is never clothed.
+        private Color PartColor(int partIndex, out Agent_Fabric.Weave weave)
+        {
+            weave = Agent_Fabric.Weave.None;
+            Agent_ClothingSpec spec = _clothing;
+            if (spec == null)
+            {
+                return teamColor;
+            }
+
+            switch (partIndex)
+            {
+                case 0:   // pelvis
+                case 1:   // thigh near
+                case 4:   // thigh far
+                    if (spec.legs != Agent_ClothingSpec.LegWear.None)
+                    {
+                        weave = LegWeave(spec.legs);
+                        return GarmentColor(spec.legsColor);
+                    }
+                    break;
+
+                case 2:   // shin near
+                case 5:   // shin far
+                    if (spec.legs == Agent_ClothingSpec.LegWear.Jeans ||
+                        spec.legs == Agent_ClothingSpec.LegWear.Sweatpants)
+                    {
+                        weave = LegWeave(spec.legs);
+                        return GarmentColor(spec.legsColor);
+                    }
+                    break;
+
+                case 7:   // lower back
+                case 8:   // upper back
+                case 9:   // chest
+                    if (spec.torso != Agent_ClothingSpec.TorsoWear.None)
+                    {
+                        weave = TorsoWeave(spec.torso);
+                        return GarmentColor(spec.torsoColor);
+                    }
+                    break;
+
+                case 10:  // upper arm near
+                case 12:  // upper arm far
+                    if (spec.arms != Agent_ClothingSpec.ArmWear.None)
+                    {
+                        weave = spec.torso != Agent_ClothingSpec.TorsoWear.None
+                              ? TorsoWeave(spec.torso)
+                              : Agent_Fabric.Weave.Jersey;
+                        return GarmentColor(spec.armsColor);
+                    }
+                    break;
+
+                case 11:  // forearm near
+                case 13:  // forearm far
+                    if (spec.arms == Agent_ClothingSpec.ArmWear.LongSleeve)
+                    {
+                        weave = spec.torso != Agent_ClothingSpec.TorsoWear.None
+                              ? TorsoWeave(spec.torso)
+                              : Agent_Fabric.Weave.Jersey;
+                        return GarmentColor(spec.armsColor);
+                    }
+                    break;
+
+                case 3:   // foot near
+                case 6:   // foot far
+                case 14:  // toe near
+                case 15:  // toe far
+                    if (spec.feet != Agent_ClothingSpec.FootWear.None)
+                    {
+                        weave = FootWeave(spec.feet);
+                        return GarmentColor(spec.feetColor);
+                    }
+                    break;
+            }
+            return teamColor;
+        }
+
+        private static Agent_Fabric.Weave LegWeave(Agent_ClothingSpec.LegWear wear) =>
+            wear == Agent_ClothingSpec.LegWear.Jeans ? Agent_Fabric.Weave.Denim :
+            wear == Agent_ClothingSpec.LegWear.Sweatpants ? Agent_Fabric.Weave.Fleece :
+            wear == Agent_ClothingSpec.LegWear.Shorts ? Agent_Fabric.Weave.Canvas :
+            Agent_Fabric.Weave.Coarse;   // mawashi
+
+        private static Agent_Fabric.Weave TorsoWeave(Agent_ClothingSpec.TorsoWear wear) =>
+            wear == Agent_ClothingSpec.TorsoWear.Sweater ? Agent_Fabric.Weave.Wool :
+            wear == Agent_ClothingSpec.TorsoWear.Singlet ? Agent_Fabric.Weave.Lycra :
+            Agent_Fabric.Weave.Jersey;   // t-shirt and tank alike
+
+        private static Agent_Fabric.Weave FootWeave(Agent_ClothingSpec.FootWear wear) =>
+            wear == Agent_ClothingSpec.FootWear.Sneakers ? Agent_Fabric.Weave.Canvas :
+            wear == Agent_ClothingSpec.FootWear.Boots ? Agent_Fabric.Weave.Leather :
+            Agent_Fabric.Weave.Rib;      // socks
+
+        /// Applies the mirror-match shift to a garment colour. Identity only — it is
+        /// a no-op at the default 0, so a normal bout's outfit is byte-identical to
+        /// the colour written on the character sheet.
+        private Color GarmentColor(Color garment)
+        {
+            if (clothingMirrorShift == 0f)
+            {
+                return garment;
+            }
+            Color.RGBToHSV(garment, out float h, out float s, out float v);
+            // Darkened as well as rotated: two greys differ in hue by nothing, and
+            // the mirror problem this exists to solve was measured on fighters who
+            // can both be wearing the same outfit.
+            return Color.HSVToRGB(Mathf.Repeat(h + clothingMirrorShift, 1f),
+                                  Mathf.Clamp01(s),
+                                  Mathf.Clamp01(v * 0.78f));
         }
 
         /// Integrates one physics step of the fatigue model for every powered joint.

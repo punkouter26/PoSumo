@@ -30,6 +30,10 @@ namespace PoSumo
         [Tooltip("Resources names, mild to extreme (sad1..3).")]
         public string[] faceSadNames = new string[0];
 
+        [Header("Clothing (visual only)")]
+        [Tooltip("What this fighter wears, per body region: garment plus colour. The fabric pattern comes from the garment itself (jeans are denim, sweatpants are fleece) and is generated in code by Agent_Fabric — no texture assets, nothing to import.\n\nVisual only: it changes a part's texture and renderer colour and nothing else — no mass, no collider, no joint, no observation — so it cannot invalidate a trained brain. Coverage is decided in Agent_BipedBody.PartColor; the head is never clothed.")]
+        public Agent_ClothingSpec clothing = new Agent_ClothingSpec();
+
         [Header("Body build")]
         [Tooltip("Multiplies every part's mass. Heavyweight sumo ~2.")]
         public float massScale = 1f;

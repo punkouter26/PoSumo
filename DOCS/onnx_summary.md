@@ -16,7 +16,7 @@ This document is the canonical inventory of every shipped brain and the ragdoll 
 | Fighter | ONNX file | File size | Input tensor | Output tensor | Initializers | Params (approx) | Source run-id | Final mean reward (fight) | Self-play ELO (last decile) | Promotion status |
 |---|---|---:|---|---|---:|---:|---|---:|---:|---|
 | **Matt** | `Assets/Agents/Matt_v01/Matt.onnx` | 2.13 MB | `obs_0` shape `[batch, 45]` | `continuous_actions` shape `[batch, 13]` (+ `version_number[1]`, `memory_size[1]`, `continuous_action_output_shape[1]`, `deterministic_continuous_actions[b,13]`) | 14 | ~445k | `matt_unified02` cold (15.0M) | ~36 | ~1140 | **Production** |
-| **Standard** | `Assets/Agents/Standard_v01/Standard.onnx` | 2.13 MB | `obs_0` shape `[batch, 45]` | same shape set | 14 | ~445k | `standard_unified01` cold (15.0M) | ~31 | ~1080 | **Production** |
+| **Grandma** (fka Standard) | `Assets/Agents/Grandma_v01/Grandma.onnx` | 2.13 MB | `obs_0` shape `[batch, 45]` | same shape set | 14 | ~445k | `standard_unified01` cold (15.0M, run id under the old name) | ~31 | ~1080 | **Production** |
 | **Nick** | `Assets/Agents/Nick_v01/Nick.onnx` | 2.13 MB | `obs_0` shape `[batch, 45]` | same shape set | 14 | ~445k | `nick_unified01` cold 3.75M + resumed to 15.0M | ~33 | ~1115 | **Production** |
 | **Kim** | `Assets/Agents/Kim_v01/Kim.onnx` | 2.13 MB | `obs_0` shape `[batch, 45]` | same shape set | 14 | ~445k | `kim_unified01` cold (15.0M) | ~30 | ~1050 | **Production** |
 | **Bot** | _none_ (deliberately brainless) | 0 | n/a | n/a | 0 | 0 | n/a | n/a | n/a | **Bot / no brain** |
@@ -46,7 +46,7 @@ The rig is the same 14-part biped for every fighter - what differs is **scale an
 | Fighter | Behavioural purpose | Rig component | Drive mode | DOF (powered) | Mass (kg) | Build scales (mass / width / torque) | Standing height | Notes |
 |---|---|---|---|---:|---:|---|---|---|
 | **Matt** | Aggressive lightweight baseline. Drives forward, hits hard. | `Agent_BipedBody` (custom runtime build) - 14 `Rigidbody2D` + 16 `HingeJoint2D` + 12 `CapsuleCollider2D` + 4 `BoxCollider2D` + 1 `CircleCollider2D` (head compound on Chest) | PD per `HingeJoint2D` (motor with slew-limited target velocity) | 13 (all symmetric pairs except spine 3-of-3) | 69.6 | 1.00 / 1.00 / 1.00 | 1.76 m | Highest impact reward (0.015) and shortest lunge threshold (1.2 m/s). |
-| **Standard** | Reference fighter; default shaping and default body. | identical to Matt | identical to Matt | 13 | 69.6 | 1.00 / 1.00 / 1.00 | 1.76 m | Code defaults match character sheet defaults byte-for-byte; "no character assigned" is harmless. |
+| **Grandma** | Reference fighter (renamed from Standard 2026-09-22); default shaping and default body. | identical to Matt | identical to Matt | 13 | 69.6 | 1.00 / 1.00 / 1.00 | 1.76 m | Code defaults match character sheet defaults byte-for-byte; "no character assigned" is harmless. |
 | **Nick** | Light mobile perimeter fighter. Smallest body, highest cadence. | identical to Matt | identical to Matt | 13 | ~50 | 0.72 / 0.82 / 0.85 | ~1.51 m | Cadence 0.0032 (highest), `straightLegEarnFraction = 0.75` (not required to crouch). |
 | **Kim** | Heavy planted anchor. Wins by lean and impact, not by chase. | identical to Matt | identical to Matt | 13 | ~101 | 1.45 / 1.30 / 1.50 | ~1.76 m (same joint heights, wider trunk) | `straightLegEarnFraction = 0.15` (must be deep). Short-horizon PPO (gamma 0.99). |
 | **Bot** | Roster padding, deliberately brainless. | identical rig | `Agent_Bot` heuristic; motors cut on no-brain fallback | 13 | 69.6 | 1.00 / 1.00 / 1.00 | 1.76 m | Logs `character 'Bot' has no inferenceModel` at Error level on every match. |
@@ -96,7 +96,7 @@ The rig is the same 14-part biped for every fighter - what differs is **scale an
 
 The reward tree and shared penalty terms live in `Reward_SumoObjective` and `Reward_WalkObjective`. Per-fighter coefficients are read from the character asset. Default code values are the constants the project used before shaping became per-character, so an unassigned character trains exactly what the un-tuned code would have.
 
-| Coefficient | Matt | Standard (default) | Nick | Kim | Code default | Notes |
+| Coefficient | Matt | Grandma (default) | Nick | Kim | Code default | Notes |
 |---|---:|---:|---:|---:|---:|---|
 | `uprightReward` | 0.0005 | 0.0005 | 0.0005 | 0.0005 | 0.0005 | shared |
 | `closingReward` | **0.0009** | 0.0006 | **0.0011** | 0.0004 | 0.0006 | sumo; higher = chases more |

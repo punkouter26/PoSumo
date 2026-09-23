@@ -35,10 +35,16 @@ namespace PoSumo.EditorTools
             Build("Assets/Scenes/Training/SCN_TRAIN_MATT.unity", "Builds/MattEnv/MattEnv.exe");
         }
 
-        [MenuItem("PoSumo/Build Standard Training Env")]
-        public static void BuildStandard()
+        // Menu label, method and output path follow the FIGHTER (Grandma); the
+        // scene was renamed off its legacy STANDARD spelling on 2026-09-22 and
+        // is now SCN_TRAIN_GRANDMA, matching every doc and diagram. The output
+        // path is the one that matters for
+        // training: Start-StaminaExtension.ps1 derives `Builds/<Name>Env` from
+        // the fighter name and fails if the exe is not where it predicts.
+        [MenuItem("PoSumo/Build Grandma Training Env")]
+        public static void BuildGrandma()
         {
-            Build("Assets/Scenes/Training/SCN_TRAIN_STANDARD.unity", "Builds/StandardEnv/StandardEnv.exe");
+            Build("Assets/Scenes/Training/SCN_TRAIN_GRANDMA.unity", "Builds/GrandmaEnv/GrandmaEnv.exe");
         }
 
         // The walk-school and recover-school env entries are gone. Walking is

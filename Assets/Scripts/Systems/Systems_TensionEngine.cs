@@ -207,13 +207,32 @@ namespace PoSumo
 
         private void BuildUi()
         {
-            PanelSettings settings = _manager != null ? _manager.panelSettings : null;
-            _hudRoot = Systems_HudRoot.Ensure(transform, settings);
-            if (_hudRoot == null || _hudRoot.Dock == null || _manager == null) return;
+            if (_manager == null)
+            {
+                return;
+            }
+            // ONE-STRIP DOCK (zero-scroll consolidation): the FightHud centre
+            // column — under the MAT meter — is the anchor this meter mounts into,
+            // so it costs no card of its own. The standalone dock card below is
+            // the fallback for a scene that has no Systems_FightHud at all.
+            bool inStrip = _hud != null && _hud.TensionAnchor != null;
+            VisualElement card = null;
 
-            VisualElement card = Systems_UiKit.ElevatedCard(Systems_UiKit.Elevation.Base).NoPick();
-            card.Pad(Systems_UiKit.SPACE_3, Systems_UiKit.SPACE_1);
-            card.style.marginBottom = Systems_UiKit.SPACE_1;
+            if (inStrip)
+            {
+                _hud.TensionAnchor.Add(Systems_UiKit.Caption("WIN", Systems_UiKit.FONT_MICRO,
+                                                             Systems_UiKit.TextLow));
+            }
+            else
+            {
+                PanelSettings settings = _manager != null ? _manager.panelSettings : null;
+                _hudRoot = Systems_HudRoot.Ensure(transform, settings);
+                if (_hudRoot == null || _hudRoot.Dock == null || _manager == null) return;
+
+                card = Systems_UiKit.ElevatedCard(Systems_UiKit.Elevation.Base).NoPick();
+                card.Pad(Systems_UiKit.SPACE_3, Systems_UiKit.SPACE_1);
+                card.style.marginBottom = Systems_UiKit.SPACE_1;
+            }
 
             _labelA = Systems_UiKit.Text("50", Systems_UiKit.FONT_SMALL, _manager.colorA, true);
             _labelA.style.unityTextAlign = TextAnchor.MiddleRight;
@@ -236,10 +255,23 @@ namespace PoSumo
             row.Add(_labelA);
             row.Add(track);
             row.Add(_labelB);
-            card.Add(row);
 
-            card.NoPickTree();
-            _hudRoot.Dock.Add(card);
+            if (inStrip)
+            {
+                // The anchor is a centred Column: children hug their content, so
+                // the row must claim full width or the flexGrow track inside it
+                // resolves against zero and the bar disappears.
+                row.style.width = Length.Percent(100f);
+                row.style.marginTop = Systems_UiKit.SPACE_1;
+                _hud.TensionAnchor.Add(row);
+                row.NoPickTree();
+            }
+            else
+            {
+                card.Add(row);
+                card.NoPickTree();
+                _hudRoot.Dock.Add(card);
+            }
         }
 
         /// Outward-from-centre tug fills, exactly the FightHud grammar: each

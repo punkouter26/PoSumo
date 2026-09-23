@@ -25,6 +25,15 @@ MonoBehaviour:
   - Kim_Sad_1
   - Kim_Sad_2
   - Kim_Sad_3
+  clothing:
+    legs: 4
+    legsColor: {r: 0.15, g: 0.16, b: 0.3, a: 1}
+    torso: 0
+    torsoColor: {r: 1, g: 1, b: 1, a: 1}
+    arms: 0
+    armsColor: {r: 1, g: 1, b: 1, a: 1}
+    feet: 0
+    feetColor: {r: 1, g: 1, b: 1, a: 1}
   massScale: 1
   widthScale: 1.3
   torqueScale: 1.3

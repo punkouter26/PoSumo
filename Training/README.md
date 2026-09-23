@@ -37,7 +37,7 @@ they are ~140 MB per run and nothing ever deploys from them.
 | Config | Behavior | Run id | Base port | Steps |
 |---|---|---|---|---|
 | `MattRebuild01.yaml` | Matt | `matt_rebuild01` | 5005 | 15.0M cold |
-| `StandardRebuild01.yaml` | Standard | `standard_rebuild01` | 5015 | 15.0M cold |
+| `GrandmaRebuild01.yaml` | Grandma | `grandma_rebuild01` | 5015 | 15.0M cold |
 | `NickRebuild01.yaml` | Nick | `nick_rebuild01` | 5025 | 15.0M cold |
 | `KimRebuild01.yaml` | Kim | `kim_rebuild01` | 5035 | 15.0M cold |
 
@@ -74,7 +74,7 @@ it. There is no separate walk run, walk config, walk env or walk `.onnx` any mor
 | Config | Behavior | Run | Env | Backs |
 |---|---|---|---|---|
 | `MattUnified02.yaml` | Matt | `matt_unified02` (15.0M, cold) | MattEnv | `Matt.onnx` |
-| `StandardUnified01.yaml` | Standard | `standard_unified01` (15.0M, cold) | StandardEnv | `Standard.onnx` |
+| `StandardUnified01.yaml` | Grandma | `standard_unified01` (15.0M, cold) | StandardEnv | `Grandma.onnx` |
 | `KimUnified01.yaml` | Kim | `kim_unified01` (15.0M, cold) | KimEnv | `Kim.onnx` |
 | `NickUnified01.yaml` | Nick | `nick_unified01` (15.0M, cold + resume) | NickEnv | `Nick.onnx` |
 
@@ -588,20 +588,20 @@ bird-leg brain. `Deploy`/`DeployWalk` were safe only because they read the top-l
 **Kill TensorBoard before launching with `--force`, not after.** The note further up
 saying to restart it afterward is necessary but not sufficient.
 
-### Known trap: SCN_TRAIN_STANDARD has no character asset assigned
+### Known trap: SCN_TRAIN_GRANDMA has no character asset assigned
 
-`SCN_TRAIN_STANDARD` contains **zero** references to `Standard_Character.asset` (8 fields
+`SCN_TRAIN_GRANDMA` contains **zero** references to `Grandma_Character.asset` (8 fields
 sit at `character: {fileID: 0}`), while the other seven training scenes reference
 theirs correctly. Verified by GUID-grepping the saved `.unity` files, which is the
 check CLAUDE.md mandates.
 
-It is currently harmless *by coincidence*: Standard's sheet is byte-identical to
+It is currently harmless *by coincidence*: Grandma's sheet is byte-identical to
 `Agent_Biped`'s code defaults (massScale/widthScale/torqueScale 1, uprightReward
 0.0005, closingReward 0.0006, energyPenalty 0.0004, straightLegEarnFraction 0.3 …),
-so an agent with no character trains exactly what Standard's sheet would ask for.
+so an agent with no character trains exactly what her sheet would ask for.
 `standard_sumo03` was therefore left running rather than restarted.
 
-It becomes a real bug the moment anyone tunes Standard's sheet — the training scene
+It becomes a real bug the moment anyone tunes Grandma's sheet — the training scene
 will silently ignore it, which is precisely how this project once trained the wrong
 policy for 1.5M steps. Assign the character in the scene and rebuild StandardEnv
 before any Standard-specific tuning.

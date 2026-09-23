@@ -25,6 +25,15 @@ MonoBehaviour:
   - Nick_Sad_1
   - Nick_Sad_2
   - Nick_Sad_3
+  clothing:
+    legs: 3
+    legsColor: {r: 0.16, g: 0.21, b: 0.36, a: 1}
+    torso: 2
+    torsoColor: {r: 0.86, g: 0.88, b: 0.91, a: 1}
+    arms: 0
+    armsColor: {r: 1, g: 1, b: 1, a: 1}
+    feet: 1
+    feetColor: {r: 0.93, g: 0.95, b: 0.97, a: 1}
   massScale: 1
   widthScale: 0.82
   torqueScale: 1

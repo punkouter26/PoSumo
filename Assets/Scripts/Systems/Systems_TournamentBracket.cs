@@ -98,20 +98,30 @@ namespace PoSumo
         private VisualElement _root;
         /// Everything on the screen except the drag ghost. The ghost stays on
         /// `_root` so its absolute pointer coordinates are not offset by the
-        /// scroll position.
+        /// active pane.
         private VisualElement _content;
+        /// The two tab panes and their host: BRACKET (title area, palette and
+        /// rounds) and RECORD (promotion news, career/banzuke, bot ladder, rules).
+        /// Replaces the ScrollView — the zero-scroll constraint (checklist #3)
+        /// means every pane fits the viewport, and the overflow audit polices it.
+        private const int TAB_BRACKET = 0;
+        private const int TAB_RECORD = 1;
+        private int _activeTab = TAB_BRACKET;
+        private readonly List<Button> _tabButtons = new List<Button>();
+        private VisualElement _paneHost;
+        private VisualElement _paneBracket;
+        private VisualElement _paneRecord;
         private Systems_CareerScreen _careerScreen;
         private Systems_PromotionCeremony _promotionCeremony;
-        private Button _careerButton;
         /// Promotion banner. Shown once, on the first Refresh after returning from
-        /// a match that moved somebody up or down the banzuke.
+        /// a match that moved somebody up or down the banzuke. Lives on the
+        /// BRACKET pane — that is where the player lands coming back from a bout.
         private Label _rankNews;
         private VisualElement _dragGhost;
         private Label _statusLabel;
         private Button _actionButton;
         private Button _resetButton;
         private VisualElement _paletteRow;
-        private VisualElement _standings;
         private Button _autoButton;
         private Label _hint;
 
@@ -180,37 +190,26 @@ namespace PoSumo
             // (every desktop, and the editor Game view) that means zero padding on
             // all sides. The gutters belong one level further in again.
 
-            // The bracket is taller than a phone screen, and there was nothing to
-            // scroll: the overflow was simply clipped, so the RESHUFFLE button
-            // could not be reached at all.
-            var scroll = new ScrollView(ScrollViewMode.Vertical);
-            _scroll = scroll;
-            scroll.style.flexGrow = 1;
-            // Vertical mode alone still leaves the horizontal scroller on Auto, so
-            // a row a few points too wide draws a bar across the bottom of the
-            // screen. Nothing here is meant to scroll sideways.
-            scroll.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
-            // The TOP chrome band is reserved by SHRINKING THE VIEWPORT, not by
-            // padding the content inside it.
-            //
-            // Padding the content only guarantees that the FIRST and LAST rows clear
-            // the chrome. Everything between them still scrolls underneath it, and
-            // measured at 1080x2400 that ran the bracket rows under the frame-rate
-            // readout. A margin takes the band out of the scroll viewport
-            // altogether, so no row can ever pass under it.
-            //
-            // The BOTTOM band is not reserved here, because the bottom of this
-            // screen does not belong to the ScrollView: the status line and the
-            // action buttons are a flow footer pinned below it (see further down),
-            // and it is that footer which has to clear the DBG chip and the build
-            // stamp. Reserving it on the scroll instead just moves the footer up and
-            // leaves it exactly as overlapped as it was — measured.
-            //
-            // The arena needs neither, because its bands are flow rather than
-            // scrolling: there, Systems_HudRoot.ReserveChrome pads the top bar and
-            // the dock and nothing can slide beneath them.
-            scroll.style.marginTop = Systems_UiKit.TOUCH_MIN + Systems_UiKit.SPACE_3;
-            screen.Add(scroll);
+            // TAB ROW + PANE HOST — replaces the ScrollView (zero-scroll,
+            // checklist #3). The tab row carries the TOP chrome reservation the
+            // old scroll viewport carried: a margin takes the band out of flow, so
+            // the FPS readout and title can never overlap a tab. The BOTTOM band
+            // belongs to the pinned footer below, exactly as before. Each pane is
+            // a plain column sized to fit the viewport — HudOverflowAudit (run by
+            // BracketTestHarness) is what proves it fits at every aspect.
+            var tabRow = Systems_UiKit.Row();
+            tabRow.style.marginTop = Systems_UiKit.TOUCH_MIN + Systems_UiKit.SPACE_3;
+            tabRow.style.paddingLeft = Systems_UiKit.SPACE_3;
+            tabRow.style.paddingRight = Systems_UiKit.SPACE_3;
+            tabRow.style.flexShrink = 0;
+            screen.Add(tabRow);
+            AddTab(tabRow, TAB_BRACKET, "BRACKET");
+            AddTab(tabRow, TAB_RECORD, "RECORD");
+
+            _paneHost = Systems_UiKit.Column();
+            _paneHost.style.flexGrow = 1;
+            _paneHost.style.minHeight = 0;
+            screen.Add(_paneHost);
 
             // SCREEN CHROME — the five fixed corners, identical here and in the
             // arena: title, frame rate, menu, DBG, build version.
@@ -237,33 +236,42 @@ namespace PoSumo
             // Attaching children to an unparented element is fine — they come with
             // it when it is added.
             var chromeLayer = new VisualElement().Fill().NoPick();
-            Systems_AgentDebug bracketDebug = Systems_AgentDebug.Attach(transform, chromeLayer, null);
+            // The debug PANEL gets its own layer (arena parity): it is a
+            // full-screen overlay, not a corner item, and HudOverflowAudit's
+            // corner contract asserts the chrome layer holds exactly the five
+            // corners — measured live 2026-09-22: sharing put the panel in as a
+            // sixth child and failed the gate on the first run.
+            var debugLayer = new VisualElement().Fill().NoPick();
+            Systems_AgentDebug bracketDebug = Systems_AgentDebug.Attach(transform, debugLayer, null);
             Systems_ScreenChrome bracketChrome = Systems_ScreenChrome.Attach(
                 transform, chromeLayer,
-                // Resolved on press, not now: `_careerScreen` is constructed further
-                // down this method and does not exist yet at this point.
-                () => { if (_careerScreen != null) { _careerScreen.Show(); } },
+                // Resolved on press. The TR menu IS the route to the RECORD tab —
+                // the career overlay it used to open no longer exists (it was
+                // merged into that pane), so there is one entry point and no
+                // second surface. The panes are built further down this method.
+                () => SelectTab(TAB_RECORD),
                 bracketDebug != null ? (System.Action)bracketDebug.Toggle : null);
             if (bracketDebug != null)
             {
                 bracketDebug.BindChrome(bracketChrome);
             }
 
-            _content = scroll.contentContainer;
-            // Fill the viewport when the bracket is shorter than the screen, so
-            // the spacer added below can push the action buttons down to the
-            // thumb instead of leaving 45% of a portrait screen empty. When the
-            // content IS taller — career table expanded — this costs nothing and
-            // the ScrollView takes over.
-            _content.style.flexGrow = 1;
-            _content.style.paddingTop = Systems_UiKit.SPACE_4;
-            _content.style.paddingLeft = Systems_UiKit.SPACE_3;
-            _content.style.paddingRight = Systems_UiKit.SPACE_3;
-            _content.style.paddingBottom = Systems_UiKit.SPACE_5;
+            // ---- Pane 1: BRACKET (banner + hint + palette + rounds) ----------
+            //
+            // No hero "TOURNAMENT" title: Systems_ScreenChrome owns TL — Title
+            // per the enforced anchor contract, so the screen had TWO titles
+            // stacked (checklist #4), and the hero was 46pt of vertical budget
+            // the 4:3 panel does not have. The promotion banner sits at the top
+            // so a player returning from a bout sees it without switching panes.
+            _paneBracket = MakePane();
+            _paneRecord = MakePane();
+            _content = _paneBracket;
 
-            Label title = Systems_UiKit.Text("TOURNAMENT", Systems_UiKit.FONT_HERO, Systems_UiKit.Gold, true);
-            title.style.unityTextAlign = TextAnchor.MiddleCenter;
-            _content.Add(title);
+            _rankNews = Systems_UiKit.Text("", Systems_UiKit.FONT_SMALL, Systems_UiKit.Gold, true);
+            _rankNews.style.unityTextAlign = TextAnchor.MiddleCenter;
+            _rankNews.style.whiteSpace = WhiteSpace.Normal;
+            _rankNews.style.display = DisplayStyle.None;
+            _content.Add(_rankNews);
 
             _hint = Systems_UiKit.Text("drag a fighter onto a slot to change it",
                                        Systems_UiKit.FONT_SMALL, Systems_UiKit.TextLow);
@@ -290,66 +298,33 @@ namespace PoSumo
             AddResultRow(final, feederA: 4, feederB: 5,
                          winnerMatch: Systems_TournamentState.FINAL_MATCH);
 
-            // Career table stays INSIDE the scroll — it is optional detail and is
-            // exactly the thing that makes the column overflow when expanded.
+            // ---- Pane 2: RECORD (career/banzuke + bot ladder + rules) --------
             //
-            // BEFORE the spacer, and that ordering is the fix for a screen with a
-            // hole in it: built after the spacer, the CAREER RECORD toggle was
-            // pushed to the bottom of the scroll content and sat alone under ~600
-            // px of empty backdrop. The bracket is what should own the top of the
-            // screen, its disclosure row belongs directly under it, and the slack
-            // belongs below both.
-            BuildCareerTable();
+            // The old inline CAREER button, the top-3 standings block and the
+            // career overlay's ScrollView are all folded in here (screen merging,
+            // checklist #1): Systems_CareerScreen builds its segmented
+            // BANZUKE/FIGHTERS view straight into this pane, the ladder card
+            // follows, and the rules footnote closes it. The palette stays on the
+            // BRACKET pane because dragging a fighter onto a SLOT only works when
+            // the roster and the slots are on screen together — a ROSTER tab
+            // would have severed every drag.
+            _content = _paneRecord;
+            _careerScreen = new Systems_CareerScreen(_paneRecord);
             BuildLadderCard();
+            BuildRulesNote();
 
-            // Absorbs whatever vertical slack is left, so the bracket sits under
-            // the title and the controls sit at the bottom edge. Collapses to
-            // zero the moment the content needs the room.
-            var spacer = new VisualElement();
-            spacer.style.flexGrow = 1;
-            spacer.style.minHeight = Systems_UiKit.SPACE_3;
-            _content.Add(spacer);
+            // flex-shrink 0 on every pane child (was one pass over the scroll
+            // content): a pane column taller than the viewport must OVERFLOW
+            // visibly so HudOverflowAudit flags it, never compress silently.
+            LockChildren(_paneBracket);
+            LockChildren(_paneRecord);
+            SelectTab(TAB_BRACKET);
 
-            // A ScrollView's content children inherit `flex-shrink: 1`, so a column
-            // TALLER than the viewport is silently COMPRESSED to fit it instead of
-            // scrolling. Nothing errors and the scroller never appears — the page
-            // just gets quietly squashed, and the damage lands on whichever child
-            // can absorb it least gracefully.
-            //
-            // MEASURED, 2026-08-25 at 1080x1920: the roster palette reported
-            // height 139 while laying its three wrapped lines out to y=210, so 71pt
-            // of it overflowed onto the QUARTERFINALS header and the BOT chip drew
-            // on top of that label. The banzuke block was squashed the same way and
-            // printed its three rows on top of each other. Both are one bug.
-            //
-            // The palette is the worst hit because it WRAPS: a wrapping row's height
-            // is not the sum of its children, so the shrink has no natural floor to
-            // stop at. But every child was being compressed, which is also why the
-            // whole column measured exactly the 1033pt viewport and the ScrollView
-            // never scrolled at all.
-            //
-            // The footer already carries flexShrink 0 for this reason (see below);
-            // it is applied here in one place so a block added later cannot miss it.
-            // The spacer is the deliberate exception — it exists to absorb slack and
-            // must still collapse when the content needs the room.
-            for (int childIndex = 0; childIndex < _content.childCount; childIndex++)
-            {
-                if (_content[childIndex] == spacer)
-                {
-                    continue;
-                }
-                _content[childIndex].style.flexShrink = 0;
-            }
-
-            // The status line and the two action buttons live OUTSIDE the
-            // ScrollView, pinned to the bottom of the panel.
-            //
-            // Inside it they were the last thing in a 1409 px column. On the test
-            // device the viewport happened to be 1558 px so they fitted, but the
-            // panel scales on WIDTH (match=0) against a 720x1280 reference: on a
-            // 16:9 phone the viewport is 1280 px and START TOURNAMENT sat ~130 px
-            // below the fold, reachable only by scrolling a screen that otherwise
-            // looks complete. A primary action must not depend on the aspect ratio.
+            // The status line and the action buttons live OUTSIDE the pane host,
+            // pinned to the bottom of the panel. A primary action must never
+            // depend on the aspect ratio — at 16:9 a button inside the content
+            // column once sat ~130px below the fold of a screen that otherwise
+            // looked complete.
             var footer = new VisualElement();
             footer.style.paddingLeft = Systems_UiKit.SPACE_3;
             footer.style.paddingRight = Systems_UiKit.SPACE_3;
@@ -369,9 +344,19 @@ namespace PoSumo
             _statusLabel.style.marginTop = Systems_UiKit.SPACE_2;
             footer.Add(_statusLabel);
 
+            // ONE ROW, not a stack (density, checklist #2): the primary action
+            // shares the row with whichever secondary is up. RESHUFFLE (seeding
+            // only) and AUTO (running only) are display-gated to be mutually
+            // exclusive in Refresh, so the row holds 1, never 3 — and the footer
+            // came down by one full control (~64pt) at every aspect.
+            var buttonRow = Systems_UiKit.Row();
+            buttonRow.style.marginTop = Systems_UiKit.SPACE_2;
+            footer.Add(buttonRow);
+
             _actionButton = Systems_UiKit.PrimaryButton("", OnAction);
-            _actionButton.style.marginTop = Systems_UiKit.SPACE_2;
-            footer.Add(_actionButton);
+            _actionButton.style.flexGrow = 1;
+            _actionButton.style.flexBasis = 0;
+            buttonRow.Add(_actionButton);
 
             // Only offered while the draw is still editable. It was previously
             // always visible, which made it both redundant and dangerous: on a
@@ -381,8 +366,10 @@ namespace PoSumo
             // after every bout — one tap silently destroyed the tournament in
             // progress with no confirmation.
             _resetButton = Systems_UiKit.GhostButton("RESHUFFLE", OnReset);
-            _resetButton.style.marginTop = Systems_UiKit.SPACE_2;
-            footer.Add(_resetButton);
+            _resetButton.style.flexGrow = 1;
+            _resetButton.style.flexBasis = 0;
+            _resetButton.style.marginLeft = Systems_UiKit.SPACE_1;
+            buttonRow.Add(_resetButton);
 
             // Manual play has always existed — `_autoPlay` is a serialized field
             // and the action button already reads "PLAY MATCH" when it is off —
@@ -390,16 +377,21 @@ namespace PoSumo
             // who pressed START was committed to watching all seven bouts run
             // themselves with no pause, no skip and no way back except QUIT MATCH
             // from inside a bout. Shown only while a bracket is running, because
-            // that is the only time the distinction means anything.
+            // that is the only time the distinction means anything. Compact label:
+            // the row splits ~190pt a side at 4:3 and FONT_LEAD, so the old
+            // two-clause caption would clip (status line still carries detail).
             _autoButton = Systems_UiKit.GhostButton("", ToggleAuto);
-            _autoButton.style.marginTop = Systems_UiKit.SPACE_2;
-            footer.Add(_autoButton);
+            _autoButton.style.flexGrow = 1;
+            _autoButton.style.flexBasis = 0;
+            _autoButton.style.marginLeft = Systems_UiKit.SPACE_1;
+            buttonRow.Add(_autoButton);
 
             screen.Add(footer);
 
-            // Chrome last, so the five corners draw above both the ScrollView and
-            // the pinned footer. It is NoPick, so being on top costs the controls
-            // underneath it nothing.
+            // Debug panel first, chrome last, so the five corners draw above both
+            // the panes, the pinned footer AND the debug panel. Both layers are
+            // NoPick, so being on top costs the controls underneath nothing.
+            screen.Add(debugLayer);
             screen.Add(chromeLayer);
 
             // Floating ghost that follows the pointer during a drag.
@@ -407,145 +399,109 @@ namespace PoSumo
             _dragGhost.style.display = DisplayStyle.None;
             _root.Add(_dragGhost);
 
-            // Added to `_root` LAST so it draws over the footer and the ghost. It is
-            // a modal: while it is open nothing behind it should be reachable, and
-            // UI Toolkit resolves both draw and pick order by document order here.
-            _careerScreen = new Systems_CareerScreen(_root);
-
-            // After the career screen, for the same document-order reason: a
-            // promotion lands the moment you return from a bout and must draw over
-            // everything, including the career table if it happens to be open.
+            // Added to `_root` LAST so it draws over the footer and the ghost. It
+            // is a modal: while it is open nothing behind it should be reachable,
+            // and UI Toolkit resolves both draw and pick order by document order
+            // here. (The career view is no longer a modal — it was built into the
+            // RECORD pane back in BuildUi.)
+            //
+            // The ceremony stays a full-screen overlay: it is the FALLBACK
+            // announcement for a rank change the arena's result card never showed
+            // (a reveal that never ran), and it must draw over everything when it
+            // does fire.
             _promotionCeremony = new Systems_PromotionCeremony(_root);
 
-            Systems_SafeArea.Attach(transform, screen, _careerScreen.SafeAreaTarget);
             Systems_SafeArea.Attach(transform, screen, _promotionCeremony.SafeAreaTarget);
 
             _root.RegisterCallback<PointerMoveEvent>(OnPointerMove);
             _root.RegisterCallback<PointerUpEvent>(OnPointerUp);
         }
 
-        /// Entry point to the banzuke: the reason a tournament result matters
-        /// beyond the session it was played in.
-        ///
-        /// This used to be a disclosure toggle over a four-column ELO / W-L /
-        /// TITLES table built inline in this scroll column. The table is gone and
-        /// `Systems_CareerScreen` replaces it — one career UI, not two. It was the
-        /// thing that made this column overflow when expanded, it competed with the
-        /// bracket for the same ~578pt of usable width, and there was no room in it
-        /// for the rank, the promotion bar, the round record or the head-to-head
-        /// that make a career readable as a climb rather than a scoreboard.
-        private void BuildCareerTable()
+        /// A fresh pane in the pane host: a padded column, hidden until its tab
+        /// is selected. flexGrow so the visible pane claims the whole area
+        /// between the tab row and the pinned footer.
+        private VisualElement MakePane()
         {
-            _rankNews = Systems_UiKit.Text("", Systems_UiKit.FONT_SMALL, Systems_UiKit.Gold, true);
-            _rankNews.style.unityTextAlign = TextAnchor.MiddleCenter;
-            _rankNews.style.whiteSpace = WhiteSpace.Normal;
-            _rankNews.style.marginTop = Systems_UiKit.SPACE_3;
-            _rankNews.style.display = DisplayStyle.None;
-            _content.Add(_rankNews);
-
-            // QuietButton rather than a hand-rolled control: the kit builder brings
-            // the press feedback with it, and a button built by hand is visually
-            // dead on press because StyleButton writes backgroundColor inline and
-            // inline styles resolve above the runtime theme's :active rule.
-            _careerButton = Systems_UiKit.QuietButton("", () => _careerScreen.Show());
-            _careerButton.style.marginTop = Systems_UiKit.SPACE_2;
-            _content.Add(_careerButton);
-
-            _standings = new VisualElement();
-            _standings.style.marginTop = Systems_UiKit.SPACE_2;
-            _content.Add(_standings);
-
-            RefreshCareerButton();
-            RefreshStandings();
+            var pane = Systems_UiKit.Column();
+            pane.style.flexGrow = 1;
+            pane.style.paddingTop = Systems_UiKit.SPACE_2;
+            pane.style.paddingLeft = Systems_UiKit.SPACE_3;
+            pane.style.paddingRight = Systems_UiKit.SPACE_3;
+            pane.style.paddingBottom = Systems_UiKit.SPACE_4;
+            pane.style.display = DisplayStyle.None;
+            _paneHost.Add(pane);
+            return pane;
         }
 
-        /// Top of the banzuke, in the slack between the bracket and the footer.
-        ///
-        /// That slack is deliberate — the spacer below exists so the bracket sits
-        /// under the title and the controls stay pinned to the bottom edge, and an
-        /// earlier layout that put content BELOW the spacer left it stranded under
-        /// ~600 px of backdrop. So this goes ABOVE the spacer, directly under the
-        /// career row, and simply gives the empty third of the screen something
-        /// worth reading rather than trying to remove it.
-        ///
-        /// Three rungs only. The point is "who is on top and am I climbing", not a
-        /// table — `Systems_CareerScreen` already owns the full record, and the
-        /// column here is ~578pt wide, which is not enough for a fourth field.
-        private void RefreshStandings()
+        /// One tab chip. ChipButton so the press feedback comes with it — a
+        /// hand-rolled chip is visually dead on press because StyleButton writes
+        /// backgroundColor inline.
+        private void AddTab(VisualElement row, int tab, string label)
         {
-            if (_standings == null)
+            Button button = Systems_UiKit.ChipButton(label, () => SelectTab(tab), 0);
+            button.style.flexGrow = 1;
+            button.style.flexBasis = 0;
+            button.style.marginLeft = Systems_UiKit.SPACE_1;
+            button.style.marginRight = Systems_UiKit.SPACE_1;
+            _tabButtons.Add(button);
+            row.Add(button);
+        }
+
+        /// Shows one pane, hides the other, repaints the selection state.
+        /// Retained elements throughout — the buttons are styled, never rebuilt.
+        /// The RECORD pane rebuilds the career view on entry so its banzuke and
+        /// records are current (the accordion's open row survives via
+        /// Systems_CareerScreen's own `_expandedFighter`).
+        private void SelectTab(int tab)
+        {
+            if (tab != TAB_BRACKET && tab != TAB_RECORD)
             {
                 return;
             }
-            _standings.Clear();
-
-            System.Collections.Generic.List<Systems_CareerStats.Record> ranked =
-                Systems_CareerStats.Ranked();
-            if (ranked == null || ranked.Count == 0)
+            _activeTab = tab;
+            if (_paneBracket != null)
             {
-                return;
+                _paneBracket.style.display = tab == TAB_BRACKET ? DisplayStyle.Flex : DisplayStyle.None;
             }
-
-            Label heading = Systems_UiKit.Caption("BANZUKE", Systems_UiKit.FONT_MICRO,
-                                                  Systems_UiKit.TextLow, true);
-            heading.style.unityTextAlign = TextAnchor.MiddleCenter;
-            heading.style.marginBottom = Systems_UiKit.SPACE_1;
-            heading.NoPick();
-            _standings.Add(heading);
-
-            // Carded like every round group above it. Left bare, the rows ran
-            // edge-to-edge against the panel while the bracket beside them sat
-            // inset in surfaces, which read as unfinished rather than as a
-            // different kind of content.
-            VisualElement card = Systems_UiKit.ElevatedCard(
-                Systems_UiKit.Elevation.Raised, Systems_UiKit.RADIUS_SM);
-            card.style.paddingTop = Systems_UiKit.SPACE_1;
-            card.style.paddingBottom = Systems_UiKit.SPACE_1;
-            card.NoPick();
-            _standings.Add(card);
-
-            int shown = Mathf.Min(3, ranked.Count);
-            for (int index = 0; index < shown; index++)
+            if (_paneRecord != null)
             {
-                Systems_CareerStats.Record record = ranked[index];
-                VisualElement row = Systems_UiKit.Row();
-                row.style.paddingLeft = Systems_UiKit.SPACE_2;
-                row.style.paddingRight = Systems_UiKit.SPACE_2;
-                row.style.paddingTop = 3;
-                row.style.paddingBottom = 3;
-                row.NoPick();
-
-                Label rank = Systems_UiKit.Text(Systems_CareerLadder.NameFor(record),
-                                                Systems_UiKit.FONT_MICRO,
-                                                Systems_UiKit.TextLow);
-                rank.style.width = Length.Percent(46f);
-                rank.NoPick();
-
-                Label who = Systems_UiKit.Text(record.fighter.ToUpperInvariant(),
-                                               Systems_UiKit.FONT_MICRO,
-                                               ColorFor(record.fighter), true);
-                who.style.flexGrow = 1;
-                who.NoPick();
-
-                Label elo = Systems_UiKit.Text(Mathf.RoundToInt(record.elo).ToString(),
-                                               Systems_UiKit.FONT_MICRO,
-                                               Systems_UiKit.TextMid);
-                elo.style.unityTextAlign = TextAnchor.MiddleRight;
-                elo.NoPick();
-
-                row.Add(rank);
-                row.Add(who);
-                row.Add(elo);
-                card.Add(row);
+                _paneRecord.style.display = tab == TAB_RECORD ? DisplayStyle.Flex : DisplayStyle.None;
             }
+            for (int buttonIndex = 0; buttonIndex < _tabButtons.Count; buttonIndex++)
+            {
+                bool selected = buttonIndex == tab;
+                Button button = _tabButtons[buttonIndex];
+                button.style.color = selected ? Systems_UiKit.Gold : Systems_UiKit.TextHi;
+                button.style.borderBottomWidth = selected ? 3 : 0;
+                button.style.borderBottomColor = Systems_UiKit.Gold;
+            }
+            if (tab == TAB_RECORD)
+            {
+                _careerScreen?.Rebuild();
+            }
+        }
 
-            // The only place the rules are stated anywhere in the game. A player
-            // watching a bout has no way to work out that lying down for three
-            // seconds forfeits the round — it looks like the game giving up — and
-            // that rule ends the majority of rounds.
+        /// flex-shrink 0 on every child of a pane. A pane column TALLER than the
+        /// viewport would otherwise be silently COMPRESSED (flex-shrink defaults
+        /// to 1) — no error, no scroller, just two things painted over each other.
+        /// Locking shrink turns that silent squash into a visible overflow, which
+        /// is exactly what HudOverflowAudit flags. MEASURED 2026-08-25 at
+        /// 1080x1920 before the original version of this pass: the palette laid
+        /// its three wrapped lines out to y=210 inside a 139pt row.
+        private static void LockChildren(VisualElement content)
+        {
+            for (int childIndex = 0; childIndex < content.childCount; childIndex++)
+            {
+                content[childIndex].style.flexShrink = 0;
+            }
+        }
+
+        /// The only place the rules are stated anywhere on this screen. A player
+        /// watching a bout has no way to work out that the mat closing is the
+        /// deadline — it reads as two fighters milling about until one falls.
+        private void BuildRulesNote()
+        {
             Label rules = Systems_UiKit.Text(
-                // No clock and no down-out since 2026-08-26: the mat closes until
-                // somebody is off it, and the ring-out is the head hitting the floor.
                 "WIN A ROUND BY PUTTING YOUR OPPONENT OFF THE DOHYO. "
                 + "THE MAT SHRINKS UNTIL SOMEBODY FALLS.",
                 Systems_UiKit.FONT_MICRO, Systems_UiKit.TextLow);
@@ -555,8 +511,10 @@ namespace PoSumo
             rules.style.paddingLeft = Systems_UiKit.SPACE_3;
             rules.style.paddingRight = Systems_UiKit.SPACE_3;
             rules.NoPick();
-            _standings.Add(rules);
+            _content.Add(rules);
         }
+
+
 
         /// Distinct fighters actually available to seed the draw.
         private int DistinctFighters()
@@ -576,36 +534,7 @@ namespace PoSumo
             return count;
         }
 
-        /// Roster colour for a behaviour name, so the standings match the chips.
-        /// Falls back to mid grey for a fighter no longer on the roster — records
-        /// are keyed by behaviour name and outlive an asset being removed.
-        private Color ColorFor(string behaviorName)
-        {
-            if (_roster != null)
-            {
-                for (int index = 0; index < _roster.Length; index++)
-                {
-                    if (_roster[index] != null && _roster[index].behaviorName == behaviorName)
-                    {
-                        return _roster[index].teamColor;
-                    }
-                }
-            }
-            return Systems_UiKit.TextMid;
-        }
 
-        /// Label carries the match count and the current Yokozuna — the two facts
-        /// worth reading without opening anything.
-        private void RefreshCareerButton()
-        {
-            if (_careerButton == null)
-            {
-                return;
-            }
-            int played = Systems_CareerStats.MatchesPlayed;
-            string count = played > 0 ? $"  ·  {played} MATCHES" : string.Empty;
-            _careerButton.text = $"CAREER  ·  BANZUKE{count}  ▸";
-        }
 
         /// Announces a promotion or demotion once, on the first Refresh after the
         /// match that caused it. Consume-once on the recorder's side, so it does not
@@ -809,11 +738,13 @@ namespace PoSumo
             chip.style.flexGrow = 1;
             chip.style.flexBasis = 0;
             chip.style.minWidth = SLOT_SIZE;
-            // Comfortably over TOUCH_MIN: these are drag handles, not just labels.
-            // 54 -> 66 and the name a step up the type scale, spending some of the
-            // slack the bracket leaves above the pinned footer. The bracket is the
-            // screen's content; it should not be the smallest thing on it.
-            chip.style.height = 66;
+            // Still comfortably over TOUCH_MIN (44): these are drag handles, not
+            // just labels. But 66 -> 48: with the ScrollView gone the palette and
+            // ALL THREE round cards share one viewport, and at 4:3 (a 960pt
+            // panel) the pre-seed stack measured ~66pt over the line at 66. The
+            // chip shrinks so the screen does not overflow — the audit is what
+            // says so, and this is the dial it pushed.
+            chip.style.height = 48;
             chip.style.backgroundColor = Systems_UiKit.Chip;
             // Belt and braces against a name longer than the chip: clip it here
             // rather than let it spill over the neighbouring slot.
@@ -823,17 +754,17 @@ namespace PoSumo
             chip.style.borderLeftColor = character != null ? character.teamColor : Systems_UiKit.Chip;
             chip.style.paddingLeft = Systems_UiKit.SPACE_1;
 
-            // 46, not 50. Every point the portrait takes comes straight off the
-            // name, and the roster's longest — STANDARD — needs ~105pt at
-            // FONT_SMALL bold against the ~165 flexGrow gives the whole chip.
+            // 38, tracking the 48pt chip (see CHIP height above): the portrait
+            // gives up 8pt so the pre-seed stack fits one viewport, and the name
+            // keeps its ~105pt for STANDARD at FONT_SMALL bold.
             var icon = new VisualElement();
-            icon.style.width = 46;
-            icon.style.height = 46;
+            icon.style.width = 38;
+            icon.style.height = 38;
             // The portrait is fixed furniture: it must never be the thing that
             // gives way when a long name overflows the chip. Without this the
             // name wins and the icon collapses to nothing.
             icon.style.flexShrink = 0;
-            icon.Round(23);
+            icon.Round(19);
             icon.style.backgroundColor = character != null
                 ? character.teamColor
                 : new Color(0.25f, 0.23f, 0.24f);
@@ -979,7 +910,9 @@ namespace PoSumo
         private void MoveGhost(Vector3 position)
         {
             _dragGhost.style.left = position.x - SLOT_SIZE * 0.5f;
-            _dragGhost.style.top = position.y - 27f;
+            // Half the chip height (48), so the ghost sits under the finger —
+            // this was 27f, half of a 54pt chip that stopped existing long ago.
+            _dragGhost.style.top = position.y - 24f;
         }
 
         private void OnPointerUp(PointerUpEvent evt)
@@ -1043,12 +976,16 @@ namespace PoSumo
             if (_paletteRow != null) _paletteRow.style.display = seedingControls;
             if (_resetButton != null) _resetButton.style.display = seedingControls;
 
-            // The match count on the career button moves after every bout, and this
-            // screen is shown again between matches — so it is refreshed here rather
-            // than only at build time.
-            RefreshCareerButton();
+            // The promotion banner and the career view both move after every bout,
+            // and this screen is shown again between matches — so both are
+            // refreshed here rather than only at build time. The career view only
+            // rebuilds when its pane is on screen: no point repainting a hidden
+            // pane on every drag (SelectTab rebuilds it on entry anyway).
             RefreshRankNews();
-            RefreshStandings();
+            if (_activeTab == TAB_RECORD)
+            {
+                _careerScreen?.Rebuild();
+            }
 
             // Only meaningful mid-bracket: before START there is nothing to step
             // through, and once a champion is crowned nothing is left to play.
@@ -1056,8 +993,10 @@ namespace PoSumo
             if (_autoButton != null)
             {
                 _autoButton.style.display = running ? DisplayStyle.Flex : DisplayStyle.None;
-                _autoButton.text = _autoPlay ? "AUTO-PLAY: ON  ·  TAP TO STEP MANUALLY"
-                                             : "AUTO-PLAY: OFF  ·  TAP TO RESUME";
+                // Compact (checklist #2): the footer row splits its width three
+                // ways at FONT_LEAD, and the old two-clause caption clipped. The
+                // status line above still says what stepping manually does.
+                _autoButton.text = _autoPlay ? "AUTO: ON" : "AUTO: OFF";
             }
 
             if (Systems_TournamentState.IsComplete)
@@ -1149,13 +1088,14 @@ namespace PoSumo
         private readonly List<Button> _ladderTierButtons = new List<Button>();
         private Label _ladderStatus;
         private Label _ladderNews;
-        private ScrollView _scroll;
 
-        /// Scrolls the column so the ladder card is in view. Used by the screenshot
-        /// flow (the card sits below the banzuke, off the first screen).
+        /// Selects the RECORD tab, where the ladder card lives. Kept under its
+        /// old name because the screenshot flow calls it — but there is nothing
+        /// to scroll any more: the zero-scroll constraint put the card on a pane
+        /// that fits the viewport, so bringing it into view IS switching to it.
         public void ScrollToLadder()
         {
-            if (_scroll != null && _ladderStatus != null) _scroll.ScrollTo(_ladderStatus);
+            SelectTab(TAB_RECORD);
         }
         private Agent_CharacterDefinition _ladderChallenger;
         private Agent_CharacterDefinition _ladderBot;

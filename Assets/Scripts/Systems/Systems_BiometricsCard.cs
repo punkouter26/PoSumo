@@ -32,6 +32,11 @@ namespace PoSumo
         private const float IMPACT_STRIKE_MIN = 1.2f; // m/s of relative speed that counts as a blow
 
         private Systems_GameMatchManager _manager;
+        private Systems_FightHud _fightHud;
+        /// True when drawing into the FightHud's side anchors (one-strip dock)
+        /// rather than a standalone card — the sides are then identified by their
+        /// team-coloured base and the scorebug, so the caption drops the name.
+        private bool _stripMode;
         private Agent_BipedBody _bodyA, _bodyB;
 
         private readonly float[] _historyA = new float[BARS];
@@ -87,6 +92,9 @@ namespace PoSumo
         private void Start()
         {
             if (_manager == null) _manager = FindAnyObjectByType<Systems_GameMatchManager>();
+            // Looked up once, the way Systems_CrowdMomentum finds the fight HUD:
+            // the strip is scene furniture, not a per-round object.
+            _fightHud = FindAnyObjectByType<Systems_FightHud>();
             ResolveBodies();
             BuildUi();
         }
@@ -198,8 +206,8 @@ namespace PoSumo
         {
             if (_captionA == null) return;
 
-            string a = CaptionLine(_manager != null ? _manager.wrestlerA : null,
-                                   _peakImpactA, _peakAdrenalineA);
+            string a = BuildCaptionLine(_manager != null ? _manager.wrestlerA : null,
+                                        _peakImpactA, _peakAdrenalineA);
             if (a != _shownCaptionA)
             {
                 _shownCaptionA = a;
@@ -207,8 +215,8 @@ namespace PoSumo
                 _captionA.style.color = _manager != null ? _manager.colorA : Systems_UiKit.TextHi;
             }
 
-            string b = CaptionLine(_manager != null ? _manager.wrestlerB : null,
-                                   _peakImpactB, _peakAdrenalineB);
+            string b = BuildCaptionLine(_manager != null ? _manager.wrestlerB : null,
+                                        _peakImpactB, _peakAdrenalineB);
             if (b != _shownCaptionB)
             {
                 _shownCaptionB = b;
@@ -217,22 +225,41 @@ namespace PoSumo
             }
         }
 
-        private static string CaptionLine(Agent_Biped fighter, float peakImpact, float peakAdrenaline)
+        private string BuildCaptionLine(Agent_Biped fighter, float peakImpact, float peakAdrenaline)
         {
+            string adrenaline = peakAdrenaline > 1.01f
+                ? peakAdrenaline.ToString("F2")
+                : "-";
+            string readings = "PK " + peakImpact.ToString("F1") + "  AD " + adrenaline;
+            // In the strip the side is already identified by its team-coloured
+            // base and the scorebug above — the name was 60% of a 27%-wide slot.
+            if (_stripMode)
+            {
+                return readings;
+            }
             string name = fighter == null ? "—"
                 : !string.IsNullOrEmpty(fighter.displayNameOverride)
                     ? fighter.displayNameOverride
                     : fighter.character != null ? fighter.character.behaviorName : fighter.name;
-            string adrenaline = peakAdrenaline > 1.01f
-                ? peakAdrenaline.ToString("F2")
-                : "-";
-            return name + "  PK " + peakImpact.ToString("F1") + "  AD " + adrenaline;
+            return name + "  " + readings;
         }
 
         // ---- UI -------------------------------------------------------------
 
         private void BuildUi()
         {
+            // ONE-STRIP DOCK (zero-scroll consolidation): mount the caption +
+            // sparkline into the FightHud's side anchors, under each fighter's
+            // team base — the standalone dock card below is the fallback for a
+            // scene with no Systems_FightHud.
+            if (_fightHud != null && _fightHud.BioAnchorA != null && _fightHud.BioAnchorB != null)
+            {
+                _stripMode = true;
+                BuildSide(_fightHud.BioAnchorA, _barsA, out _captionA);
+                BuildSide(_fightHud.BioAnchorB, _barsB, out _captionB);
+                return;
+            }
+
             PanelSettings settings = _manager != null ? _manager.panelSettings : null;
             Systems_HudRoot hud = Systems_HudRoot.Ensure(transform, settings);
             if (hud == null || hud.Dock == null) return;
@@ -266,10 +293,13 @@ namespace PoSumo
             row.style.marginTop = Systems_UiKit.SPACE_1;
             for (int barIndex = 0; barIndex < BARS; barIndex++)
             {
+                // 3pt bars on a 4pt pitch (was 4+2): in the strip this row sits in
+                // a 27%-wide side column, where the old 6pt pitch overflowed it
+                // (36 x 6 = 216 vs ~186 available). 36 x 4 = 144 fits with room.
                 var bar = new VisualElement().NoPick();
-                bar.style.width = 4;
+                bar.style.width = 3;
                 bar.style.height = 2f;
-                bar.style.marginRight = 2;
+                bar.style.marginRight = 1;
                 bar.style.backgroundColor = Systems_UiKit.Track;
                 bar.Round(1);
                 bars[barIndex] = bar;

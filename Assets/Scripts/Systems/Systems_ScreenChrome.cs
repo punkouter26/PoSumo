@@ -90,6 +90,14 @@ namespace PoSumo
         {
             _onDebug = onDebug;
 
+            // Named for the corner-contract audit (HudOverflowAudit.Corners): the
+            // gate asserts exactly these five children exist, in one layer, in
+            // the right corners — TL title | TC FPS | TR menu | BL debug |
+            // BR version — so the anchor rule is a PASS/FAIL check rather than a
+            // convention someone has to remember. A sixth child is a finding too:
+            // nothing else may draw into a corner.
+            layer.name = "ScreenChromeLayer";
+
             // TOP-LEFT — the game's title.
             //
             // Application.productName rather than a literal, for the same reason
@@ -103,6 +111,7 @@ namespace PoSumo
             Label title = Systems_UiKit.Text(Application.productName,
                                              Systems_UiKit.FONT_BODY,
                                              Systems_UiKit.Gold, true);
+            title.name = "ChromeTitle";
             title.style.textShadow = Systems_UiKit.Outline;
             Corner(title, layer, true, true);
             title.style.height = Systems_UiKit.TOUCH_MIN;
@@ -115,6 +124,7 @@ namespace PoSumo
             // only be centred at one panel width, and this panel's width in points
             // is a different number on every device.
             _fps = Systems_UiKit.Caption("--", Systems_UiKit.FONT_SMALL, Systems_UiKit.TextMid, true);
+            _fps.name = "ChromeFps";
             _fps.style.textShadow = Systems_UiKit.Outline;
             _fps.style.position = Position.Absolute;
             _fps.style.left = 0;
@@ -158,6 +168,7 @@ namespace PoSumo
             Label version = Systems_UiKit.Text("v" + Application.version,
                                                Systems_UiKit.FONT_MICRO,
                                                Systems_UiKit.TextLow);
+            version.name = "ChromeVersion";
             version.style.textShadow = Systems_UiKit.Outline;
             Corner(version, layer, false, false);
         }

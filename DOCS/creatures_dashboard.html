@@ -124,8 +124,8 @@ footer{margin-top:48px;padding:20px 32px;color:var(--muted);font-size:12px;borde
       <div class="meta">Final ELO (vs pool) <b>~1140</b> &middot; mean reward (fight) <b>~36</b></div>
     </div>
     <div class="card">
-      <div class="head"><span class="swatch" style="background:#3bd6a8"></span><h3>Standard</h3><span class="tag prod">Production</span></div>
-      <div class="meta">Behavior: <code>Standard</code> &middot; v01 &middot; 2.13 MB</div>
+      <div class="head"><span class="swatch" style="background:#3bd6a8"></span><h3>Grandma</h3><span class="tag prod">Production</span></div>
+      <div class="meta">Behavior: <code>Grandma</code> &middot; v01 &middot; 2.13 MB &middot; renamed from <code>Standard</code> 2026-09-22</div>
       <p><b>Role:</b> Reference fighter; identical physics to Matt but distinct character sheet. Ships the legacy 41-obs / period-5 brain that is the compat fallback in <code>Agent_Biped</code>.</p>
       <div class="progress"><div class="fill" style="width:80%"></div><span class="label">Behaviour evolution 80%</span></div>
       <div class="meta">Final ELO (vs pool) <b>~1080</b> &middot; mean reward (fight) <b>~31</b></div>
@@ -185,7 +185,7 @@ footer{margin-top:48px;padding:20px 32px;color:var(--muted);font-size:12px;borde
       <div class="progress"><div class="fill" style="width:40%;background:linear-gradient(90deg,#7ee787,#6aa3ff)"></div><span class="label">0.42 / 1.00</span></div>
     </div>
     <div class="card">
-      <h3>Standard</h3>
+      <h3>Grandma</h3>
       <div class="meta">Last measured: <code>standard_fatigue01</code></div>
       <p>Mean (fight) vs target</p>
       <div class="progress"><div class="fill" style="width:78%"></div><span class="label">31.0 / 40 target</span></div>
@@ -273,7 +273,7 @@ footer{margin-top:48px;padding:20px 32px;color:var(--muted);font-size:12px;borde
     <thead><tr><th>Fighter</th><th>File</th><th>Size (MB)</th><th>Input</th><th>Hidden</th><th>Output</th><th>Init.</th><th>Params (approx)</th></tr></thead>
     <tbody>
       <tr><td><span class="swatch" style="background:#d63b3b;display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle;margin-right:6px"></span>Matt</td><td><code>Assets/Agents/Matt_v01/Matt.onnx</code></td><td>2.13</td><td>obs_0 [batch, 45]</td><td>3x Dense(512)</td><td>continuous_actions [batch, 13]</td><td>14</td><td>~445k</td></tr>
-      <tr><td><span class="swatch" style="background:#3bd6a8;display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle;margin-right:6px"></span>Standard</td><td><code>Assets/Agents/Standard_v01/Standard.onnx</code></td><td>2.13</td><td>obs_0 [batch, 45]</td><td>3x Dense(512)</td><td>continuous_actions [batch, 13]</td><td>14</td><td>~445k</td></tr>
+      <tr><td><span class="swatch" style="background:#3bd6a8;display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle;margin-right:6px"></span>Grandma</td><td><code>Assets/Agents/Grandma_v01/Grandma.onnx</code></td><td>2.13</td><td>obs_0 [batch, 45]</td><td>3x Dense(512)</td><td>continuous_actions [batch, 13]</td><td>14</td><td>~445k</td></tr>
       <tr><td><span class="swatch" style="background:#3b9ad6;display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle;margin-right:6px"></span>Nick</td><td><code>Assets/Agents/Nick_v01/Nick.onnx</code></td><td>2.13</td><td>obs_0 [batch, 45]</td><td>3x Dense(512)</td><td>continuous_actions [batch, 13]</td><td>14</td><td>~445k</td></tr>
       <tr><td><span class="swatch" style="background:#b89040;display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle;margin-right:6px"></span>Kim</td><td><code>Assets/Agents/Kim_v01/Kim.onnx</code></td><td>2.13</td><td>obs_0 [batch, 45]</td><td>3x Dense(512)</td><td>continuous_actions [batch, 13]</td><td>14</td><td>~445k</td></tr>
       <tr><td><span class="swatch" style="background:#7d7d7d;display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle;margin-right:6px"></span>Bot</td><td>-</td><td>0</td><td>n/a</td><td>n/a</td><td>n/a</td><td>0</td><td>0</td></tr>

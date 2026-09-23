@@ -164,6 +164,10 @@ namespace PoSumo
             if (body != null)
             {
                 body.teamColorOverride = shifted;
+                // The outfit gets the same treatment, plus a darkening, because a
+                // hue rotation cannot tell two identical grey sweatpants apart —
+                // see Agent_BipedBody.GarmentColor.
+                body.clothingMirrorShift = MIRROR_HUE_SHIFT;
             }
 
             // The scorebug, the result card and the DOMINANCE bar all read this

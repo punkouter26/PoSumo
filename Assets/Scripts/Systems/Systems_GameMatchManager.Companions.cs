@@ -116,7 +116,14 @@ namespace PoSumo
             bool developmentBuild = Debug.isDebugBuild || Application.isEditor;
             SpawnCompanion<Systems_PerfHud>(enablePerfHud && developmentBuild, "PerfHud");
             SpawnScreenChrome();
-            SpawnCompanion<Systems_ArenaLighting>(enableLighting, "ArenaLighting");
+            // Lighting honours a scene-authored instance: drop a tuned
+            // Systems_ArenaLighting into an arena scene and the runtime spawn is
+            // skipped, so rig values can be composed and saved in the Editor
+            // instead of only existing during Play. Absent one, spawn as usual.
+            if (FindAnyObjectByType<Systems_ArenaLighting>() == null)
+            {
+                SpawnCompanion<Systems_ArenaLighting>(enableLighting, "ArenaLighting");
+            }
             // Both AFTER the rig: lanterns hang around a built arena, and PostFx
             // reads ArenaLighting.Instance.PostProfile, which its Awake builds.
             SpawnCompanion<Systems_ArenaLanterns>(enableLighting && enableLanterns, "ArenaLanterns");
@@ -163,13 +170,38 @@ namespace PoSumo
                 debug = Systems_AgentDebug.Attach(transform, _hud.Overlay, this);
             }
 
+            // Chrome gets its OWN named layer as a CHILD of Overlay (the debug
+            // panel stays on Overlay): the corner contract asserts the
+            // ScreenChromeLayer holds EXACTLY the five corners, and the first
+            // live harness run measured the shared panel as a sixth child.
+            // Fully-qualified because this partial's usings are UnityEngine only.
+            var chromeLayer = new UnityEngine.UIElements.VisualElement();
+            chromeLayer.style.position = UnityEngine.UIElements.Position.Absolute;
+            chromeLayer.style.left = 0;
+            chromeLayer.style.top = 0;
+            chromeLayer.style.right = 0;
+            chromeLayer.style.bottom = 0;
+            chromeLayer.pickingMode = UnityEngine.UIElements.PickingMode.Ignore;
+            _hud.Overlay.Add(chromeLayer);
+
             Systems_ScreenChrome chrome = Systems_ScreenChrome.Attach(
-                transform, _hud.Overlay, TogglePause,
+                transform, chromeLayer, TogglePause,
                 debug != null ? (System.Action)debug.Toggle : null);
 
             if (debug != null)
             {
                 debug.BindChrome(chrome);
+
+                // The pause card is the single SYSTEM view (idea #9): resume,
+                // sound, the fighter-debug panel, quit and the rules — settings,
+                // help and diagnostics behind one door instead of separate
+                // screens. Added here rather than in BuildPauseUi because the
+                // panel does not exist until this spawn pass runs. Inserted
+                // BEFORE the rules footnote (the last child), the same way the
+                // quit button was, so the footnote stays the card's footer.
+                var debugButton = Systems_UiKit.GhostButton("FIGHTER DEBUG", debug.Toggle);
+                debugButton.style.marginTop = Systems_UiKit.SPACE_3;
+                _pauseCard.Insert(Mathf.Max(0, _pauseCard.childCount - 1), debugButton);
             }
 
             // Keep the scorebug out from under the frame-rate readout and the dock's

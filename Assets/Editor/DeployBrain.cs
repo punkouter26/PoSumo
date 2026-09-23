@@ -37,10 +37,13 @@ namespace PoSumo.EditorTools
             DeployNewest("Matt", "Assets/Agents/Matt_v01");
         }
 
-        [MenuItem("PoSumo/Deploy Standard Brain")]
-        public static void DeployStandard()
+        [MenuItem("PoSumo/Deploy Grandma Brain")]
+        public static void DeployGrandma()
         {
-            DeployNewest("Standard", "Assets/Agents/Standard_v01");
+            // Folder and ONNX stem both follow the behavior name (Grandma). Any
+            // run launched from GrandmaRebuild01.yaml exports `Grandma.onnx` under
+            // a `grandma_*` run id, which is what this resolves by prefix.
+            DeployNewest("Grandma", "Assets/Agents/Grandma_v01");
         }
 
         [MenuItem("PoSumo/Deploy Nick Brain")]
@@ -120,7 +123,7 @@ namespace PoSumo.EditorTools
         [MenuItem("PoSumo/Deploy ALL Brains")]
         public static void DeployAll()
         {
-            DeployStandard();
+            DeployGrandma();
             DeployMatt();
             DeployNick();
             DeployKim();

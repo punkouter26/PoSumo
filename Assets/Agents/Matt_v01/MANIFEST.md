@@ -38,7 +38,7 @@ Fight style (character asset): closing 0.0009, lunge 0.0016 @ 1.2 m/s, impact
 Walk style (character asset): the same aggression carried into locomotion —
 forward 0.0075, stance floor 0.30, cadence 0.0012, stall penalty 0.0018, energy
 0.00018, bend 0.0004. Longer-strided and more committed than the 0.004 / 0.15 /
-0.002 / 0.0008 defaults Standard walks on.
+0.002 / 0.0008 defaults Grandma walks on.
 
 ## Retrain
 

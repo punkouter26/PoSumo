@@ -2,6 +2,7 @@ using System.Text;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.UIElements;
 
 namespace PoSumo.EditorTools
 {
@@ -236,6 +237,63 @@ namespace PoSumo.EditorTools
                     problems.AppendLine($"  - Systems_BodyDamage.{damageEvents[index]}: backing field " +
                                         "not found by the leak probe (declaration shape changed?).");
                 }
+            }
+
+            // The zero-scroll + corner gate ON THE BRACKET (checklist #3/#4),
+            // run now that we are back on it: every pane must fit the viewport
+            // with no ScrollView anywhere, and the five fixed corners must be
+            // present, exactly five, in their quadrants.
+            static int CountOccurrences(string haystack, string needle)
+            {
+                int count = 0;
+                int index = 0;
+                while ((index = haystack.IndexOf(needle, index, System.StringComparison.Ordinal)) >= 0)
+                {
+                    count++;
+                    index += needle.Length;
+                }
+                return count;
+            }
+            static int CountVisibleScrollViews(VisualElement element)
+            {
+                if (element == null || element.resolvedStyle.display == DisplayStyle.None)
+                {
+                    return 0;
+                }
+                int count = element is ScrollView ? 1 : 0;
+                for (int childIndex = 0; childIndex < element.childCount; childIndex++)
+                {
+                    count += CountVisibleScrollViews(element[childIndex]);
+                }
+                return count;
+            }
+
+            string audit = HudOverflowAudit.Run();
+            int overflowFindings = CountOccurrences(audit, "OVERFLOW-");
+            int cornerFindings = CountOccurrences(audit, "CORNER-");
+            if (overflowFindings > 0)
+            {
+                problems.AppendLine($"  - bracket layout has {overflowFindings} overflowing " +
+                                    $"element(s):\n{audit}");
+            }
+            if (cornerFindings > 0)
+            {
+                problems.AppendLine($"  - corner contract violated ({cornerFindings} finding(s)):\n" +
+                                    audit);
+            }
+            UIDocument[] docs = Object.FindObjectsByType<UIDocument>();
+            int visibleScrolls = 0;
+            for (int docIndex = 0; docIndex < docs.Length; docIndex++)
+            {
+                if (docs[docIndex] != null && docs[docIndex].rootVisualElement != null)
+                {
+                    visibleScrolls += CountVisibleScrollViews(docs[docIndex].rootVisualElement);
+                }
+            }
+            if (visibleScrolls > 0)
+            {
+                problems.AppendLine($"  - {visibleScrolls} visible ScrollView(s) on the bracket — " +
+                                    "the zero-scroll constraint forbids them.");
             }
 
             string careerLine = "  career: (no champion to look up)";

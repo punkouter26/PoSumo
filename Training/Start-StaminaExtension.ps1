@@ -46,12 +46,12 @@
     0 leaves the runs going until they reach max_steps on their own.
 
 .EXAMPLE
-    ./Training/Start-StaminaExtension.ps1 -Fighters Standard,Matt -Minutes 60
+    ./Training/Start-StaminaExtension.ps1 -Fighters Grandma,Matt -Minutes 60
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('Standard', 'Matt', 'Nick', 'Kim')]
-    [string[]]$Fighters = @('Standard', 'Matt'),
+    [ValidateSet('Grandma', 'Matt', 'Nick', 'Kim')]
+    [string[]]$Fighters = @('Grandma', 'Matt'),
     [ValidateRange(1, 8)][int]$NumEnvs = 4,
     [ValidateRange(0, 1440)][int]$Minutes = 60,
     [ValidateRange(1024, 65000)][int]$BasePort = 5005,

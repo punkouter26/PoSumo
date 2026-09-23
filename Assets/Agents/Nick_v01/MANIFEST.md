@@ -10,7 +10,7 @@ reward — he dances, steps, and picks his moment instead of grinding forward.
 | Observations / actions | 45 / 13 (`extendedObservations = true`, decision period 3) |
 | Build | massScale 0.72, widthScale 0.82, torqueScale 0.85 (~50 kg) |
 | Brain | `Nick.onnx` ← `nick_unified01` final export (15.0M: cold to 3.75M, then resumed) |
-| Training scene / env | `SCN_TRAIN_NICK` → `Builds/NickEnv` (spars against Standard) |
+| Training scene / env | `SCN_TRAIN_NICK` → `Builds/NickEnv` (spars against Grandma) |
 | Config | `Training/configs/NickUnified01.yaml` |
 | Faces | `Assets/Resources/Faces/Nick_*.png`, named on the character asset |
 | Voice | `Assets/Resources/Audio/Voice/Nick_*.wav` (15 clips) |
