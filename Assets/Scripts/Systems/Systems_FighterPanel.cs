@@ -39,19 +39,12 @@ namespace PoSumo
         /// Full-scale for the push bar, in newtons.
         private const float PUSH_MAX = 400f;
 
-        /// Every fighter rides the same 1.76 m Winter rig — there is no
-        /// `heightScale` on the character asset, only mass, width and torque. So
-        /// height is printed as the shared spec it is, and BUILD carries the
-        /// variation instead.
-        private const float RIG_HEIGHT_M = 1.76f;
-
         private Systems_HudRoot _hud;
         private VisualElement _panel;
         private Label _stakes;
         private Label _story;
         private Side _sideA, _sideB;
         private VisualElement _pushFillA, _pushFillB;
-        private Label _pushLabelA, _pushLabelB;
 
         private Agent_BipedBody _bodyA, _bodyB;
         private Systems_BodyDamage _damageA, _damageB;
@@ -69,7 +62,6 @@ namespace PoSumo
             public Label Rank;
             public Label Record;
             public Label Physique;
-            public VisualElement StaminaFill;
             public VisualElement[] Pips;
             public Color[] PipShown;
         }
@@ -232,50 +224,34 @@ namespace PoSumo
             side.Name.style.color = TeamColor(fighter);
 
             string behaviour = BehaviourName(fighter);
+            string rating = string.Empty;
             if (behaviour == null)
             {
                 // The hand-coded bot is unrated on purpose — Systems_CareerRecorder
                 // banks nothing for it, so printing an elo would invent one.
                 side.Rank.text = "UNRATED";
-                side.Record.text = "HEURISTIC BOT";
+                side.Record.text = "RULE-BASED BOT";
             }
             else
             {
                 Systems_CareerStats.Record record = Systems_CareerStats.Get(behaviour);
-                side.Rank.text = Mathf.RoundToInt(record.elo) + "  ·  " + Systems_CareerLadder.NameFor(record);
-                string streak = record.winStreak >= 2 ? "  ·  W" + record.winStreak : string.Empty;
-                side.Record.text = record.matchWins + "-" + record.matchLosses + streak;
+                // Plain words. These read "976 · MAKUSHITA" and "8-3 · W5": a bare
+                // number with no unit, and a record code only a sports page reader
+                // would parse. Each line now says one thing in words, and each is
+                // sized to the 27%-wide side column (~19 characters at FONT_MICRO):
+                // the rank, the record, then rating and weight. The streak went —
+                // the storyline line above the card already calls a live streak.
+                side.Rank.text = Systems_CareerLadder.NameFor(record);
+                side.Record.text = record.matchWins + " WINS  ·  " + record.matchLosses + " LOSSES";
+                rating = "RATING " + Mathf.RoundToInt(record.elo) + "  ·  ";
             }
 
             if (body != null)
             {
-                side.Physique.text = body.TotalMass.ToString("F0") + " kg  ·  "
-                    + RIG_HEIGHT_M.ToString("F2") + " m  ·  " + BuildWord(body.widthScale);
+                // Height went too: every fighter is the same 1.76 m rig, so it was
+                // a number that could never differ between the two columns.
+                side.Physique.text = rating + body.TotalMass.ToString("F0") + " kg";
             }
-        }
-
-        /// Weight follows geometry here — mass is 69.6 * massScale *
-        /// (0.546*w^2 + 0.454) — so widthScale is the thing that actually separates
-        /// a 96 kg Kim from a 57 kg Nick, and it deserves a word rather than a bare
-        /// multiplier.
-        private static string BuildWord(float widthScale)
-        {
-            if (widthScale >= 1.2f)
-            {
-                return "HEAVY";
-            }
-
-            if (widthScale >= 1.05f)
-            {
-                return "SOLID";
-            }
-
-            if (widthScale <= 0.9f)
-            {
-                return "LIGHT";
-            }
-
-            return "EVEN";
         }
 
         /// Head-to-head plus what is at stake. Both are read from the career
@@ -352,26 +328,9 @@ namespace PoSumo
         /// element.
         private void RefreshLive()
         {
-            PaintStamina(_sideA, _bodyA);
-            PaintStamina(_sideB, _bodyB);
             PaintPips(_sideA, _damageA);
             PaintPips(_sideB, _damageB);
             PaintPush();
-        }
-
-        private static void PaintStamina(Side side, Agent_BipedBody body)
-        {
-            if (side == null || side.StaminaFill == null)
-            {
-                return;
-            }
-
-            float stamina = body != null ? Mathf.Clamp01(body.Stamina) : 0f;
-            side.StaminaFill.style.width = Length.Percent(stamina * 100f);
-            side.StaminaFill.style.backgroundColor =
-                stamina > 0.6f ? Systems_UiKit.Good
-                : stamina > 0.3f ? Systems_UiKit.Warn
-                : Systems_UiKit.Bad;
         }
 
         private static void PaintPips(Side side, Systems_BodyDamage damage)
@@ -423,8 +382,6 @@ namespace PoSumo
             float forceB = Mathf.Clamp(_pushB, 0f, PUSH_MAX);
             _pushFillA.style.width = Length.Percent(forceA / PUSH_MAX * 100f);
             _pushFillB.style.width = Length.Percent(forceB / PUSH_MAX * 100f);
-            _pushLabelA.text = forceA.ToString("F0") + " N";
-            _pushLabelB.text = forceB.ToString("F0") + " N";
         }
 
         // ---- Identity helpers ----------------------------------------------
@@ -545,24 +502,30 @@ namespace PoSumo
             side.Physique.style.unityTextAlign = anchor;
             host.Add(side.Physique);
 
-            // Stamina: a plain track with a fill. Drains from the outer edge on each
-            // side so both bars empty toward the centre of the screen, which reads
-            // as two fighters wearing down rather than as one shared meter.
-            VisualElement track = new VisualElement().Round(3).NoPick();
-            track.style.height = 6;
-            track.style.marginTop = Systems_UiKit.SPACE_1;
-            track.style.backgroundColor = Systems_UiKit.Track;
-            track.style.flexDirection = leftAligned ? FlexDirection.Row : FlexDirection.RowReverse;
-            side.StaminaFill = new VisualElement().Round(3).NoPick();
-            side.StaminaFill.style.height = 6;
-            side.StaminaFill.style.backgroundColor = Systems_UiKit.Good;
-            track.Add(side.StaminaFill);
-            host.Add(track);
+            // No stamina bar here any more. There is exactly ONE per fighter and it
+            // lives in the dock's live strip (Systems_FightHud), which is drawn at
+            // every HUD density — this panel is not drawn at MINIMAL, and at the
+            // other two levels it was a second bar showing the same number 150pt
+            // above the first.
 
             // Damage pips, one per region, in Systems_BodyDamage.Region order.
+            //
+            // Not built at FULL detail: the dock's two damage figures show the
+            // same six regions as a body, and PaintPips no-ops on the null array.
+            // At BROADCAST they are the only damage readout, so they stay — with
+            // a caption, because six unlabelled dashes under a weight were being
+            // read as decoration.
+            if (Systems_HudDensity.ShowsDamageFigures)
+            {
+                return side;
+            }
             VisualElement pipRow = Systems_UiKit.Row();
             pipRow.style.marginTop = Systems_UiKit.SPACE_1;
             pipRow.style.justifyContent = leftAligned ? Justify.FlexStart : Justify.FlexEnd;
+            Label pipCaption = Systems_UiKit.Caption("DAMAGE", Systems_UiKit.FONT_MICRO,
+                                                     Systems_UiKit.TextLow);
+            pipCaption.style.marginRight = Systems_UiKit.SPACE_2;
+            pipRow.Add(pipCaption);
             side.Pips = new VisualElement[Systems_BodyDamage.REGION_COUNT];
             side.PipShown = new Color[Systems_BodyDamage.REGION_COUNT];
             for (int regionIndex = 0; regionIndex < side.Pips.Length; regionIndex++)
@@ -586,7 +549,7 @@ namespace PoSumo
         /// so the longer one is the fighter currently driving.
         private void BuildPush(VisualElement host)
         {
-            Label caption = Systems_UiKit.Caption("PUSH", Systems_UiKit.FONT_MICRO, Systems_UiKit.TextLow, true);
+            Label caption = Systems_UiKit.Caption("PUSHING HARDER", Systems_UiKit.FONT_MICRO, Systems_UiKit.TextLow, true);
             caption.style.unityTextAlign = TextAnchor.MiddleCenter;
             host.Add(caption);
 
@@ -617,14 +580,10 @@ namespace PoSumo
             bars.Add(trackB);
             host.Add(bars);
 
-            VisualElement values = Systems_UiKit.Row();
-            values.style.justifyContent = Justify.SpaceBetween;
-            values.style.marginTop = 2;
-            _pushLabelA = Systems_UiKit.Caption("0 N", Systems_UiKit.FONT_MICRO, Systems_UiKit.TextLow);
-            _pushLabelB = Systems_UiKit.Caption("0 N", Systems_UiKit.FONT_MICRO, Systems_UiKit.TextLow);
-            values.Add(_pushLabelA);
-            values.Add(_pushLabelB);
-            host.Add(values);
+            // No numbers under the bars. They read "314 N  250 N" — newtons,
+            // rewritten ten times a second — and the bar already answers the only
+            // question a viewer has, which is WHO is pushing harder. It was also
+            // two string allocations per tick in the panel's one live path.
         }
     }
 }

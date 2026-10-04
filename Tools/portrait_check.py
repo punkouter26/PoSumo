@@ -64,7 +64,16 @@ def _exec(code: str, timeout: float = 120.0) -> str:
     returned as text rather than raised: one size erroring should not abandon the
     rest of the matrix.
     """
-    resp = unity.call("execute_code", {"action": "execute", "code": code}, timeout=timeout)
+    # One retry on a dropped socket. Measured 2026-10-04: the bridge closed the
+    # connection mid-reply twice in a row at the same step (the notch-off write,
+    # which lands as the bout hands back to the bracket scene) -- the command had
+    # run, only the answer was lost, and the traceback threw away the whole
+    # size's results. Every snippet sent through here is idempotent.
+    try:
+        resp = unity.call("execute_code", {"action": "execute", "code": code}, timeout=timeout)
+    except unity.BridgeError:
+        time.sleep(2.0)
+        resp = unity.call("execute_code", {"action": "execute", "code": code}, timeout=timeout)
     ok, payload = unity._unwrap(resp)
     if not ok:
         return f"ERROR: {payload}"

@@ -373,7 +373,11 @@ namespace PoSumo
         private VisualElement _scoreBug;   // hidden while the result card is up
         private Button _rematchButton;     // hidden for a bracket bout — see MarkBracketBout
         private Button _continueButton;    // the bracket counterpart of REMATCH
-        private Button _muteButton;
+        /// The pause card's contents — see BuildPauseUi.
+        private Systems_SettingsSheet _settings;
+        /// The fighter debug panel, when the chrome layer built one. Held so TAB
+        /// can toggle it; see SpawnScreenChrome.
+        private Systems_AgentDebug _agentDebug;
         private bool _paused;
         private bool _bracketBout;
         // Announce reveals still in flight, so a rematch can drop them — see
@@ -441,6 +445,23 @@ namespace PoSumo
                 // lifecycle, so the switch is delivered to the type itself.
                 Systems_Storylines.Enabled = tuning.enableStorylines;
             }
+
+            // HUD DENSITY (MINIMAL / BROADCAST / FULL), the player's own setting.
+            //
+            // ANDed onto the flags AFTER the tuning asset has spoken, so the asset
+            // still decides whether a feature exists and the preset can only take
+            // HUD away. Only presentation companions that draw on the HUD are
+            // listed. The rule-changing flags — enableStrikeImpulse,
+            // enableCrowdMomentum, enableBodyDamage, enableArenaMutators,
+            // enableWalkIn — are deliberately absent: a display preference that
+            // changed who wins a round would make two players' brackets differ by
+            // a settings toggle. The tension ENGINE stays up at every level too,
+            // because the camera director reads it; only its dock row is hidden
+            // (Systems_TensionEngine asks Systems_HudDensity itself), as are the
+            // fight HUD's damage figures.
+            enableCaster &= Systems_HudDensity.ShowsCaster;
+            enableFighterPanel &= Systems_HudDensity.ShowsFighterPanel;
+            enableBiometrics &= Systems_HudDensity.ShowsBiometrics;
 
             // enableLighting decides whether there is a light rig at all, and the
             // answer has to stay yes: every sprite in the arena uses a LIT material,
@@ -971,7 +992,7 @@ namespace PoSumo
             // AudioListener.volume is runtime state that resets to 1 on every Play
             // session and scene load, so the stored preference has to be re-applied
             // here rather than only when the button is pressed.
-            ApplyMutePreference();
+            Systems_SettingsSheet.ApplyMutePreference();
         }
 
         /// The top bar: pause on the left, the scorebug and round clock in the
@@ -1174,57 +1195,31 @@ namespace PoSumo
             _hud.AddModal(_resultCard);
         }
 
-        /// Pause / quit. Before this the only exit from a match was playing it to
-        /// the end — on Android the hardware back button did nothing at all.
+        /// Pause, settings and quit — one sheet.
+        ///
+        /// The top-right menu button opens this, and it is the game's single
+        /// settings surface (Systems_SettingsSheet): AUDIO / DISPLAY / GAMEPLAY
+        /// tabs, with RESUME and QUIT MATCH in its footer so the way out never
+        /// depends on which tab is showing. Before it the card held one SOUND
+        /// on/off button and nothing else, and before THAT the only exit from a
+        /// match was playing it to the end — on Android the hardware back button
+        /// did nothing at all.
         private void BuildPauseUi()
         {
-            _pauseCard = Systems_UiKit.Card(Systems_UiKit.Ink, Systems_UiKit.RADIUS_LG);
-            _pauseCard.style.width = Length.Percent(100);
-            _pauseCard.style.maxWidth = 520;
-            // Padding diet (checklist #2): SPACE_5 -> SPACE_4; the card is about
-            // to become the single system view (rules + sound + debug + quit).
-            _pauseCard.Pad(Systems_UiKit.SPACE_4, Systems_UiKit.SPACE_4);
-
-            Label title = Systems_UiKit.Text("PAUSED", Systems_UiKit.FONT_TITLE, Systems_UiKit.Gold, true);
-            title.style.unityTextAlign = TextAnchor.MiddleCenter;
-            _pauseCard.Add(title);
-
-            Button resume = Systems_UiKit.PrimaryButton("RESUME", TogglePause);
-            resume.style.marginTop = Systems_UiKit.SPACE_4;
-            _pauseCard.Add(resume);
-
-            // The only settings surface the game has. Pause is the right home for
-            // it: it is the one screen reachable from inside a match, and sound is
-            // the one setting a player actually needs mid-bout.
-            _muteButton = Systems_UiKit.GhostButton("", ToggleMute);
-            _muteButton.style.marginTop = Systems_UiKit.SPACE_3;
-            _pauseCard.Add(_muteButton);
-            RefreshMuteButton();
-
             // Nothing in the game ever explained how a round is won. There is
             // exactly one way out now: the ring-out, with the mat closing in to
-            // force it.
-            Label rules = Systems_UiKit.Text(
-                "PUSH YOUR OPPONENT OUT OF THE RING — THE MAT CLOSES IN UNTIL SOMEONE GOES."
-                // `pointsToWin` already carries the right value for this bout:
-                // Start copies tournamentPointsToWin over it for a bracket match
-                // and pointsToWin for an exhibition, so there is nothing to pick
-                // between here.
-                + $"  FIRST TO {pointsToWin} ROUNDS WINS.",
-                Systems_UiKit.FONT_MICRO, Systems_UiKit.TextLow);
-            rules.style.whiteSpace = WhiteSpace.Normal;
-            rules.style.unityTextAlign = TextAnchor.MiddleCenter;
-            rules.style.marginTop = Systems_UiKit.SPACE_3;
-            rules.NoPick();
+            // force it. `pointsToWin` already carries the right value for this
+            // bout: Start copies tournamentPointsToWin over it for a bracket match
+            // and pointsToWin for an exhibition, so there is nothing to pick
+            // between here.
+            _settings = new Systems_SettingsSheet(
+                "PAUSED",
+                "Push your opponent out of the ring. The mat closes in until someone goes."
+                + $" First to {pointsToWin} rounds wins the match.");
+            _pauseCard = _settings.Card;
 
-            Button quit = Systems_UiKit.GhostButton("QUIT MATCH", QuitToBracket);
-            quit.style.marginTop = Systems_UiKit.SPACE_3;
-            _pauseCard.Add(quit);
-
-            // Added AFTER the buttons deliberately. Sitting between SOUND and QUIT
-            // it split the action group in half, so the card read as two unrelated
-            // pairs of controls rather than a stack of actions with a footnote.
-            _pauseCard.Add(rules);
+            _settings.AddFooterButton(Systems_UiKit.PrimaryButton("RESUME", TogglePause));
+            _settings.AddFooterButton(Systems_UiKit.GhostButton("QUIT MATCH", QuitToBracket));
 
             _hud.AddModal(_pauseCard);
         }
@@ -1270,44 +1265,11 @@ namespace PoSumo
             return true;
         }
 
-        /// Global mute, persisted across scenes and sessions.
-        ///
-        /// `AudioListener.volume` rather than `Systems_MatchAudio.masterVolume`:
-        /// the audio companion is spawned fresh per match, so a value set on it
-        /// would be forgotten on the next scene load, and it does not cover the
-        /// music director or the fighter voices anyway. The listener is global and
-        /// catches all three.
-        private const string MUTE_KEY = "posumo.muted";
-
-        private static bool Muted
-        {
-            get => PlayerPrefs.GetInt(MUTE_KEY, 0) == 1;
-            set
-            {
-                PlayerPrefs.SetInt(MUTE_KEY, value ? 1 : 0);
-                PlayerPrefs.Save();
-                AudioListener.volume = value ? 0f : 1f;
-            }
-        }
-
-        /// Applied on every match start, not just when the button is pressed —
-        /// `AudioListener.volume` is runtime state that a fresh Play session
-        /// resets to 1, so a muted player would hear sound again on next launch.
-        private static void ApplyMutePreference() => AudioListener.volume = Muted ? 0f : 1f;
-
-        private void ToggleMute()
-        {
-            Muted = !Muted;
-            RefreshMuteButton();
-        }
-
-        private void RefreshMuteButton()
-        {
-            if (_muteButton != null)
-            {
-                _muteButton.text = Muted ? "SOUND: OFF" : "SOUND: ON";
-            }
-        }
+        // Global mute moved to Systems_SettingsSheet with the rest of the audio
+        // settings (same PlayerPrefs key, so an existing mute survives). It is
+        // still `AudioListener.volume` rather than a level on the audio companion:
+        // that companion is spawned fresh per match and does not cover the music
+        // director or the fighter voices, while the listener is global.
 
         /// Skip the reporter's presentation delay and go back to the draw now.
         /// The winner is already recorded by this point — see the CONTINUE button.
@@ -1512,6 +1474,20 @@ namespace PoSumo
             // system-back handler as well as the desktop shortcut. Update still runs
             // at timeScale 0, so it can also un-pause.
             if (BackPressed()) HandleBackKey();
+            // TAB opens the fighter debug panel — the same panel, through the same
+            // Toggle, as the DBG chip in the bottom-left corner. Read here rather
+            // than in the panel so there is still exactly one place in the arena
+            // that reads the keyboard.
+            if (DebugKeyPressed() && _agentDebug != null) _agentDebug.Toggle();
+        }
+
+        private bool DebugKeyPressed()
+        {
+#if ENABLE_INPUT_SYSTEM
+            return Keyboard.current != null && Keyboard.current.tabKey.wasPressedThisFrame;
+#else
+            return false;
+#endif
         }
 
         /// What the hardware back key / Escape actually does, per screen state.
@@ -1644,6 +1620,7 @@ namespace PoSumo
                     // over on the spot.
                     if (WalkInTouched())
                     {
+                        Systems_SessionStats.RecordWalkIn(true);
                         EngageFromWalkIn();
                         return;
                     }
@@ -1692,6 +1669,7 @@ namespace PoSumo
                         // (Phase.WalkInPark, a 0.45 s smoothstep onto the marks)
                         // was deleted with this; EngageFromWalkIn is the same
                         // handoff the contact path uses.
+                        Systems_SessionStats.RecordWalkIn(false);
                         EngageFromWalkIn();
                         return;
                     }

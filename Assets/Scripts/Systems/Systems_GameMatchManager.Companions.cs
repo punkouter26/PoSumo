@@ -188,20 +188,28 @@ namespace PoSumo
                 transform, chromeLayer, TogglePause,
                 debug != null ? (System.Action)debug.Toggle : null);
 
+            _agentDebug = debug;
             if (debug != null)
             {
                 debug.BindChrome(chrome);
 
-                // The pause card is the single SYSTEM view (idea #9): resume,
-                // sound, the fighter-debug panel, quit and the rules — settings,
-                // help and diagnostics behind one door instead of separate
-                // screens. Added here rather than in BuildPauseUi because the
-                // panel does not exist until this spawn pass runs. Inserted
-                // BEFORE the rules footnote (the last child), the same way the
-                // quit button was, so the footnote stays the card's footer.
-                var debugButton = Systems_UiKit.GhostButton("FIGHTER DEBUG", debug.Toggle);
-                debugButton.style.marginTop = Systems_UiKit.SPACE_3;
-                _pauseCard.Insert(Mathf.Max(0, _pauseCard.childCount - 1), debugButton);
+                // The settings sheet is the single SYSTEM view (idea #9): resume,
+                // sound, display, the fighter-debug panel, quit and the rules —
+                // settings, help and diagnostics behind one door instead of
+                // separate screens. Added here rather than in BuildPauseUi because
+                // the panel does not exist until this spawn pass runs.
+                _settings.AddDisplayAction("FIGHTER DEBUG (TAB KEY)", "OPEN", debug.Toggle);
+            }
+
+            // The engine overlay exists only in the Editor and development builds
+            // (see the gate in SpawnCompanionSystems), so the row is offered only
+            // when there is one — a control that silently does nothing on a
+            // release phone is worse than an absent one. Spawned earlier in this
+            // same pass, so the lookup finds it though its Start has not run yet.
+            Systems_PerfHud perf = FindAnyObjectByType<Systems_PerfHud>();
+            if (perf != null)
+            {
+                _settings.AddDisplayAction("ENGINE OVERLAY", "SHOW", perf.Toggle);
             }
 
             // Keep the scorebug out from under the frame-rate readout and the dock's

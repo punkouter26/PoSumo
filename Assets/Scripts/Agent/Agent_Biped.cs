@@ -303,8 +303,15 @@ namespace PoSumo
         /// Deliberately NOT stripped from release builds: a shipped APK carrying a stale
         /// `.onnx` has exactly this symptom, and a player-facing "the fighters do not
         /// move" bug is worth one log line.
+        /// True when the assigned model was trained on a different vector size than
+        /// this agent builds — the STALE BRAIN case above. The console line is the
+        /// record; this is the same verdict held where the debug panel can read it,
+        /// so it can be said on the phone, where there is no console.
+        public bool BrainStale { get; private set; }
+
         private void AssertModelMatchesVector(int vectorSize)
         {
+            BrainStale = false;
             if (inferenceModel == null) return;
 
             if (!_modelInputSize.TryGetValue(inferenceModel, out int modelSize))
@@ -339,6 +346,7 @@ namespace PoSumo
 
             if (modelSize > 0 && modelSize != vectorSize)
             {
+                BrainStale = true;
                 Debug.LogError(
                     $"[OBS] STALE BRAIN: '{inferenceModel.name}' takes {modelSize} inputs " +
                     $"but '{behaviorName}' now builds {vectorSize}. This fighter will NOT " +

@@ -128,6 +128,10 @@ namespace PoSumo
         /// are not free and this is refreshed every frame, so the bar is only
         /// touched when it has moved a percentage point.
         private float _shownMat01 = -1f;
+        /// One stamina bar per fighter, under the team base. The last fraction
+        /// written is cached for the same reason as the mat's.
+        private VisualElement _staminaFillA, _staminaFillB;
+        private float _shownStaminaA = -1f, _shownStaminaB = -1f;
 
         // Between-rounds detail
         private VisualElement _detailCard;
@@ -345,24 +349,35 @@ namespace PoSumo
             _liveCard.Pad(Systems_UiKit.SPACE_3, Systems_UiKit.SPACE_1);
             _liveCard.style.marginBottom = Systems_UiKit.SPACE_2;
 
-            _mannA = BuildMannequin(out VisualElement figureA);
-            _mannB = BuildMannequin(out VisualElement figureB);
-            _mannShownA = new Color[Systems_BodyDamage.REGION_COUNT];
-            _mannShownB = new Color[Systems_BodyDamage.REGION_COUNT];
-
+            // Each side column, top to bottom: the damage figure (FULL detail
+            // only), a team-coloured base, ONE stamina bar, and the biometrics
+            // anchor (stamina history + hardest hit, FULL only — empty otherwise).
+            //
+            // The stamina bar is the strip's one always-on fighter readout: at
+            // MINIMAL the dock is exactly "mat in the middle, a stamina bar each
+            // side". It used to live on the fighter panel, which MINIMAL does not
+            // draw at all, so it moved here rather than being duplicated.
+            //
             // The mannequins are damage-coloured (green->amber->red), so they carry
             // no fighter identity of their own — left and right were two identical
-            // green figures. A team-coloured base under each one labels it without
+            // green figures. The team-coloured base labels the column without
             // touching the damage ramp, which has to stay readable as damage.
-            // The biometrics anchor rides below the base: that fighter's PK/AD
-            // caption and stamina sparkline live here now (was a third dock card).
             VisualElement left = Systems_UiKit.Column(Align.Center).NoPick();
-            left.Add(figureA);
-            left.Add(TeamBase(manager.colorA));
-            left.Add(BioAnchorA);
             VisualElement right = Systems_UiKit.Column(Align.Center).NoPick();
-            right.Add(figureB);
+            if (Systems_HudDensity.ShowsDamageFigures)
+            {
+                _mannA = BuildMannequin(out VisualElement figureA);
+                _mannB = BuildMannequin(out VisualElement figureB);
+                _mannShownA = new Color[Systems_BodyDamage.REGION_COUNT];
+                _mannShownB = new Color[Systems_BodyDamage.REGION_COUNT];
+                left.Add(figureA);
+                right.Add(figureB);
+            }
+            left.Add(TeamBase(manager.colorA));
+            _staminaFillA = BuildStaminaBar(left, true);
+            left.Add(BioAnchorA);
             right.Add(TeamBase(manager.colorB));
+            _staminaFillB = BuildStaminaBar(right, false);
             right.Add(BioAnchorB);
 
             // The centre used to carry the DOMINANCE tug-of-war bar and its two
@@ -380,7 +395,10 @@ namespace PoSumo
             // clay is left turns that into visible, rising pressure.
             VisualElement centre = Systems_UiKit.Column(Align.Center).NoPick();
             _matCaption = Systems_UiKit.Caption("MAT", Systems_UiKit.FONT_MICRO,
-                                                Systems_UiKit.TextLow);
+                                                Systems_UiKit.TextLow).Tight();
+            // Level with the STAMINA captions either side, which sit under a
+            // team base of the same height.
+            _matCaption.style.marginTop = Systems_UiKit.SPACE_1;
             centre.Add(_matCaption);
             _matTrack = new VisualElement();
             _matTrack.style.height = 6;
@@ -403,16 +421,22 @@ namespace PoSumo
             // The win-probability row (Systems_TensionEngine) mounts here — the
             // second dock card merged into the strip. Empty when the companion's
             // flag is off; costs one empty element.
+            // Stretched across the column. The anchor is itself a centred column,
+            // so in a centred parent it shrank to the width of its "WIN CHANCE"
+            // caption and the win bar inside it — a flexGrow track — was left
+            // ~40pt wide between the two numbers.
+            TensionAnchor.style.alignSelf = Align.Stretch;
             centre.Add(TensionAnchor);
 
             _liveCard.Add(Systems_UiKit.Triplet(left, centre, right));
 
-            // One footer for the whole strip. Compact badges (checklist #2): the
-            // verbose "ROUND 2 · FIRST TO 3" is a 200pt string in a micro slot;
-            // "R2 · FT3" says the same at half the width, and FIRST TO is a rule
-            // the pause card still states in full.
-            _footer = Systems_UiKit.Caption("", Systems_UiKit.FONT_MICRO, Systems_UiKit.TextLow);
-            _footer.style.marginTop = Systems_UiKit.SPACE_1;
+            // One footer for the whole strip, in plain words: "ROUND 2 · FIRST TO
+            // 2". It was compacted to "R2 · FT2" once to save width, and that is
+            // a code only the person who wrote it can read — the footer has the
+            // whole card's width to itself, so there was nothing to save.
+            _footer = Systems_UiKit.Caption("", Systems_UiKit.FONT_MICRO, Systems_UiKit.TextLow).Tight();
+            _footer.style.marginTop = Systems_UiKit.SPACE_2;
+            _footer.style.marginBottom = Systems_UiKit.SPACE_1;
             _liveCard.Add(_footer);
 
             _liveCard.NoPickTree();
@@ -743,9 +767,15 @@ namespace PoSumo
 
         /// Indices match Systems_BodyDamage.Region: Head, Torso, ArmNear, ArmFar,
         /// LegNear, LegFar.
+        ///
+        /// Drawn on a 56x78 grid and scaled by MANNEQUIN_SCALE. At full size the
+        /// figure plus the stamina bar and the history under it came to 190pt in
+        /// a strip that a 4:3 panel caps at 146 (portrait_check, 1200x1600).
+        private const float MANNEQUIN_SCALE = 0.8f;
+
         private VisualElement[] BuildMannequin(out VisualElement figure)
         {
-            const float W = 56f, H = 78f;
+            const float W = 56f * MANNEQUIN_SCALE, H = 78f * MANNEQUIN_SCALE;
             figure = new VisualElement().NoPick();
             figure.style.width = W;
             figure.style.height = H;
@@ -779,10 +809,10 @@ namespace PoSumo
         {
             var piece = new VisualElement().NoPick();
             piece.style.position = Position.Absolute;
-            piece.style.left = left;
-            piece.style.top = top;
-            piece.style.width = w;
-            piece.style.height = h;
+            piece.style.left = left * MANNEQUIN_SCALE;
+            piece.style.top = top * MANNEQUIN_SCALE;
+            piece.style.width = w * MANNEQUIN_SCALE;
+            piece.style.height = h * MANNEQUIN_SCALE;
             piece.style.backgroundColor = DamageGreen;
             piece.Round(radius);
             parent.Add(piece);
@@ -825,16 +855,84 @@ namespace PoSumo
 
         private void UpdateLiveStrip()
         {
-            int round = manager.RoundNumber;
+            // RoundNumber is "rounds decided + 1", so once the match is won it
+            // names a round that will never be played — the strip read "ROUND 3"
+            // under a 2-0 result card. A decided match keeps the last real round.
+            bool decided = manager.ScoreA >= manager.PointsToWin
+                        || manager.ScoreB >= manager.PointsToWin;
+            int round = decided ? manager.ScoreA + manager.ScoreB : manager.RoundNumber;
             if (round != _shownRound)
             {
                 _shownRound = round;
-                _footer.text = $"R{round} · FT{manager.PointsToWin}";
+                _footer.text = $"ROUND {round} · FIRST TO {manager.PointsToWin}";
             }
 
             PaintMannequin(_mannA, _mannShownA, _bodyA);
             PaintMannequin(_mannB, _mannShownB, _bodyB);
+            PaintStamina(_staminaFillA, _bodyA, ref _shownStaminaA);
+            PaintStamina(_staminaFillB, _bodyB, ref _shownStaminaB);
             UpdateMatMeter();
+        }
+
+        /// One captioned stamina bar under a fighter's team base. Each fill is
+        /// anchored to its OUTER end, so the two bars are mirror images — two
+        /// fighters wearing down, not one shared meter.
+        ///
+        /// Caption and bar share ONE line. Stacked (caption over bar) the side
+        /// column grew 31pt, and at FULL detail on a 4:3 panel — where the dock
+        /// is capped at 28% of 960pt — that pushed the strip 28pt past its card
+        /// (portrait_check, 1200x1600). Mirrored, so the caption sits on the
+        /// inner side of each column and the two bars reach for the screen edges.
+        private static VisualElement BuildStaminaBar(VisualElement host, bool leftSide)
+        {
+            VisualElement row = Systems_UiKit.Row().NoPick();
+            // The side column centres its children, which hug their content — so
+            // the row has to claim the width itself or the flexGrow track inside
+            // it resolves against zero. 86%, not 100: the Triplet's three columns
+            // have no gutter between them, and at full width the two stamina bars
+            // and the MAT bar met end to end and read as ONE long bar.
+            row.style.width = Length.Percent(86f);
+            row.style.marginTop = Systems_UiKit.SPACE_1;
+            row.style.flexDirection = leftSide ? FlexDirection.RowReverse : FlexDirection.Row;
+            host.Add(row);
+
+            Label caption = Systems_UiKit.Caption("STAMINA", Systems_UiKit.FONT_MICRO,
+                                                  Systems_UiKit.TextLow).Tight();
+            row.Add(caption);
+
+            VisualElement track = new VisualElement().Round(3).NoPick();
+            track.style.height = 8;
+            track.style.flexGrow = 1;
+            track.style.marginLeft = leftSide ? 0 : Systems_UiKit.SPACE_2;
+            track.style.marginRight = leftSide ? Systems_UiKit.SPACE_2 : 0;
+            track.style.backgroundColor = Systems_UiKit.Track;
+            track.style.overflow = Overflow.Hidden;
+            track.style.flexDirection = leftSide ? FlexDirection.Row : FlexDirection.RowReverse;
+
+            VisualElement fill = new VisualElement().Round(3).NoPick();
+            fill.style.height = 8;
+            fill.style.width = Length.Percent(100f);
+            fill.style.backgroundColor = Systems_UiKit.Good;
+            track.Add(fill);
+            row.Add(track);
+            return fill;
+        }
+
+        /// Written only when the reading has moved a percentage point: stamina
+        /// drifts slowly, this runs every rendered frame, and an identical style
+        /// write still dirties the element.
+        private static void PaintStamina(VisualElement fill, Agent_BipedBody body, ref float shown)
+        {
+            if (fill == null || body == null) return;
+
+            float stamina = Mathf.Clamp01(body.Stamina);
+            if (Mathf.Abs(stamina - shown) < 0.01f) return;
+            shown = stamina;
+
+            fill.style.width = Length.Percent(stamina * 100f);
+            fill.style.backgroundColor = stamina > 0.6f ? Systems_UiKit.Good
+                                       : stamina > 0.3f ? Systems_UiKit.Warn
+                                       : Systems_UiKit.Bad;
         }
 
         /// How much clay is left, as a share of the mat the round opened on.

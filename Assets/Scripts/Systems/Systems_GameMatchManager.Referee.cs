@@ -128,6 +128,9 @@ namespace PoSumo
                               string drawText, string winText = null)
         {
             LongestRound = Mathf.Max(LongestRound, _elapsed);
+            // Session tally for the debug panel: how many rounds the FIGHTERS
+            // decided, i.e. ended before the mat began to close.
+            Systems_SessionStats.RecordRound(_elapsed, shrinkStartSeconds);
 
             // Every exit from a round passes through here, so this is the one place
             // that can honestly account for all of them. Distances from the centre

@@ -23,9 +23,10 @@ namespace PoSumo
     /// nothing moves — the editor Game view looks exactly as before.
     ///
     /// Which is also why the inset code has historically been untestable where it
-    /// matters least and needed most: `Screen.safeArea` in the Editor is always
-    /// the full window, so every notch/cutout layout fault only ever surfaced on
-    /// a device. `SafeAreaOverride` is the fix — a fake safe area, in the same
+    /// matters least and needed most: a desktop Game view has no cutout (and its
+    /// `Screen.safeArea` is not even reliably the full window — see
+    /// `DeviceSafeArea`), so every notch/cutout layout fault only ever surfaced
+    /// on a device. `SafeAreaOverride` is the fix — a fake safe area, in the same
     /// bottom-left pixel units the real one uses, that this watcher applies in
     /// place of `Screen.safeArea` while it is non-degenerate. Editor harnesses
     /// and the portrait layout check drive it; there is no UI for it.
@@ -96,6 +97,43 @@ namespace PoSumo
             watcher._targets = targets;
         }
 
+        /// The OS safe area, or the whole screen where the OS value cannot be
+        /// trusted.
+        ///
+        /// In the EDITOR's Game view `Screen.safeArea` is not reliable, and this
+        /// class's header used to claim the opposite. MEASURED 2026-10-04 on a
+        /// 1080x2400 Game view: `Screen.safeArea` = (0, 0, 960, 2566) — a rect
+        /// that is narrower AND taller than the screen it is supposed to sit
+        /// inside (it is a stale size from another view; the Game view had been
+        /// 960x2658). Fed through the maths below it insets the right edge by
+        /// 120 of 1080 px: the whole HUD was laid out in the left 89% of the
+        /// panel, with the menu and the build stamp pulled in off their corners,
+        /// in every capture taken that session.
+        ///
+        /// A desktop Game view has no cutout, so in the Editor the answer is the
+        /// full screen — except under the Device Simulator, which reports a real
+        /// simulated cutout and is recognised by its simulated device type. A
+        /// rect that does not fit inside the screen is rejected everywhere: no
+        /// device can report one, so it can only be a bad value.
+        private static Rect DeviceSafeArea(Vector2Int screen)
+        {
+            var full = new Rect(0f, 0f, screen.x, screen.y);
+            Rect safe = Screen.safeArea;
+            if (safe.width <= 0f || safe.height <= 0f
+                || safe.xMin < 0f || safe.yMin < 0f
+                || safe.xMax > screen.x + 0.5f || safe.yMax > screen.y + 0.5f)
+            {
+                return full;
+            }
+#if UNITY_EDITOR
+            if (UnityEngine.Device.SystemInfo.deviceType == DeviceType.Desktop)
+            {
+                return full;
+            }
+#endif
+            return safe;
+        }
+
         private void LateUpdate()
         {
             if (_targets == null || _targets[0] == null)
@@ -115,8 +153,8 @@ namespace PoSumo
             // The override stands in for the OS value whole — the comparison cache
             // below needs no changes because the override simply IS the safe area
             // for as long as it is enabled.
-            Rect safe = _overrideSafeArea.width > 0f ? _overrideSafeArea : Screen.safeArea;
             var screen = new Vector2Int(Screen.width, Screen.height);
+            Rect safe = _overrideSafeArea.width > 0f ? _overrideSafeArea : DeviceSafeArea(screen);
             if (safe == _lastSafeArea && screen == _lastScreen && rootSize == _lastRootSize)
             {
                 return;

@@ -34,10 +34,23 @@ namespace PoSumo
     /// for the fighter palette, a bracket chip or REMATCH behind it.
     public sealed class Systems_ScreenChrome : MonoBehaviour
     {
-        /// Seconds between frame-rate refreshes. 4 Hz is the cadence
-        /// Systems_PerfHud samples at: fast enough to see a hitch land, slow
-        /// enough that the digits do not blur into an unreadable smear.
-        private const float SAMPLE_INTERVAL = 0.25f;
+        /// Seconds of frames one readout averages over.
+        ///
+        /// This was 0.25 s and the readout could not be trusted. MEASURED
+        /// 2026-10-04 in the Editor: the chip read 60 while idle (worst frame
+        /// 21 ms), and 2-22 in red in every capture — because one stalled frame
+        /// (436 ms across a bridge call plus a screenshot; a scene load or a GC
+        /// pause does the same on a phone) is LONGER than the whole window, so
+        /// the "average" was that single frame and nothing else. A full second
+        /// holds ~60 frames, which is what makes frames / elapsed a frame RATE.
+        private const float SAMPLE_INTERVAL = 1f;
+
+        /// A frame longer than this is a STALL, not a sample of the frame rate:
+        /// a scene load, a screenshot readback, the app coming back from the
+        /// background. It is left out of the average — counting it reports
+        /// "35 FPS" for a second in which every rendered frame took 16 ms — and
+        /// is what turns the readout amber instead.
+        private const float STALL_SECONDS = 0.25f;
 
         /// Frame-time thresholds in milliseconds, matching the perf HUD's so the
         /// two readouts can never disagree about what "green" means. The Android
@@ -45,6 +58,11 @@ namespace PoSumo
         /// where 30 FPS has been missed as well.
         private const float MS_GOOD = 16.7f;
         private const float MS_WARN = 33.3f;
+
+        /// Slack on the green threshold, in milliseconds. A frame cap of 60 gives
+        /// a mean of 16.4-17.2 ms, not 16.7 exactly; without this the readout
+        /// flickers green/amber at the very rate it is meant to call good.
+        private const float MS_TOLERANCE = 1.5f;
 
         private Label _fps;
         private Button _debugButton;
@@ -56,10 +74,10 @@ namespace PoSumo
         /// small, allocation floor under every screen in the game.
         private readonly StringBuilder _sb = new StringBuilder(32);
 
-        private float _nextSample;
         private int _framesSinceSample;
         private float _timeSinceSample;
-        private float _worstMsThisWindow;
+        private bool _stalledThisWindow;
+        private int _shownFps = -1;
 
         /// Builds the chrome onto the given layer and returns the component
         /// driving it.
@@ -226,37 +244,57 @@ namespace PoSumo
 
         private void Update()
         {
-            // Accumulated every frame, reported four times a second. The WORST
-            // frame in the window is what colours the readout: an average that
-            // looks fine while hiding a 40 ms spike is exactly the case a frame
-            // counter exists to catch, and a 4 Hz sample of the instantaneous
-            // deltaTime would miss every one of them.
-            _framesSinceSample++;
-            _timeSinceSample += Time.unscaledDeltaTime;
-            _worstMsThisWindow = Mathf.Max(_worstMsThisWindow, Time.unscaledDeltaTime * 1000f);
+            // Frames counted over elapsed time, reported once a second.
+            // unscaledDeltaTime, so pause (timeScale 0) and the slow-motion finish
+            // do not move the number: neither changes how fast frames are drawn.
+            //
+            // The window is closed on its OWN accumulated time rather than against
+            // Time.unscaledTime, so a stall cannot end a window that holds one
+            // frame. Stalled frames are kept out of both sums — see STALL_SECONDS.
+            float frameSeconds = Time.unscaledDeltaTime;
+            if (frameSeconds > STALL_SECONDS)
+            {
+                _stalledThisWindow = true;
+            }
+            else
+            {
+                _framesSinceSample++;
+                _timeSinceSample += frameSeconds;
+            }
 
-            if (Time.unscaledTime < _nextSample)
+            if (_timeSinceSample < SAMPLE_INTERVAL)
             {
                 return;
             }
-            _nextSample = Time.unscaledTime + SAMPLE_INTERVAL;
 
             if (_fps != null && _framesSinceSample > 0)
             {
                 float avgMs = (_timeSinceSample / _framesSinceSample) * 1000f;
-                float fps = avgMs > 0.001f ? 1000f / avgMs : 0f;
+                int fps = Mathf.RoundToInt(1000f / avgMs);
 
-                _sb.Clear();
-                _sb.Append(Mathf.RoundToInt(fps)).Append(" FPS");
-                _fps.text = _sb.ToString();
-                _fps.style.color = _worstMsThisWindow <= MS_GOOD ? Systems_UiKit.Good
-                                 : _worstMsThisWindow <= MS_WARN ? Systems_UiKit.Warn
-                                 : Systems_UiKit.Bad;
+                // The digits only change when the rounded rate does, which at a
+                // steady 60 is almost never — so the label is not rewritten, and
+                // no string is built, on most samples.
+                if (fps != _shownFps)
+                {
+                    _shownFps = fps;
+                    _sb.Clear();
+                    _sb.Append(fps).Append(" FPS");
+                    _fps.text = _sb.ToString();
+                }
+                // Coloured on the AVERAGE frame, with a small tolerance: at a
+                // capped 60 the mean lands a hair either side of 16.7 ms, and
+                // colouring on the single worst frame painted a healthy 60 red
+                // whenever one frame in the window ran long. A stall shows as
+                // amber for that one readout rather than as a false number.
+                _fps.style.color = avgMs > MS_WARN ? Systems_UiKit.Bad
+                                 : avgMs > MS_GOOD + MS_TOLERANCE || _stalledThisWindow ? Systems_UiKit.Warn
+                                 : Systems_UiKit.Good;
             }
 
             _framesSinceSample = 0;
             _timeSinceSample = 0f;
-            _worstMsThisWindow = 0f;
+            _stalledThisWindow = false;
         }
     }
 }

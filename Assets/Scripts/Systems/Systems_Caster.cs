@@ -28,9 +28,20 @@ namespace PoSumo
     /// Read-only with respect to the fight.
     public sealed class Systems_Caster : MonoBehaviour
     {
-        /// One line's lifetime and the minimum gap between lines.
-        private const float SHOW_SECONDS = 3.4f;
-        private const float MIN_GAP = 2.1f;
+        /// One line's lifetime and the silence that follows it.
+        ///
+        /// Was 3.4 s on / ~1 s off, and with a three-line queue behind it the
+        /// chyron was up for most of a round — a permanent plate across the top
+        /// of the fight rather than a call. A line is at most six short words;
+        /// 2.2 s reads it comfortably, and a 3.5 s gap means that even with the
+        /// queue full the banner is on screen under 40% of the time.
+        private const float SHOW_SECONDS = 2.2f;
+        private const float MIN_GAP = 3.5f;
+
+        /// A queued line older than this is dropped instead of shown. With the
+        /// longer gap a full queue takes ~15 s to drain, and "MATT IS GASSING"
+        /// announced a round after it happened is worse than not at all.
+        private const float STALE_SECONDS = 6f;
 
         /// Poll cadence for threshold lines (stamina, odds, mat, crowd).
         private const float POLL_INTERVAL = 0.5f;
@@ -50,6 +61,7 @@ namespace PoSumo
         private float _nextAllowed = 0f;
 
         private readonly string[] _queue = new string[QUEUE_CAPACITY];
+        private readonly float[] _queuedAt = new float[QUEUE_CAPACITY];
         private int _queueHead, _queueTail;
 
         // One-shot flags per round. Reset in OnRoundStarted.
@@ -151,18 +163,32 @@ namespace PoSumo
             // (countdown, round banner, kimarite share it) and a caster line has
             // no business hiding the gyoji's call. Anchored top-centre instead,
             // where it competes with nothing but empty crowd wall.
-            _panel = Systems_UiKit.Card(new Color(0f, 0f, 0f, 0.66f), Systems_UiKit.RADIUS_MD).NoPick();
+            //
+            // A PILL that hugs its line, a clear step below the scorebug — not an
+            // edge-to-edge plate 8pt under it. The plate was the same width and
+            // the same dark as the scorebug card directly above, so the two read
+            // as one two-storey block with the score on top: the banner sat ON
+            // the scorebug band in every way but the pixel. The holder is the
+            // full-width absolute element and is transparent; the pill inside it
+            // is centred and only as wide as the words.
+            _panel = new VisualElement().NoPick();
             _panel.style.position = Position.Absolute;
-            _panel.style.top = Systems_UiKit.SPACE_2;
+            _panel.style.top = Systems_UiKit.SPACE_5;
             _panel.style.left = Systems_UiKit.SPACE_4;
             _panel.style.right = Systems_UiKit.SPACE_4;
             _panel.style.alignItems = Align.Center;
-            _panel.Pad(Systems_UiKit.SPACE_4, Systems_UiKit.SPACE_1);
 
-            _line = Systems_UiKit.Text(string.Empty, Systems_UiKit.FONT_LEAD, Systems_UiKit.Gold, true);
+            VisualElement pill = Systems_UiKit.Card(new Color(0f, 0f, 0f, 0.6f),
+                                                    Systems_UiKit.RADIUS_LG).NoPick();
+            pill.Pad(Systems_UiKit.SPACE_4, Systems_UiKit.SPACE_1);
+            pill.style.maxWidth = Length.Percent(100);
+            _panel.Add(pill);
+
+            _line = Systems_UiKit.Text(string.Empty, Systems_UiKit.FONT_BODY, Systems_UiKit.Gold, true);
             _line.style.unityTextAlign = TextAnchor.MiddleCenter;
+            _line.style.whiteSpace = WhiteSpace.Normal;
             _line.style.textShadow = Systems_UiKit.Outline;
-            _panel.Add(_line);
+            pill.Add(_line);
 
             _panel.style.display = DisplayStyle.None;
             _panel.NoPickTree();
@@ -179,6 +205,7 @@ namespace PoSumo
             int next = (_queueTail + 1) % QUEUE_CAPACITY;
             if (next == _queueHead) return; // full: drop rather than stack a backlog
             _queue[_queueTail] = line;
+            _queuedAt[_queueTail] = Time.unscaledTime;
             _queueTail = next;
         }
 
@@ -191,14 +218,21 @@ namespace PoSumo
             {
                 _hideAt = -1f;
                 if (_panel != null) _panel.style.display = DisplayStyle.None;
-                _nextAllowed = Time.unscaledTime + MIN_GAP * 0.5f;
+                _nextAllowed = Time.unscaledTime + MIN_GAP;
             }
 
             if (!showing && _queueHead != _queueTail && Time.unscaledTime >= _nextAllowed)
             {
-                Show(_queue[_queueHead]);
+                string line = _queue[_queueHead];
+                bool stale = Time.unscaledTime - _queuedAt[_queueHead] > STALE_SECONDS;
                 _queue[_queueHead] = null;
                 _queueHead = (_queueHead + 1) % QUEUE_CAPACITY;
+                // A stale line is dropped without spending the gap: the next
+                // frame takes the following line, which may still be current.
+                if (!stale)
+                {
+                    Show(line);
+                }
             }
         }
 

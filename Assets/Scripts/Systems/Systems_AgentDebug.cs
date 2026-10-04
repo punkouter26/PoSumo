@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Text;
+using Unity.Profiling;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -63,8 +64,32 @@ namespace PoSumo
         /// are reading the same ruler.
         private const float MAT_REFERENCE = 3.5f;
 
+        /// Torso height above the mat in the standing pose (CLAUDE.md, measured).
+        private const float STANDING_HEIGHT = 1.06f;
+        /// Below this smoothed torso height a fighter is on its knees or lower.
+        /// A real crouch still carries the torso at ~0.8 m; the shipped crawl was
+        /// measured at 0.26-0.62 m.
+        private const float KNEES_BELOW = 0.7f;
+        /// Posture samples (2 Hz) before the height is trusted enough to report.
+        private const int MIN_HEIGHT_SAMPLES = 6;
+        /// Rounds needed before a "share of rounds" is worth stating as one.
+        private const int MIN_ROUNDS_FOR_SHARE = 3;
+        /// A physics step costing more than this is worth a line. The step is
+        /// 20 ms of game time; measured cost with two fighters is well under
+        /// 1 ms, so 5 ms means something has gone wrong, not that it is busy.
+        private const float PHYSICS_MS_HIGH = 5f;
+        /// Frames of Physics2D.Simulate the recorder keeps — about half a second
+        /// at 60 FPS, i.e. one sample interval.
+        private const int PHYSICS_WINDOW = 30;
+
         private Systems_GameMatchManager _manager;
         private Systems_ScreenChrome _chrome;
+
+        private VisualElement _attentionBox;
+        private Label _attention;
+        private float _fightHeightA, _fightHeightB;
+        private int _heightSamplesA, _heightSamplesB;
+        private ProfilerRecorder _physicsStep;
 
         private VisualElement _panel;
         private Label _headline;
@@ -164,6 +189,14 @@ namespace PoSumo
             }
             Systems_AgentDebug panel = go.AddComponent<Systems_AgentDebug>();
             panel._manager = manager;
+            // Only the arena has physics worth timing; the bracket screen runs
+            // none. Named by string because the marker is Unity's own — it is
+            // absent from a release player, where Valid is simply false.
+            if (manager != null)
+            {
+                panel._physicsStep = ProfilerRecorder.StartNew(
+                    ProfilerCategory.Physics2D, "Physics2D.Simulate", PHYSICS_WINDOW);
+            }
             panel.Build(layer);
             return panel;
         }
@@ -248,6 +281,27 @@ namespace PoSumo
                                                Systems_UiKit.Gold, true);
             content.Add(heading);
 
+            // NEEDS ATTENTION — above everything else, and absent when there is
+            // nothing to say. The rest of the panel is a readout: it lists what is
+            // true and leaves the reader to notice which line matters. This block
+            // is the opposite — only the lines that are WRONG, in plain words, so
+            // "the fighters are on their knees" is the first thing read rather
+            // than a 0.41 buried in a column. A warm border marks it as the one
+            // part of the panel that is asking for something.
+            _attentionBox = Systems_UiKit.ElevatedCard(Systems_UiKit.Elevation.Raised);
+            _attentionBox.Pad(Systems_UiKit.SPACE_3, Systems_UiKit.SPACE_2);
+            _attentionBox.style.marginTop = Systems_UiKit.SPACE_2;
+            _attentionBox.style.marginBottom = Systems_UiKit.SPACE_2;
+            _attentionBox.style.borderLeftWidth = 4;
+            _attentionBox.style.borderLeftColor = Systems_UiKit.Warn;
+            _attentionBox.style.display = DisplayStyle.None;
+            _attentionBox.Add(Systems_UiKit.Text("NEEDS ATTENTION", Systems_UiKit.FONT_MICRO,
+                                                 Systems_UiKit.Warn, true));
+            _attention = Systems_UiKit.Text("", Systems_UiKit.FONT_SMALL, Systems_UiKit.TextHi);
+            _attention.style.whiteSpace = WhiteSpace.Normal;
+            _attentionBox.Add(_attention);
+            content.Add(_attentionBox.NoPickTree());
+
             _headline = Systems_UiKit.Text("", Systems_UiKit.FONT_SMALL, Systems_UiKit.TextMid);
             _headline.style.whiteSpace = WhiteSpace.Normal;
             _headline.style.marginBottom = Systems_UiKit.SPACE_2;
@@ -284,7 +338,7 @@ namespace PoSumo
                 content.Add(engine);
             }
 
-            Label hint = Systems_UiKit.Text("DBG closes this panel.",
+            Label hint = Systems_UiKit.Text("DBG or the TAB key closes this panel.",
                                             Systems_UiKit.FONT_MICRO, Systems_UiKit.TextLow);
             content.Add(hint);
 
@@ -389,11 +443,185 @@ namespace PoSumo
             // visibility, which is where the cost actually is.
             SampleFighter(_cardA, _manager != null ? _manager.wrestlerA : null);
             SampleFighter(_cardB, _manager != null ? _manager.wrestlerB : null);
+            SamplePosture();
 
             if (s_visible)
             {
                 Refresh();
             }
+        }
+
+        private void OnDestroy()
+        {
+            _physicsStep.Dispose();
+        }
+
+        /// Smoothed torso height above the mat per fighter, sampled only while a
+        /// round is actually being fought. A countdown, a walk-in or a body lying
+        /// limp after the bell would otherwise drag the figure toward whatever
+        /// pose the ceremony left them in — the question this answers is "how tall
+        /// do they FIGHT", not "where is the torso right now".
+        private void SamplePosture()
+        {
+            if (_manager == null || !_manager.ScoringLive)
+            {
+                return;
+            }
+            SampleHeight(_manager.wrestlerA, ref _fightHeightA, ref _heightSamplesA);
+            SampleHeight(_manager.wrestlerB, ref _fightHeightB, ref _heightSamplesB);
+        }
+
+        private static void SampleHeight(Agent_Biped agent, ref float smoothed, ref int samples)
+        {
+            if (agent == null)
+            {
+                return;
+            }
+            Agent_BipedBody body = agent.GetComponent<Agent_BipedBody>();
+            if (body == null || body.Torso == null || body.IsLimp)
+            {
+                return;
+            }
+            float height = body.Torso.position.y - agent.arenaGroundY;
+            // An exponential mean over roughly the last ten samples (5 s at 2 Hz):
+            // long enough that one shove does not trip the line, short enough that
+            // a fighter who gets up stops being reported as down.
+            smoothed = samples == 0 ? height : Mathf.Lerp(smoothed, height, 0.1f);
+            samples++;
+        }
+
+        /// Mean Physics2D.Simulate cost per step over the recorder's window, in
+        /// milliseconds, or -1 when the marker is unavailable — which is every
+        /// release build, where profiler markers are compiled out. The line it
+        /// feeds simply does not appear there.
+        private float PhysicsMsPerStep()
+        {
+            if (!_physicsStep.Valid || _physicsStep.Count == 0)
+            {
+                return -1f;
+            }
+            long nanoseconds = 0;
+            long steps = 0;
+            for (int sampleIndex = 0; sampleIndex < _physicsStep.Count; sampleIndex++)
+            {
+                ProfilerRecorderSample sample = _physicsStep.GetSample(sampleIndex);
+                nanoseconds += sample.Value;
+                steps += sample.Count;
+            }
+            return steps > 0 ? nanoseconds / (float)steps * 1e-6f : -1f;
+        }
+
+        /// The NEEDS ATTENTION block: only lines that are true, most serious
+        /// first, and the whole box hidden when there are none.
+        ///
+        /// Thresholds are the measured ones, not round numbers. Standing torso
+        /// height is 1.06 m and the shipped fighters were measured fighting at
+        /// 0.26-0.62 m, so anything under KNEES_BELOW is the crawl, not a crouch.
+        /// The round share is the "what fraction of rounds end before
+        /// shrinkStartSeconds" measurement CLAUDE.md asks to be re-run before
+        /// touching the fight — it was 6% — now simply kept running.
+        private void RefreshAttention()
+        {
+            if (_attention == null)
+            {
+                return;
+            }
+            _sb.Clear();
+
+            if (_manager != null)
+            {
+                AppendBrainLine(_manager.wrestlerA);
+                AppendBrainLine(_manager.wrestlerB);
+                AppendPostureLine(_manager.wrestlerA, _fightHeightA, _heightSamplesA);
+                AppendPostureLine(_manager.wrestlerB, _fightHeightB, _heightSamplesB);
+            }
+
+            int rounds = Systems_SessionStats.Rounds;
+            if (rounds >= MIN_ROUNDS_FOR_SHARE)
+            {
+                int early = Systems_SessionStats.RoundsBeforeShrink;
+                if (early * 4 < rounds)
+                {
+                    AttentionLine();
+                    _sb.Append("Only ").Append(early).Append(" of ").Append(rounds)
+                       .Append(" rounds this session ended before the mat started closing. ")
+                       .Append("The shrinking mat is deciding the rounds, not the fighters.");
+                }
+            }
+
+            int stalls = Systems_SessionStats.WalkInStalls;
+            if (stalls > 0)
+            {
+                AttentionLine();
+                _sb.Append(stalls).Append(" of ").Append(Systems_SessionStats.WalkIns)
+                   .Append(stalls == 1 ? " walk-in" : " walk-ins")
+                   .Append(" this session stopped short of contact. ")
+                   .Append("The fighters could not walk to each other.");
+            }
+
+            float physicsMs = PhysicsMsPerStep();
+            if (physicsMs > PHYSICS_MS_HIGH)
+            {
+                AttentionLine();
+                _sb.Append("Physics is slow: ").Append(physicsMs.ToString("F1"))
+                   .Append(" ms per step, of a 20 ms budget.");
+            }
+
+            bool any = _sb.Length > 0;
+            _attentionBox.style.display = any ? DisplayStyle.Flex : DisplayStyle.None;
+            if (any)
+            {
+                _attention.text = _sb.ToString();
+            }
+        }
+
+        /// Separates lines with a blank one; the first line gets nothing.
+        private void AttentionLine()
+        {
+            if (_sb.Length > 0)
+            {
+                _sb.Append("\n\n");
+            }
+        }
+
+        private void AppendBrainLine(Agent_Biped agent)
+        {
+            if (agent == null || agent.useBot)
+            {
+                return;
+            }
+            if (agent.inferenceModel == null)
+            {
+                AttentionLine();
+                _sb.Append(DisplayName(agent)).Append(" has no brain assigned and will not fight.");
+            }
+            else if (agent.BrainStale)
+            {
+                AttentionLine();
+                _sb.Append(DisplayName(agent))
+                   .Append("'s brain was rejected: it was trained for a different set of senses, ")
+                   .Append("so this fighter will not move. It needs retraining.");
+            }
+        }
+
+        private void AppendPostureLine(Agent_Biped agent, float height, int samples)
+        {
+            if (agent == null || samples < MIN_HEIGHT_SAMPLES || height >= KNEES_BELOW)
+            {
+                return;
+            }
+            AttentionLine();
+            _sb.Append(DisplayName(agent)).Append(" is fighting on the knees (torso ")
+               .Append(height.ToString("F2")).Append(" m up; standing is ")
+               .Append(STANDING_HEIGHT.ToString("F2")).Append(" m).");
+        }
+
+        private static string DisplayName(Agent_Biped agent)
+        {
+            string name = string.IsNullOrEmpty(agent.displayNameOverride)
+                ? agent.behaviorName
+                : agent.displayNameOverride;
+            return name != null ? name.ToUpperInvariant() : "FIGHTER";
         }
 
         private void SampleFighter(FighterCard card, Agent_Biped agent)
@@ -442,6 +670,7 @@ namespace PoSumo
 
         private void Refresh()
         {
+            RefreshAttention();
             if (_manager != null)
             {
                 RefreshHeadline();

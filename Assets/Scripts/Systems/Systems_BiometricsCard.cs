@@ -34,8 +34,8 @@ namespace PoSumo
         private Systems_GameMatchManager _manager;
         private Systems_FightHud _fightHud;
         /// True when drawing into the FightHud's side anchors (one-strip dock)
-        /// rather than a standalone card — the sides are then identified by their
-        /// team-coloured base and the scorebug, so the caption drops the name.
+        /// rather than a standalone card — there the history sits under that
+        /// fighter's STAMINA bar and carries no caption of its own.
         private bool _stripMode;
         private Agent_BipedBody _bodyA, _bodyB;
 
@@ -49,9 +49,10 @@ namespace PoSumo
         private int _headB = BARS;
 
         private Label _captionA, _captionB;
-        private string _shownCaptionA = string.Empty, _shownCaptionB = string.Empty;
         private float _peakImpactA, _peakImpactB;
-        private float _peakAdrenalineA = 1f, _peakAdrenalineB = 1f;
+        /// The peak each caption was last written for. -1 = never written, so
+        /// the first refresh always paints (a fresh round's peak is 0).
+        private float _shownPeakA = -1f, _shownPeakB = -1f;
 
         private float _sampleLeft;
         private bool _subscribed;
@@ -112,7 +113,6 @@ namespace PoSumo
         {
             ResolveBodies();
             _peakImpactA = _peakImpactB = 0f;
-            _peakAdrenalineA = _peakAdrenalineB = 1f;
         }
 
         private void OnMatchReset()
@@ -134,6 +134,9 @@ namespace PoSumo
         /// contacts are not strikes.
         private void OnImpact(Sensor_Impact reporter, Collision2D collision)
         {
+            // The peak only feeds the standalone card's caption; the strip has
+            // none, so there is nothing to measure for.
+            if (_stripMode) return;
             if (reporter == null || reporter.owner == null) return;
 
             var other = collision.collider.GetComponentInParent<Agent_BipedBody>();
@@ -169,10 +172,6 @@ namespace PoSumo
                     _sampleLeft = SAMPLE_INTERVAL;
                     WriteHistory();
                 }
-
-                // Adrenaline peaks ride the crowd's boost while the round is live.
-                if (_bodyA != null) _peakAdrenalineA = Mathf.Max(_peakAdrenalineA, _bodyA.adrenaline);
-                if (_bodyB != null) _peakAdrenalineB = Mathf.Max(_peakAdrenalineB, _bodyB.adrenaline);
             }
 
             RefreshCaptions();
@@ -206,37 +205,39 @@ namespace PoSumo
         {
             if (_captionA == null) return;
 
-            string a = BuildCaptionLine(_manager != null ? _manager.wrestlerA : null,
-                                        _peakImpactA, _peakAdrenalineA);
-            if (a != _shownCaptionA)
+            // Compared on the NUMBER, not on the finished string. This used to
+            // build both caption strings on every rendered frame and then compare
+            // them to the last ones shown — four string allocations a frame to
+            // discover that nothing had changed, in a per-frame path on Android.
+            if (!Mathf.Approximately(_peakImpactA, _shownPeakA))
             {
-                _shownCaptionA = a;
-                _captionA.text = a;
+                _shownPeakA = _peakImpactA;
+                _captionA.text = BuildCaptionLine(_manager != null ? _manager.wrestlerA : null,
+                                                  _peakImpactA);
                 _captionA.style.color = _manager != null ? _manager.colorA : Systems_UiKit.TextHi;
             }
 
-            string b = BuildCaptionLine(_manager != null ? _manager.wrestlerB : null,
-                                        _peakImpactB, _peakAdrenalineB);
-            if (b != _shownCaptionB)
+            if (!Mathf.Approximately(_peakImpactB, _shownPeakB))
             {
-                _shownCaptionB = b;
-                _captionB.text = b;
+                _shownPeakB = _peakImpactB;
+                _captionB.text = BuildCaptionLine(_manager != null ? _manager.wrestlerB : null,
+                                                  _peakImpactB);
                 _captionB.style.color = _manager != null ? _manager.colorB : Systems_UiKit.TextHi;
             }
         }
 
-        private string BuildCaptionLine(Agent_Biped fighter, float peakImpact, float peakAdrenaline)
+        private string BuildCaptionLine(Agent_Biped fighter, float peakImpact)
         {
-            string adrenaline = peakAdrenaline > 1.01f
-                ? peakAdrenaline.ToString("F2")
-                : "-";
-            string readings = "PK " + peakImpact.ToString("F1") + "  AD " + adrenaline;
-            // In the strip the side is already identified by its team-coloured
-            // base and the scorebug above — the name was 60% of a 27%-wide slot.
-            if (_stripMode)
-            {
-                return readings;
-            }
+            // Plain words. This read "PK 5.4  AD 1.12" — peak impact speed and the
+            // crowd's torque multiplier — which nobody watching could decode. The
+            // hardest hit is the one a viewer can picture, so it is spelled out
+            // with its unit; the crowd figure went, because the caster already
+            // SAYS when a fighter has the crowd and a bare multiplier adds nothing.
+            // Only the standalone card (a scene with no fight HUD) shows this line;
+            // in the dock strip the history sits under the STAMINA bar uncaptioned.
+            string readings = peakImpact > 0f
+                ? "BEST HIT " + peakImpact.ToString("F1") + " m/s"
+                : "NO HIT YET";
             string name = fighter == null ? "—"
                 : !string.IsNullOrEmpty(fighter.displayNameOverride)
                     ? fighter.displayNameOverride
@@ -254,9 +255,15 @@ namespace PoSumo
             // scene with no Systems_FightHud.
             if (_fightHud != null && _fightHud.BioAnchorA != null && _fightHud.BioAnchorB != null)
             {
+                // History only, no caption: in the strip it sits directly under
+                // that fighter's STAMINA bar, which is the label it needs. The
+                // caption it used to carry ("PK 5.4  AD 1.12") was the densest
+                // line in the dock and the reason the strip overflowed its card
+                // on a 4:3 panel; _captionA/B stay null and RefreshCaptions
+                // returns on that.
                 _stripMode = true;
-                BuildSide(_fightHud.BioAnchorA, _barsA, out _captionA);
-                BuildSide(_fightHud.BioAnchorB, _barsB, out _captionB);
+                BuildHistory(_fightHud.BioAnchorA, _barsA);
+                BuildHistory(_fightHud.BioAnchorB, _barsB);
                 return;
             }
 
@@ -287,7 +294,12 @@ namespace PoSumo
             caption = Systems_UiKit.Caption("—", Systems_UiKit.FONT_MICRO, Systems_UiKit.TextMid, true);
             caption.style.unityTextAlign = TextAnchor.MiddleLeft;
             host.Add(caption);
+            BuildHistory(host, bars);
+        }
 
+        /// The stamina sparkline on its own: BARS thin columns, newest rightmost.
+        private static void BuildHistory(VisualElement host, VisualElement[] bars)
+        {
             VisualElement row = Systems_UiKit.Row(Align.FlexEnd);
             row.style.height = 16;
             row.style.marginTop = Systems_UiKit.SPACE_1;

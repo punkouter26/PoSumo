@@ -2,6 +2,9 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UIElements;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 
 namespace PoSumo
 {
@@ -114,6 +117,19 @@ namespace PoSumo
         private VisualElement _paneRecord;
         private Systems_CareerScreen _careerScreen;
         private Systems_PromotionCeremony _promotionCeremony;
+
+        /// The three round blocks (header + card) and the last height each was
+        /// laid out at — see FitRounds.
+        private VisualElement _quarterfinalGroup, _semifinalGroup, _finalGroup;
+        private float _seedingHeight, _quarterfinalHeight, _semifinalHeight, _finalHeight;
+
+        /// The settings bottom sheet (top-right menu button) and the two layers
+        /// it is shown on — see BuildSettings.
+        private Systems_SettingsSheet _settings;
+        private VisualElement _settingsScrim, _settingsLayer;
+        private bool _settingsOpen;
+        /// The fighter debug panel behind the DBG chip; held so TAB can toggle it.
+        private Systems_AgentDebug _agentDebug;
         /// Promotion banner. Shown once, on the first Refresh after returning from
         /// a match that moved somebody up or down the banzuke. Lives on the
         /// BRACKET pane — that is where the player lands coming back from a bout.
@@ -294,13 +310,16 @@ namespace PoSumo
             // sixth child and failed the gate on the first run.
             var debugLayer = new VisualElement().Fill().NoPick();
             Systems_AgentDebug bracketDebug = Systems_AgentDebug.Attach(transform, debugLayer, null);
+            _agentDebug = bracketDebug;
             Systems_ScreenChrome bracketChrome = Systems_ScreenChrome.Attach(
                 transform, chromeLayer,
-                // Resolved on press. The TR menu IS the route to the RECORD tab —
-                // the career overlay it used to open no longer exists (it was
-                // merged into that pane), so there is one entry point and no
-                // second surface. The panes are built further down this method.
-                () => SelectTab(TAB_RECORD),
+                // The TR menu opens the settings sheet, here exactly as in the
+                // arena — one button, one meaning, on both screens. It used to
+                // jump to the RECORD tab, which already has a tab of its own one
+                // row below, so the menu was a second door to the same room and
+                // the bracket had no settings at all. Resolved on press: the
+                // sheet is built at the end of this method.
+                ToggleSettings,
                 bracketDebug != null ? (System.Action)bracketDebug.Toggle : null);
             if (bracketDebug != null)
             {
@@ -365,6 +384,11 @@ namespace PoSumo
             VisualElement final = AddRound("FINAL");
             AddResultRow(final, feederA: 4, feederB: 5,
                          winnerMatch: Systems_TournamentState.FINAL_MATCH);
+            // The header+card blocks, for FitRounds: a round card's parent is its
+            // group (see AddRound).
+            _quarterfinalGroup = quarterfinals.parent;
+            _semifinalGroup = semifinals.parent;
+            _finalGroup = final.parent;
 
             BuildSpotlight();
 
@@ -502,12 +526,100 @@ namespace PoSumo
             // announcement for a rank change the arena's result card never showed
             // (a reveal that never ran), and it must draw over everything when it
             // does fire.
+            //
+            // The settings sheet goes in just under it, built the same way: a
+            // layer INSIDE this document, never a second UIDocument.
+            VisualElement settingsSafe = BuildSettings();
             _promotionCeremony = new Systems_PromotionCeremony(_root);
 
-            Systems_SafeArea.Attach(transform, screen, _promotionCeremony.SafeAreaTarget);
+            Systems_SafeArea.Attach(transform, screen, _promotionCeremony.SafeAreaTarget, settingsSafe);
 
             _root.RegisterCallback<PointerMoveEvent>(OnPointerMove);
             _root.RegisterCallback<PointerUpEvent>(OnPointerUp);
+        }
+
+        /// The settings bottom sheet, as two sibling layers on `_root`: a full-bleed
+        /// scrim, and above it a safe-area-inset layer holding the sheet.
+        ///
+        /// Two layers and not one for the rule in `Assets/UI Toolkit/README.md`:
+        /// an absolute child resolves its offsets against its parent's PADDING
+        /// box, so a scrim under the inset stops at the notch and leaves an
+        /// undimmed strip top and bottom. The returned layer is the one the
+        /// safe-area watcher pads; the gutters therefore live one level further
+        /// in, because the watcher overwrites all four paddings on its target.
+        private VisualElement BuildSettings()
+        {
+            _settingsScrim = new VisualElement().Fill();
+            _settingsScrim.style.backgroundColor = Systems_UiKit.Backdrop;
+            _settingsScrim.style.display = DisplayStyle.None;
+            // A tap on the dimmed screen dismisses the sheet. The sheet itself is
+            // a sibling drawn above, so a tap ON it never reaches this.
+            _settingsScrim.RegisterCallback<PointerDownEvent>(_ => ToggleSettings());
+            _root.Add(_settingsScrim);
+
+            _settingsLayer = new VisualElement().Fill().NoPick();
+            _settingsLayer.style.display = DisplayStyle.None;
+            _root.Add(_settingsLayer);
+
+            // Bottom-anchored like the arena's dialogs: nearer the thumb, and the
+            // same place the same sheet appears mid-bout.
+            VisualElement gutter = new VisualElement().NoPick();
+            gutter.style.flexGrow = 1;
+            gutter.style.justifyContent = Justify.FlexEnd;
+            gutter.style.alignItems = Align.Center;
+            gutter.style.paddingLeft = Systems_UiKit.SPACE_5;
+            gutter.style.paddingRight = Systems_UiKit.SPACE_5;
+            gutter.style.paddingBottom = Systems_UiKit.SPACE_5;
+            _settingsLayer.Add(gutter);
+
+            _settings = new Systems_SettingsSheet(
+                "SETTINGS",
+                "Push your opponent out of the ring. The mat closes in until someone goes."
+                + (_tuning != null && _tuning.tournamentPointsToWin >= 1
+                    ? $" First to {_tuning.tournamentPointsToWin} rounds wins a bracket match."
+                    : string.Empty));
+            // The same switch the footer's AUTO button flips while a bracket is
+            // running; here it can be set BEFORE pressing START as well.
+            _settings.AddGameplayToggle("PLAY MATCHES AUTOMATICALLY", () => _autoPlay, ToggleAuto);
+            if (_agentDebug != null)
+            {
+                _settings.AddDisplayAction("FIGHTER DEBUG (TAB KEY)", "OPEN", OpenDebugFromSettings);
+            }
+            _settings.AddFooterButton(Systems_UiKit.PrimaryButton("CLOSE", ToggleSettings));
+            gutter.Add(_settings.Card);
+
+            Systems_SettingsSheet.ApplyMutePreference();
+            return _settingsLayer;
+        }
+
+        /// The top-right menu button, the sheet's CLOSE, a tap on the scrim and
+        /// the back key all land here.
+        private void ToggleSettings()
+        {
+            if (_settingsLayer == null)
+            {
+                return;
+            }
+            _settingsOpen = !_settingsOpen;
+            DisplayStyle display = _settingsOpen ? DisplayStyle.Flex : DisplayStyle.None;
+            _settingsScrim.style.display = display;
+            _settingsLayer.style.display = display;
+            if (_settingsOpen)
+            {
+                _settingsScrim.FadeIn(Systems_UiKit.MOTION_FAST);
+                _settings.Card.RiseIn(48f);
+            }
+        }
+
+        /// The debug panel sits UNDER the settings layer on this screen, so the
+        /// sheet has to get out of its way.
+        private void OpenDebugFromSettings()
+        {
+            if (_settingsOpen)
+            {
+                ToggleSettings();
+            }
+            _agentDebug.Toggle();
         }
 
         /// A fresh pane in the pane host: a padded column, hidden until its tab
@@ -865,6 +977,77 @@ namespace PoSumo
 
         private void OnBracketPaneGeometry(GeometryChangedEvent evt) => FitSpotlight();
 
+        /// While SEEDING, shows the later rounds only if the pane has the height
+        /// for them — the same "only when it fits" rule as the spotlight, and for
+        /// the same reason: this screen does not scroll, so a block that does not
+        /// fit must not exist rather than push its neighbours off the pane.
+        ///
+        /// MEASURED at 1200x1600 (a 960pt panel, 629pt of pane): hint + palette
+        /// 217, QUARTERFINALS 311, SEMIFINALS 191, FINAL 131 — 850pt, 206 over,
+        /// with the FINAL card drawn underneath the pinned footer and the status
+        /// line printed across the semifinal row. Chip heights had already been
+        /// cut once (66 -> 48) to chase this and there is no 200pt left in them.
+        ///
+        /// What gives way is what carries no information at that moment. Before
+        /// START the FINAL is always "- v -", and the SEMIFINALS show only the
+        /// byes' walkovers, which the quarterfinal card's own winner column
+        /// already shows. The palette and the quarterfinals — the two things a
+        /// player is actually dragging between — are never dropped. Once the
+        /// bracket is running the palette is gone and all three rounds return.
+        ///
+        /// Decided from each block's NATURAL height, remembered from when it was
+        /// last laid out, never from its current one: a hidden block measures
+        /// zero, and a test that read that would show it again on the next pass
+        /// and flip every layout.
+        private void FitRounds()
+        {
+            if (_semifinalGroup == null || _finalGroup == null || _seedingGroup == null)
+            {
+                return;
+            }
+            RememberHeight(_seedingGroup, ref _seedingHeight);
+            RememberHeight(_quarterfinalGroup, ref _quarterfinalHeight);
+            RememberHeight(_semifinalGroup, ref _semifinalHeight);
+            RememberHeight(_finalGroup, ref _finalHeight);
+
+            bool showSemifinal = true;
+            bool showFinal = true;
+            float available = _paneBracket.contentRect.height;
+            if (!BracketLocked && !float.IsNaN(available) && available > 0f)
+            {
+                float core = _seedingHeight + _quarterfinalHeight;
+                showSemifinal = core + _semifinalHeight <= available + 1f;
+                showFinal = showSemifinal
+                            && core + _semifinalHeight + _finalHeight <= available + 1f;
+            }
+            SetDisplay(_semifinalGroup, showSemifinal);
+            SetDisplay(_finalGroup, showFinal);
+        }
+
+        private static void RememberHeight(VisualElement block, ref float remembered)
+        {
+            if (block.style.display == DisplayStyle.None)
+            {
+                return;
+            }
+            float height = block.layout.height;
+            if (!float.IsNaN(height) && height > 0f)
+            {
+                remembered = height;
+            }
+        }
+
+        /// Written only on a change: an identical inline write still dirties the
+        /// element, and this runs from a geometry callback.
+        private static void SetDisplay(VisualElement element, bool show)
+        {
+            DisplayStyle display = show ? DisplayStyle.Flex : DisplayStyle.None;
+            if (element.style.display != display)
+            {
+                element.style.display = display;
+            }
+        }
+
         /// Shows the spotlight when it is wanted AND the pane has the height for
         /// it; hides it otherwise.
         ///
@@ -877,6 +1060,7 @@ namespace PoSumo
             {
                 return;
             }
+            FitRounds();
             bool fits = false;
             if (_spotlightWanted)
             {
@@ -1370,7 +1554,12 @@ namespace PoSumo
             _statusLabel.text = $"{Systems_TournamentState.SEED_COUNT} slots · "
                                 + $"{Systems_TournamentState.FighterCount} fighters" + byeClause
                                 + BestOfClause();
-            _actionButton.text = "START TOURNAMENT";
+            // START, not START TOURNAMENT. The button shares its row with
+            // RESHUFFLE, so it is half the panel wide, and at FONT_TITLE the long
+            // caption is wider than that on every phone aspect — it rendered as
+            // "TART TOURNAMEN", clipped at both ends. The status line directly
+            // above already says what is being started.
+            _actionButton.text = "START";
         }
 
         /// Repaint one chip in place. Rebuilding the element would lose the
@@ -1398,6 +1587,15 @@ namespace PoSumo
         /// the user seeds the field, then watches the whole tournament play out.
         private void Update()
         {
+            ReadKeys();
+            // An open settings sheet holds the bracket: auto-play launching the
+            // next bout out from under a player who is half way through changing
+            // a setting would throw the sheet away with the scene.
+            if (_settingsOpen)
+            {
+                _autoTimer = 0f;
+                return;
+            }
             if (!_autoPlay) return;
             if (!Systems_TournamentState.Active || Systems_TournamentState.IsComplete) return;
             _autoTimer += Time.deltaTime;
@@ -1406,6 +1604,29 @@ namespace PoSumo
                 _autoTimer = 0f;
                 LaunchCurrentMatch();
             }
+        }
+
+        /// TAB toggles the fighter debug panel — the DBG chip's own Toggle, as in
+        /// the arena — and Escape (the Android back key) closes an open settings
+        /// sheet: back dismisses what the menu button opened. The static keyboard
+        /// device, like Systems_GameMatchManager; there is no action asset.
+        private void ReadKeys()
+        {
+#if ENABLE_INPUT_SYSTEM
+            Keyboard keyboard = Keyboard.current;
+            if (keyboard == null)
+            {
+                return;
+            }
+            if (keyboard.tabKey.wasPressedThisFrame && _agentDebug != null)
+            {
+                _agentDebug.Toggle();
+            }
+            if (keyboard.escapeKey.wasPressedThisFrame && _settingsOpen)
+            {
+                ToggleSettings();
+            }
+#endif
         }
 
         /// The START / PLAY MATCH / RESET action, reachable without a pointer.

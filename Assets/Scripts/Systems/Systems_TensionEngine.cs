@@ -211,6 +211,14 @@ namespace PoSumo
             {
                 return;
             }
+            // HUD density: at MINIMAL the row is not drawn at all. The ENGINE
+            // still runs — the camera director and the caster read WinProbA — so
+            // this returns before building anything rather than the companion
+            // being switched off. Repaint no-ops on the null fills.
+            if (!Systems_HudDensity.ShowsWinOdds)
+            {
+                return;
+            }
             // ONE-STRIP DOCK (zero-scroll consolidation): the FightHud centre
             // column — under the MAT meter — is the anchor this meter mounts into,
             // so it costs no card of its own. The standalone dock card below is
@@ -220,8 +228,10 @@ namespace PoSumo
 
             if (inStrip)
             {
-                _hud.TensionAnchor.Add(Systems_UiKit.Caption("WIN", Systems_UiKit.FONT_MICRO,
-                                                             Systems_UiKit.TextLow));
+                Label caption = Systems_UiKit.Caption("WIN CHANCE %", Systems_UiKit.FONT_MICRO,
+                                                      Systems_UiKit.TextLow).Tight();
+                caption.style.marginTop = Systems_UiKit.SPACE_1;
+                _hud.TensionAnchor.Add(caption);
             }
             else
             {
@@ -238,6 +248,12 @@ namespace PoSumo
             _labelA.style.unityTextAlign = TextAnchor.MiddleRight;
             _labelB = Systems_UiKit.Text("50", Systems_UiKit.FONT_SMALL, _manager.colorB, true);
             _labelB.style.unityTextAlign = TextAnchor.MiddleLeft;
+            if (inStrip)
+            {
+                // One text line each: the strip is height-capped. See Tight.
+                _labelA.Tight();
+                _labelB.Tight();
+            }
 
             VisualElement track = Systems_UiKit.Row();
             track.style.flexGrow = 1;

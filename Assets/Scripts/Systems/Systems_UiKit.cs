@@ -271,6 +271,21 @@ namespace PoSumo
             return label;
         }
 
+        /// Strips a label's vertical padding and margin, so it is exactly one text
+        /// line tall. The runtime theme gives every Label ~4pt of padding and
+        /// ~3pt of margin top and bottom — measured, a FONT_MICRO caption that
+        /// needs 26pt of line occupied 40. Invisible on a card with room to
+        /// spare; in the dock's live strip, which is capped at 28% of the panel
+        /// and stacks four captions, it was the whole overflow.
+        public static T Tight<T>(this T label) where T : Label
+        {
+            label.style.paddingTop = 0;
+            label.style.paddingBottom = 0;
+            label.style.marginTop = 0;
+            label.style.marginBottom = 0;
+            return label;
+        }
+
         /// A dark rounded surface. Every panel, drawer and dialog in the game is
         /// one of these, so they share a radius and a background by construction.
         public static VisualElement Card(Color background, int radius = RADIUS_MD)
