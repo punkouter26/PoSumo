@@ -19,7 +19,6 @@ This document is the canonical inventory of every shipped brain and the ragdoll 
 | **Grandma** (fka Standard) | `Assets/Agents/Grandma_v01/Grandma.onnx` | 2.13 MB | `obs_0` shape `[batch, 45]` | same shape set | 14 | ~445k | `standard_unified01` cold (15.0M, run id under the old name) | ~31 | ~1080 | **Production** |
 | **Nick** | `Assets/Agents/Nick_v01/Nick.onnx` | 2.13 MB | `obs_0` shape `[batch, 45]` | same shape set | 14 | ~445k | `nick_unified01` cold 3.75M + resumed to 15.0M | ~33 | ~1115 | **Production** |
 | **Kim** | `Assets/Agents/Kim_v01/Kim.onnx` | 2.13 MB | `obs_0` shape `[batch, 45]` | same shape set | 14 | ~445k | `kim_unified01` cold (15.0M) | ~30 | ~1050 | **Production** |
-| **Bot** | _none_ (deliberately brainless) | 0 | n/a | n/a | 0 | 0 | n/a | n/a | n/a | **Bot / no brain** |
 
 **Shared trunk** (every shipped `.onnx`):
 
@@ -49,7 +48,6 @@ The rig is the same 14-part biped for every fighter - what differs is **scale an
 | **Grandma** | Reference fighter (renamed from Standard 2026-09-22); default shaping and default body. | identical to Matt | identical to Matt | 13 | 69.6 | 1.00 / 1.00 / 1.00 | 1.76 m | Code defaults match character sheet defaults byte-for-byte; "no character assigned" is harmless. |
 | **Nick** | Light mobile perimeter fighter. Smallest body, highest cadence. | identical to Matt | identical to Matt | 13 | ~50 | 0.72 / 0.82 / 0.85 | ~1.51 m | Cadence 0.0032 (highest), `straightLegEarnFraction = 0.75` (not required to crouch). |
 | **Kim** | Heavy planted anchor. Wins by lean and impact, not by chase. | identical to Matt | identical to Matt | 13 | ~101 | 1.45 / 1.30 / 1.50 | ~1.76 m (same joint heights, wider trunk) | `straightLegEarnFraction = 0.15` (must be deep). Short-horizon PPO (gamma 0.99). |
-| **Bot** | Roster padding, deliberately brainless. | identical rig | `Agent_Bot` heuristic; motors cut on no-brain fallback | 13 | 69.6 | 1.00 / 1.00 / 1.00 | 1.76 m | Logs `character 'Bot' has no inferenceModel` at Error level on every match. |
 
 ### Joint inventory (all fighters share)
 

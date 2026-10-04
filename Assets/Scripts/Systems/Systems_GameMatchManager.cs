@@ -396,7 +396,7 @@ namespace PoSumo
                 // rather than by the tournament reporter: Start order between
                 // components is undefined, and this Start was overwriting the
                 // reporter's value, silently running brackets as best-of-5.
-                pointsToWin = Systems_TournamentState.Active || Systems_BotLadderState.Active
+                pointsToWin = Systems_TournamentState.Active
                     ? tuning.tournamentPointsToWin
                     : tuning.pointsToWin;
                 roundTimeoutSeconds = tuning.roundTimeoutSeconds;

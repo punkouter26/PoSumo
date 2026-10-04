@@ -330,12 +330,11 @@ namespace PoSumo
             }
         }
 
-        /// Null for the heuristic bot, matching Systems_CareerRecorder: a bot
-        /// bout is unrated, so it gets the neutral prior rather than a record
-        /// invented for it under a key nothing else will ever read.
+        /// The career key, or null for a fighter with no character sheet — which
+        /// gets the neutral prior rather than a record invented for it.
         private static string BehaviourName(Agent_Biped fighter)
         {
-            if (fighter == null || fighter.character == null || fighter.character.useBot)
+            if (fighter == null || fighter.character == null)
             {
                 return null;
             }

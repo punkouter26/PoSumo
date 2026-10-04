@@ -34,9 +34,20 @@ namespace PoSumo
     /// entrants minus one, whatever the draw).
     public static class Systems_TournamentState
     {
-        public const int SEED_COUNT = 8;
-        public const int MATCH_COUNT = 7;
-        public const int FINAL_MATCH = 6;
+        // FOUR SLOTS SINCE 2026-10-04. The heuristic Bot was removed from the game
+        // at the user's request, leaving exactly four RL-trained fighters, so the
+        // frame went 8 seeds / 7 matches -> 4 seeds / 3 matches: two semifinals
+        // and a final, every slot filled, no byes. The header above describes the
+        // eight-slot frame this replaced; the indices are now
+        //   0..1  semifinals — seeds (0,1) (2,3)
+        //   2     final      — winners of 0 and 1
+        // Everything below is written against these three constants, and the bye
+        // / walkover machinery is kept: a roster of three still draws one bye.
+        public const int SEED_COUNT = 4;
+        public const int MATCH_COUNT = SEED_COUNT - 1;
+        public const int FINAL_MATCH = MATCH_COUNT - 1;
+        /// Matches whose entrants are SEEDS rather than earlier winners.
+        public const int FIRST_ROUND_MATCHES = SEED_COUNT / 2;
 
         // What happened to a match slot. A null winner is ambiguous on its own —
         // "not played yet" and "a walkover between two byes" both carry nobody —
@@ -72,7 +83,7 @@ namespace PoSumo
         /// it should use the bracket's pairing rather than its own roster.
         public static bool Active { get; private set; }
 
-        /// Index of the match currently being played (0..6). Walkovers are
+        /// Index of the match currently being played (0..2). Walkovers are
         /// stepped over, so while `Active` this always names a real bout.
         public static int CurrentMatch { get; private set; }
 
@@ -130,8 +141,7 @@ namespace PoSumo
         public static string RoundName(int match)
         {
             if (match >= FINAL_MATCH) return "FINAL";
-            if (match >= 4) return "SEMIFINAL";
-            return "QUARTERFINAL";
+            return "SEMIFINAL";
         }
 
         public static Agent_CharacterDefinition GetSeed(int slot) => _seeds[slot];
@@ -156,7 +166,7 @@ namespace PoSumo
         }
 
         /// Returns true when the match's outcome is already determined, with the
-        /// fighter it sends on (possibly nobody). Depth is at most three.
+        /// fighter it sends on (possibly nobody). Depth is at most two.
         private static bool Resolve(int match, out Agent_CharacterDefinition winner)
         {
             winner = null;
@@ -170,7 +180,7 @@ namespace PoSumo
             Agent_CharacterDefinition b;
             bool knownA = true;
             bool knownB = true;
-            if (match < 4)
+            if (match < FIRST_ROUND_MATCHES)
             {
                 a = _seeds[match * 2];
                 b = _seeds[match * 2 + 1];
@@ -189,8 +199,9 @@ namespace PoSumo
         }
 
         /// First of the two matches that feed `match` (the other is the next
-        /// index): match 4 <- 0,1   match 5 <- 2,3   final <- 4,5.
-        private static int FeederOf(int match) => match == FINAL_MATCH ? 4 : (match - 4) * 2;
+        /// index). In the four-slot frame only the final is fed: final <- 0,1.
+        /// (The same formula gave 4 <- 0,1  5 <- 2,3  6 <- 4,5 on eight slots.)
+        private static int FeederOf(int match) => (match - FIRST_ROUND_MATCHES) * 2;
 
         public static void SetSeed(int slot, Agent_CharacterDefinition character)
         {
@@ -231,7 +242,7 @@ namespace PoSumo
         public static void GetEntrants(int match, out Agent_CharacterDefinition a,
                                        out Agent_CharacterDefinition b)
         {
-            if (match < 4)
+            if (match < FIRST_ROUND_MATCHES)
             {
                 a = _seeds[match * 2];
                 b = _seeds[match * 2 + 1];
@@ -260,7 +271,7 @@ namespace PoSumo
         /// remaining slots left empty as byes.
         ///
         /// The byes are dealt one per quarterfinal pair before any pair gets a
-        /// second, so a five-fighter draw is three "fighter v BYE" rows and one
+        /// second, so (on the old eight-slot frame) five fighters drew three "fighter v BYE" rows and one
         /// real quarterfinal rather than a dead "BYE v BYE" row beside two real
         /// ones. Which pairs get them, and which side of the pair, is shuffled.
         public static void AutoSeed(Agent_CharacterDefinition[] roster, int shuffleSalt)
@@ -547,7 +558,17 @@ namespace PoSumo
         {
             summary = default;
             SaveFile file = LoadSave();
-            if (file == null || !Resolves(file, roster)) return false;
+            if (file == null || !Resolves(file, roster))
+            {
+                // A save this build cannot pick up is DISCARDED, not left on disk
+                // to be re-read and re-rejected on every launch: one written on
+                // the old eight-slot frame (the array lengths no longer match), or
+                // one naming a fighter that no longer exists — the heuristic Bot
+                // was removed on 2026-10-04 and a bracket saved before that names
+                // it. No-op when there is simply no file.
+                DeleteSave();
+                return false;
+            }
 
             int fighters = 0;
             for (int slot = 0; slot < SEED_COUNT; slot++)
@@ -561,7 +582,7 @@ namespace PoSumo
             }
 
             int current = file.currentMatch;
-            if (current < 4)
+            if (current < FIRST_ROUND_MATCHES)
             {
                 summary.FighterA = file.seeds[current * 2];
                 summary.FighterB = file.seeds[current * 2 + 1];

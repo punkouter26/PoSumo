@@ -7,10 +7,6 @@ flowchart TB
         IDX1["Build index 1<br/>SCN_SUMO"]:::bs
     end
 
-    subgraph Stale["Tracked but NOT in build settings  (do not delete)"]
-        BOT["SCN_BOT<br/>deliberately brainless Bot_v01"]:::stale
-    end
-
     subgraph TrainScn["Training scenes  Assets/Scenes/Training"]
         direction LR
         TM[SCN_TRAIN_MATT]:::tr
@@ -43,7 +39,7 @@ flowchart TB
         TR_Ref[Systems_SumoMatchManager]:::mgr
         TR_Fighters["4 sumo agents<br/>+ 6 walk agents on lane below"]:::body
         TR_Static["Walk target<br/>virtual opponent anchor"]:::body
-        TR_Cam[Fixed overhead camera]:::mgr
+        TR_Cam["Systems_TrainingSpectator<br/>Editor-only camera, spawned from code"]:::mgr
     end
 
     IDX0 --> Tour
@@ -52,7 +48,6 @@ flowchart TB
     TS --> Trn
     TN --> Trn
     TK --> Trn
-    BOT -.->|not loaded| Stale
 
     classDef bs fill:#eef6ff,stroke:#3a78c2,color:#0e2a4d
     classDef stale fill:#f0f0f0,stroke:#999,color:#444,stroke-dasharray: 5 5

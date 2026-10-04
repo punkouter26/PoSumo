@@ -119,6 +119,13 @@ namespace PoSumo
         private float _focusCenteringX = FOCUS_CENTERING_DEFAULT;
         private float _focusCenteringY = FOCUS_CENTERING_DEFAULT;
         private const float FOCUS_CENTERING_DEFAULT = 0.75f;
+        /// True while the live punch-in is a TWO-SHOT: it may tighten and lean
+        /// toward its focus, but never past the point where the other fighter
+        /// leaves the frame. See PunchIn.
+        private bool _focusKeepsPair;
+        /// Metres of clear frame kept outside each torso in a two-shot. A torso
+        /// position is a centre line; the body around it is about this wide.
+        private const float PAIR_BODY_MARGIN = 0.45f;
 
         /// What to punch in on for a fighter: the head if it has drawn face art,
         /// otherwise the torso. Lives here rather than at each call site because
@@ -139,10 +146,27 @@ namespace PoSumo
         /// a shot that has to ARRIVE inside its own duration rather than merely
         /// lean that way. `centeringX`/`centeringY` at 1 frame the focus alone on
         /// that axis. See the fields.
+        ///
+        /// `keepPair` makes it a TWO-SHOT, and any shot fired WHILE A ROUND IS
+        /// BEING FOUGHT should pass it. A plain punch-in takes `ortho` as given:
+        /// in portrait the visible half-width is ortho x aspect, so 1.9 shows
+        /// +/-0.82 m, and the fighters stand 1.0-1.7 m apart in an exchange.
+        /// MEASURED 2026-10-04 with a per-frame probe on a live bout: every frame
+        /// in which a fighter's torso left the frame during a live round belonged
+        /// to the knockback close-up (ortho 1.9, centring 0.75) — the attacker
+        /// was cut out, and with a 3 s cooldown that shot is live for much of a
+        /// clinch. The two other offenders the probe saw were the round-end
+        /// winner zoom and the intro face beat, both deliberate single-fighter
+        /// close-ups fired when nothing is being decided, and both left alone.
+        ///
+        /// With `keepPair` the shot still tightens and still leans on its focus,
+        /// but the ortho is floored at what the PAIR needs at this aspect and the
+        /// frame centre is held where both torsos stay inside it.
         public void PunchIn(Transform focus, float ortho, float realSeconds,
                             float blendSpeed = 0f,
                             float centeringX = FOCUS_CENTERING_DEFAULT,
-                            float centeringY = FOCUS_CENTERING_DEFAULT)
+                            float centeringY = FOCUS_CENTERING_DEFAULT,
+                            bool keepPair = false)
         {
             _focus = focus;
             _focusOrtho = ortho;
@@ -150,6 +174,7 @@ namespace PoSumo
             _shotSmoothing = blendSpeed;
             _focusCenteringX = Mathf.Clamp01(centeringX);
             _focusCenteringY = Mathf.Clamp01(centeringY);
+            _focusKeepsPair = keepPair;
         }
 
         /// Hold a wide establishing shot of the whole arena, centred on the ring
@@ -205,6 +230,7 @@ namespace PoSumo
             _shotSmoothing = 0f;
             _focusCenteringX = FOCUS_CENTERING_DEFAULT;
             _focusCenteringY = FOCUS_CENTERING_DEFAULT;
+            _focusKeepsPair = false;
         }
 
         private void Awake()
@@ -384,6 +410,12 @@ namespace PoSumo
             bool wideActive = Time.realtimeSinceStartup < _wideUntil;
             bool focusActive = !wideActive && _focus != null && Time.realtimeSinceStartup < _focusUntil;
             if (focusActive) targetOrtho = Mathf.Min(targetOrtho, _focusOrtho);
+            // A two-shot never goes tighter than the pair. Not clamped to minOrtho:
+            // that floor is tuned for the FOLLOW, and two fighters in a clinch fit
+            // in less — which is the whole reason to punch in on one.
+            bool pairShot = focusActive && _focusKeepsPair;
+            float pairHalfWidth = halfDist + PAIR_BODY_MARGIN;
+            if (pairShot) targetOrtho = Mathf.Max(targetOrtho, pairHalfWidth / _cam.aspect);
             if (wideActive) targetOrtho = wideOrtho;
 
             // A live shot may override the follow smoothing; see _shotSmoothing.
@@ -398,8 +430,19 @@ namespace PoSumo
 
             if (focusActive)
             {
+                float pairMid = mid;
                 mid = Mathf.Lerp(mid, _focus.position.x, _focusCenteringX);
                 midY = Mathf.Lerp(midY, _focus.position.y, _focusCenteringY);
+                if (pairShot)
+                {
+                    // How far the centre may lean off the pair's midpoint before a
+                    // torso (plus its body margin) crosses the frame edge. Measured
+                    // against the TARGET ortho, not the current one, so the lean is
+                    // where the blend is going rather than chasing it. At the pair
+                    // floor this is zero and the shot is centred on the two of them.
+                    float slack = Mathf.Max(0f, targetOrtho * _cam.aspect - pairHalfWidth);
+                    mid = Mathf.Clamp(mid, pairMid - slack, pairMid + slack);
+                }
             }
 
             // The wide shot frames the ARENA, so it overrides the follow target

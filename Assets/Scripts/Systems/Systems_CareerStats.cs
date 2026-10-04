@@ -133,6 +133,7 @@ namespace PoSumo
                     if (parsed != null && parsed.records != null)
                     {
                         _data = parsed;
+                        DropRetiredFighters();
                     }
                 }
             }
@@ -141,6 +142,30 @@ namespace PoSumo
                 // A corrupt or unreadable save must never block play — start fresh.
                 Debug.LogWarning($"Systems_CareerStats: could not read {Path} ({e.Message}); starting a new career.");
                 _data = new SaveFile();
+            }
+        }
+
+        /// Behavior names that once had a record and no longer exist as fighters.
+        ///
+        /// "Bot" was the hand-coded heuristic fighter, removed from the game on
+        /// 2026-10-04. Its bouts were unrated, so its record is a zero row at the
+        /// default 1000 — but `Ranked()` returns every record, so a career.json
+        /// written before the removal would keep a BOT line on the banzuke and
+        /// the fighters table for ever. Dropping a never-rated row moves no Elo,
+        /// so the zero-sum pool the banzuke thresholds assume is untouched.
+        private static readonly string[] RetiredFighters = { "Bot" };
+
+        /// In memory only; the pruned list reaches disk on the next ordinary
+        /// Save. Reading a save must never be what rewrites it.
+        private static void DropRetiredFighters()
+        {
+            for (int recordIndex = _data.records.Count - 1; recordIndex >= 0; recordIndex--)
+            {
+                Record record = _data.records[recordIndex];
+                if (record == null || System.Array.IndexOf(RetiredFighters, record.fighter) >= 0)
+                {
+                    _data.records.RemoveAt(recordIndex);
+                }
             }
         }
 

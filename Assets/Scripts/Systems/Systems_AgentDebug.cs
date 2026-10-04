@@ -586,7 +586,7 @@ namespace PoSumo
 
         private void AppendBrainLine(Agent_Biped agent)
         {
-            if (agent == null || agent.useBot)
+            if (agent == null)
             {
                 return;
             }
@@ -743,11 +743,7 @@ namespace PoSumo
             // heuristic with no error a player would ever see. Printing the vector
             // shape next to the model name is what makes that visible on a phone.
             _sb.Clear();
-            if (agent.useBot)
-            {
-                _sb.Append("brain: hand-coded bot (no neural policy)");
-            }
-            else if (agent.inferenceModel != null)
+            if (agent.inferenceModel != null)
             {
                 _sb.Append("brain: ").Append(agent.inferenceModel.name).Append(".onnx");
             }
@@ -793,7 +789,7 @@ namespace PoSumo
                 : 1f;
             float effort = MeanEffort(agent);
 
-            if (!agent.useBot && agent.inferenceModel == null)
+            if (agent.inferenceModel == null)
             {
                 verdict = "No brain assigned.";
                 advice = "This fighter is running ML-Agents' fallback heuristic, not a policy. "

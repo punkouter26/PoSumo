@@ -341,10 +341,9 @@ namespace PoSumo
             if (Time.unscaledTime >= _nextRescan)
             {
                 _nextRescan = Time.unscaledTime + 5f;
-                _audioSources = FindObjectsByType<AudioSource>(FindObjectsSortMode.None);
-                _particleSystems = FindObjectsByType<ParticleSystem>(FindObjectsSortMode.None);
-                _lightCount = FindObjectsByType<UnityEngine.Rendering.Universal.Light2D>(
-                    FindObjectsSortMode.None).Length;
+                _audioSources = FindObjectsByType<AudioSource>();
+                _particleSystems = FindObjectsByType<ParticleSystem>();
+                _lightCount = FindObjectsByType<UnityEngine.Rendering.Universal.Light2D>().Length;
             }
 
             int voices = 0;
@@ -537,7 +536,7 @@ namespace PoSumo
 
             _sb.Clear();
             _sb.Append(agent.behaviorName).Append('\n');
-            _sb.Append(agent.useBot ? "brain BOT" : agent.inferenceModel != null ? "brain " + agent.inferenceModel.name : "brain NONE");
+            _sb.Append(agent.inferenceModel != null ? "brain " + agent.inferenceModel.name : "brain NONE");
             _sb.Append(" ").Append(agent.mode == Agent_Biped.Mode.Sumo ? "sumo" : "walk").Append('\n');
 
             Rigidbody2D torso = body.Torso;

@@ -69,14 +69,6 @@ STATIC_ALLOWLIST = {
     ("Assets/Scripts/Systems/Systems_ArenaLighting.cs", "_useNormalMapField"): "reflection lookup cache",
     ("Assets/Scripts/Systems/Systems_ArenaLighting.cs", "_normalReflectionResolved"): "resolve-once latch",
     ("Assets/Scripts/Systems/Systems_ArenaLighting.cs", "_normalReflectionWarned"): "warn-once latch",
-    # Bot tuning knobs: declaration-initialized defaults with NO writer anywhere
-    # in the project (verified by grep), so they behave as constants.
-    ("Assets/Scripts/Agent/Agent_Bot.cs", "Gain"): "read-only default, no writers",
-    ("Assets/Scripts/Agent/Agent_Bot.cs", "StandKp"): "read-only default, no writers",
-    ("Assets/Scripts/Agent/Agent_Bot.cs", "StandKd"): "read-only default, no writers",
-    ("Assets/Scripts/Agent/Agent_Bot.cs", "StandKv"): "read-only default, no writers",
-    ("Assets/Scripts/Agent/Agent_Bot.cs", "StandKneeDeg"): "read-only default, no writers",
-    ("Assets/Scripts/Agent/Agent_Bot.cs", "StanceSplitDeg"): "read-only default, no writers",
     # Self-healing singleton: nulled in OnDestroy and re-checked with Unity's ==
     # (which sees a destroyed object as null) before every reuse.
     ("Assets/Scripts/Systems/Systems_Telemetry.cs", "_instance"): "singleton, nulled in OnDestroy, Unity-null re-checked before reuse",

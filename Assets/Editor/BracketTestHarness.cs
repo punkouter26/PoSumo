@@ -31,8 +31,8 @@ namespace PoSumo.EditorTools
     {
         /// Wall-clock ceiling for a whole bracket. Measured bouts run 60-110 s
         /// (rounds average ~18 s, best-of-three, plus ceremony and the return).
-        /// Sized for a full eight-fighter draw of seven bouts plus slack; the
-        /// five-fighter roster plays four (the other three slots are byes). It
+        /// Sized for the old eight-slot frame's seven bouts plus slack; the
+        /// four-fighter roster plays three (two semifinals and the final). It
         /// exists so a hung bout reports a FAILURE rather than leaving the Editor
         /// spinning with no verdict.
         private const float TIMEOUT_SECONDS = 1500f;
@@ -209,7 +209,7 @@ namespace PoSumo.EditorTools
             // The last bout is decided without CurrentMatch moving past it again,
             // so the transition counter above never sees it. The state's own tally
             // is the truth: BOUTS, which with byes in the draw is fewer than the
-            // seven match slots (five fighters play four).
+            // match slots (with the full four-fighter draw both are three).
             int lastBout = Systems_TournamentState.CurrentMatch;
             Agent_CharacterDefinition lastWinner = Systems_TournamentState.GetWinner(lastBout);
             Log.AppendLine($"  match {lastBout} ({Systems_TournamentState.RoundName(lastBout)}) " +

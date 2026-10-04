@@ -46,18 +46,6 @@ namespace PoSumo
         [Tooltip("Sparring dummy: run the assigned model locally and never contact a connected trainer.")]
         public bool inferenceOnly = false;
 
-        /// Drive this fighter as the BOT (`Agent_Bot`) instead of from a trained
-        /// policy. Sets BehaviorType.HeuristicOnly in Awake, which is ML-Agents'
-        /// own hook for a code-driven agent — so the body, both referees, the
-        /// damage model and every presentation system are untouched and the BOT
-        /// can share a bout with a trained fighter.
-        ///
-        /// Deliberately NOT gated on `inferenceModel == null`: the BOT keeps its
-        /// .onnx assigned so toggling this compares the two brains on exactly the
-        /// same character sheet.
-        [UnityEngine.Serialization.FormerlySerializedAs("useScriptedBrain")]
-        public bool useBot = false;
-
         [Tooltip("Optional trained model for in-editor inference playback (no Python needed).")]
         public Unity.InferenceEngine.ModelAsset inferenceModel;
 
@@ -115,6 +103,11 @@ namespace PoSumo
         ///
         /// 3.5 is `GameTuning.ringHalfWidth`, i.e. a full mat maps to 1.0.
         private const float RING_REFERENCE_HALF = 3.5f;
+
+        /// Height of the virtual walk target above the mat, in metres — roughly a
+        /// standing torso (1.06). Added to `arenaGroundY`, never used as a world Y:
+        /// see the walk branch of CollectObservations.
+        private const float WALK_TARGET_HEIGHT = 1.2f;
         public const int ActionCount = 13;      // hips, knees, ankles, 3 spine, shoulders, elbows
 
         /// Last motor commands as sent to the joints (for HUD display).
@@ -140,11 +133,6 @@ namespace PoSumo
         /// Shared by both schools on purpose — see Reward_StepCadence.
         private readonly Reward_StepCadence _cadence = new Reward_StepCadence();
 
-        /// Allocated unconditionally rather than behind `useBot`, because
-        /// the flag can be toggled in the Inspector at runtime and a null here
-        /// would be a NullReferenceException inside Heuristic on the next decision.
-        private readonly Agent_Bot _bot = new Agent_Bot();
-
         protected override void Awake()
         {
             _b = GetComponent<Agent_BipedBody>();
@@ -157,19 +145,6 @@ namespace PoSumo
                 staminaObservation = character.staminaObservation;
                 decisionPeriod = character.decisionPeriod;
                 if (inferenceModel == null) inferenceModel = character.inferenceModel;
-                // ORed, not assigned: the BOT can also be set per-agent
-                // in the scene, and the character sheet must not switch that back off.
-                useBot |= character.useBot;
-            }
-
-            // The BOT decides EVERY physics step. decisionPeriod 3 is a constraint on
-            // the trained brains — it is what their .onnx was trained at and must not
-            // change — but a scripted controller has no such obligation, and 16.7 Hz
-            // is coarse for a balance loop holding a 69.6 kg ragdoll upright. This
-            // triples the control rate for the BOT alone and touches no policy.
-            if (useBot)
-            {
-                decisionPeriod = 1;
             }
 
             // Both are configured unconditionally, including when `character` is
@@ -195,11 +170,6 @@ namespace PoSumo
                 bp.InferenceDevice = Unity.MLAgents.Policies.InferenceDevice.Burst;
             }
             if (inferenceOnly) bp.BehaviorType = BehaviorType.InferenceOnly;
-
-            // Checked AFTER inferenceOnly so it wins: the BOT must not
-            // fall through to the model even when the character sheet asked for
-            // inference. HeuristicOnly routes every decision to Heuristic() below.
-            if (useBot) bp.BehaviorType = BehaviorType.HeuristicOnly;
 
             if (GetComponent<DecisionRequester>() == null)
             {
@@ -236,9 +206,10 @@ namespace PoSumo
         /// come from three places that can disagree — the character sheet, the
         /// serialized scene values it overwrites, and the per-agent Inspector.
         ///
-        /// This is not hypothetical. `Bot_Character.asset` ships `staminaObservation: 1`
-        /// while all four trained fighters ship `0`; put a second character on that
-        /// behavior name and one agent feeds 47 slots where the other feeds 46. The
+        /// This is not hypothetical: a character sheet shipping `staminaObservation: 1`
+        /// beside ones shipping `0` under one behavior name has one agent feeding
+        /// 47 slots where the other feeds 46 (the since-removed Bot sheet once
+        /// differed from the four trained fighters in exactly that flag). The
         /// failure mode is not an exception — ML-Agents pads or truncates and the
         /// policy simply receives garbage in the slots after the disagreement, which
         /// is indistinguishable from a fighter that trained badly.
@@ -289,8 +260,7 @@ namespace PoSumo
         ///
         /// Feed a 51-slot vector to a model trained on 45 and nothing throws, nothing is
         /// logged, and the console stays clean. ML-Agents rejects the model and the
-        /// policy falls back to `Heuristic`, which for a fighter that is not the BOT is
-        /// "write 0 to all 13 motors" — so the failure renders as two ragdolls standing
+        /// policy falls back to `Heuristic`, which is "write 0 to all 13 motors" — so the failure renders as two ragdolls standing
         /// limp at the stand-off while the round never starts. Measured exactly that way
         /// on 2026-09-05 after the vector went 45 -> 51: `MatchTestHarness.Run(2)` ran
         /// for four minutes without completing a single round, max |action| 0.000 on
@@ -629,7 +599,20 @@ namespace PoSumo
             }
             else
             {
-                op = new Vector2(arenaCenterX, 1.2f); ov = Vector2.zero;
+                // ARENA-RELATIVE, like observation 0 above — and for the same
+                // reason. This was `new Vector2(arenaCenterX, 1.2f)`: a WORLD height,
+                // while the walk lane in every SCN_TRAIN_* scene sits at y = -60. So
+                // the height slot two lines down read (1.2 - (-59)) / 3 = ~20 on the
+                // six training walk agents and ~0.05 in the game's walk-in — one
+                // input, one policy, two disjoint ranges, found by the range guard
+                // on 2026-10-04 (slot 37).
+                //
+                // THE GAME'S VALUE DOES NOT MOVE. Its referee sits at y = 0, so
+                // `arenaGroundY` is exactly 0f there (measured, not assumed) and
+                // 0f + 1.2f is 1.2f bit for bit: the four shipped brains see what
+                // they saw. Only the training walk lane changes, which is why the
+                // `*Rebuild02` runs are the first to train on the corrected slot.
+                op = new Vector2(arenaCenterX, arenaGroundY + WALK_TARGET_HEIGHT); ov = Vector2.zero;
             }
             Observe(sensor,San((op.x - tp.x) * Fs / 10f));                 // 1
             Observe(sensor,San((op.y - tp.y) / 3f));                       // 1
@@ -812,52 +795,19 @@ namespace PoSumo
             _lastTorsoY = torsoY;
         }
 
-        /// The BOT gets a solid blue head so it is obvious which fighter is not a
-        /// trained policy.
+        /// A limp ragdoll: every motor command zero. This is what a fighter with
+        /// no model does, and several call sites rely on Heuristic being harmless.
         ///
-        /// Done in Start, not Awake: Agent_BipedBody builds the ragdoll — head
-        /// renderer included — in its own Awake, and nothing orders the two Awakes
-        /// against each other, so painting the head in Awake would work or not
-        /// depending on component order. By Start the body is always built.
-        private void Start()
-        {
-            if (useBot && _b != null)
-            {
-                _b.ApplyBotHead(BOT_HEAD_COLOR);
-            }
-        }
-
-        /// RED, like the rest of it. The standing colour rule is that the
-        /// heuristic bot is red and nothing else is, and for a while this disc was
-        /// a strong flat blue — chosen to read against the arena — which put the
-        /// one fighter that must be red under the largest blue shape in the frame.
-        /// A notch brighter than Bot_Character's teamColor (0.85, 0.16, 0.14)
-        /// because the head is drawn UNLIT while the body is shaded by the rig, so
-        /// equal numbers would render the head as the darker of the two. The flat
-        /// disc with no face is what still tells it apart from a photo head.
-        private static readonly Color BOT_HEAD_COLOR = new Color(0.92f, 0.20f, 0.16f);
-
+        /// It was also the hook for a hand-written rules fighter (`Agent_Bot`,
+        /// switched on by a `useBot` flag that put the agent on
+        /// BehaviorType.HeuristicOnly). That fighter was removed from the game on
+        /// 2026-10-04 at the user's request — PoSumo carries only RL-trained
+        /// fighters — and the controller lives in git history (7835145 and
+        /// earlier) for anyone who wants it back.
         public override void Heuristic(in ActionBuffers actionsOut)
         {
             var a = actionsOut.ContinuousActions;
-            if (!useBot)
-            {
-                // Unchanged default: a limp ragdoll. This is what a fighter with no
-                // model and no script has always done, and several call sites rely
-                // on Heuristic being harmless.
-                for (int index = 0; index < a.Length; index++) a[index] = 0f;
-                return;
-            }
-
-            // The walk-in points the four "opponent" slots at a virtual target, so
-            // the scripted brain is fed the same target and walks to it rather than
-            // trying to wrestle a fighter who is not there.
-            bool hasTarget = opponent != null;
-            var ctx = new Agent_BotContext(
-                Fs, arenaCenterX, ringHalfWidth,
-                hasTarget, hasTarget ? opponent.TorsoX : arenaCenterX,
-                Time.time);
-            _bot.Decide(_b, in ctx, a);
+            for (int index = 0; index < a.Length; index++) a[index] = 0f;
         }
     }
 }

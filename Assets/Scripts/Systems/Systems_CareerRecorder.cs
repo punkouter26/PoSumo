@@ -214,8 +214,9 @@ namespace PoSumo
         /// The fighter's ladder identity, or null if the fighter does not RATE.
         ///
         /// A character with no `inferenceModel` has no brain and collapses as a
-        /// ragdoll — `Bot_v01` is exactly this, deliberately, and it stays in the
-        /// bracket. What it must not do is score: every `Systems_CareerStats` entry
+        /// ragdoll. (`Bot_v01` was exactly this until it was removed from the game
+        /// on 2026-10-04; the guard stays for a fighter whose model was never
+        /// deployed.) What such a fighter must not do is score: every `Systems_CareerStats` entry
         /// point already discards a null name, so returning null here makes such a
         /// bout UNRATED on both sides — no Elo moves, no W/L, no round record, no
         /// rank change — while leaving the match itself completely untouched.

@@ -90,7 +90,7 @@ def audit_agents() -> None:
         if not match:
             violation(folder, "agent folder must be <Name>_v<NN>")
             continue
-        if not (folder / "MANIFEST.md").is_file() and folder.name != "Bot_v01":
+        if not (folder / "MANIFEST.md").is_file():
             violation(folder, "missing MANIFEST.md")
 
 

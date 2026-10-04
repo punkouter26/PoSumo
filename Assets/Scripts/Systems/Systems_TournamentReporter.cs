@@ -101,10 +101,8 @@ namespace PoSumo
             // leaves it at koSlowMoScale until Systems_MatchPresentation's realtime
             // deadline expires, and its OnDisable only restores what it applied —
             // so a return that lands inside that window carried ~0.25x speed into
-            // SCN_TOURNAMENT. The other two exits from a decided bout
-            // (Systems_BotLadderReporter.Return and the CONTINUE button's
-            // ContinueToBracket) both clear it; this one did not, and was the odd
-            // one of the three.
+            // SCN_TOURNAMENT. The other exit from a decided bout (the CONTINUE
+            // button's ContinueToBracket) clears it; this one did not.
             Time.timeScale = 1f;
             SceneManager.LoadScene(bracketScene);
         }

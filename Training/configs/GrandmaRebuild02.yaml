@@ -8,6 +8,26 @@
 # joints, leg/trunk self-collision, one torque cost, driveReward live) - none of
 # that moved, so none of it is repeated here.
 #
+# FIRST RUN ON THE CORRECTED OBSERVATION SLOT 37 (noted 2026-10-04).
+#
+# Slot 37 is the height of the "opponent" - in Mode.Walk, of the virtual walk
+# target. Agent_Biped built that target at WORLD y = 1.2 while the walk lane in
+# every SCN_TRAIN_* scene sits at y = -60, so the six walk agents fed
+# (1.2 - (-59)) / 3 = ~20 into a slot the game's walk-in fills with ~0.05 - one
+# input, one policy, two disjoint ranges, and with `normalize: true` a running
+# variance that flattened every in-range reading of it. Same class as the
+# world-absolute observation 0 that cost five gait retrains. Found by the
+# observation range guard.
+#
+# Fixed in code the same day: the target is `arenaGroundY + 1.2`. The GAME's
+# value is bit-identical (its arenaGroundY is exactly 0), so the shipped
+# Rebuild01 brains see what they always saw in the game - but they were TRAINED
+# with ~20 in that slot on the walk lane. This config needs no change for the
+# fix; it is recorded here because a run from this file is the first one whose
+# walk population trains on the same slot the game shows it. No vector length,
+# order or action changed, so a warm start from a Rebuild01 trunk is still
+# shape-compatible; its normaliser for slot 37 must re-converge.
+#
 # WHY THIS RUN EXISTS - THE MAT DECIDES THE FIGHT, NOT THE FIGHTERS.
 #
 # Measured in a driven bracket on 2026-09-05: 17 logged rounds, 100% ring-out,

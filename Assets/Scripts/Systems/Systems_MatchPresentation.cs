@@ -24,7 +24,7 @@ namespace PoSumo
         public float knockbackSpeed = 4.5f;
         [Tooltip("How fast the struck fighter must actually be travelling AWAY from the one who hit him. This is what makes it a knockback rather than a clash: without it the shot fires on any hard contact, including two fighters driving into each other and going nowhere.")]
         public float knockbackAwaySpeed = 0.4f;
-        [Tooltip("Ortho for the knockback close-up. Looser than the KO punch so the whole falling body stays in frame — the fall is the shot, not the face.")]
+        [Tooltip("Ortho for the knockback close-up. Looser than the KO punch so the whole falling body stays in frame — the fall is the shot, not the face.\n\nA CEILING on how tight, not the framing itself: this shot fires while the round is live, so it is a two-shot (PunchIn keepPair) and widens to whatever holds BOTH fighters. At 1.9 alone the portrait frame is +/-0.82 m wide and the attacker was cut out of it on every exchange.")]
         public float knockbackOrtho = 1.9f;
         [Tooltip("Realtime seconds the close-up is held. Long enough to cover the fall and the landing.")]
         public float knockbackHoldSeconds = 1.3f;
@@ -188,7 +188,9 @@ namespace PoSumo
             Transform focus = struck.HeadRenderer != null
                 ? struck.HeadRenderer.transform
                 : struck.Torso.transform;
-            _camFollow.PunchIn(focus, knockbackOrtho, knockbackHoldSeconds);
+            // keepPair: the round is still being fought, so the man who landed the
+            // blow stays in the frame with the man who took it. See PunchIn.
+            _camFollow.PunchIn(focus, knockbackOrtho, knockbackHoldSeconds, keepPair: true);
             // Load-bearing, like [ROUND] and WALK-IN RESULT: a camera shot leaves no
             // other trace, and the ortho alone cannot tell this apart from the KO
             // punch that fires on the same class of blow.

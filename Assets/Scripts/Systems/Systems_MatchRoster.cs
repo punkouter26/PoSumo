@@ -24,13 +24,8 @@ namespace PoSumo
             // A tournament match overrides the scene's own roster, so SCN_SUMO
             // serves both the bracket and standalone exhibition play.
             bool tournament = Systems_TournamentState.Active;
-            // A BOT LADDER bout overrides the roster the same way: challenger on
-            // the left, the Bot on the right at the tier's torque.
-            bool ladder = !tournament && Systems_BotLadderState.Active;
-            Agent_CharacterDefinition slotA = tournament ? Systems_TournamentState.CurrentA
-                                            : ladder ? Systems_BotLadderState.Challenger : _characterA;
-            Agent_CharacterDefinition slotB = tournament ? Systems_TournamentState.CurrentB
-                                            : ladder ? Systems_BotLadderState.Bot : _characterB;
+            Agent_CharacterDefinition slotA = tournament ? Systems_TournamentState.CurrentA : _characterA;
+            Agent_CharacterDefinition slotB = tournament ? Systems_TournamentState.CurrentB : _characterB;
 
             // A MIRROR match: both sides drew the same character asset.
             //
@@ -58,17 +53,6 @@ namespace PoSumo
                 }
                 Apply(agent, wanted);
 
-                if (ladder && agent.teamId != 0)
-                {
-                    // Before Agent_BipedBody.Awake (this runs at -500), so the joint
-                    // torque caps are built from the multiplied value.
-                    var body = agent.GetComponent<Agent_BipedBody>();
-                    if (body != null)
-                    {
-                        body.torqueMultiplier = Systems_BotLadderState.TierTorque[Systems_BotLadderState.Tier];
-                    }
-                }
-
                 // Only side B moves, so the fighter a player already recognises keeps
                 // its own colour and name and the CHALLENGER is the one marked.
                 if (mirror && agent.teamId != 0)
@@ -83,22 +67,16 @@ namespace PoSumo
                 go.transform.SetParent(transform, false);
                 go.AddComponent<Systems_TournamentReporter>();
             }
-            if (ladder && FindAnyObjectByType<Systems_BotLadderReporter>() == null)
-            {
-                var go = new GameObject("BotLadderReporter");
-                go.transform.SetParent(transform, false);
-                go.AddComponent<Systems_BotLadderReporter>();
-            }
 
-            // The two reporters used to each call this from their own Start, and
-            // nothing ordered those Starts against the manager's. Whoever spawns a
+            // The reporter used to call this from its own Start, and nothing
+            // ordered that Start against the manager's. Whoever spawns the
             // reporter is the component that KNOWS this is not an exhibition, and
             // this one runs at -500 — before every Awake and every Start in the
             // scene — so setting it here makes `_bracketBout` true from the first
             // frame instead of "reliably by the time a match has been decided".
             // Both `Update`'s tap-to-continue and the result card's buttons can
             // therefore trust it unconditionally.
-            if (tournament || ladder)
+            if (tournament)
             {
                 var manager = FindAnyObjectByType<Systems_GameMatchManager>();
                 if (manager != null)
@@ -118,20 +96,15 @@ namespace PoSumo
             // Without a model the agent has no policy and simply collapses as a
             // ragdoll, with nothing in the log to explain why.
             //
-            // ...UNLESS the character drives itself with `useBot`, and that exemption
-            // is the whole point of this guard. `Agent_Bot` is a hand-written rules
-            // policy and `Agent_Biped.Awake` switches BehaviorType to HeuristicOnly
-            // for it, so a useBot character needs no ONNX and fights perfectly well
-            // without one — measured 2026-08-25, Bot won its quarterfinal 2-0 by
-            // ring-out. This fired at ERROR level on every match containing it and
-            // said the fighter "will not fight" about the fighter that had just won,
-            // which trains everyone reading the console to ignore a real error.
-            if (character.inferenceModel == null && !character.useBot)
+            // Unconditional again since 2026-10-04. It carried a `useBot` exemption
+            // while the roster held a hand-coded heuristic fighter that needed no
+            // ONNX; that fighter was removed at the user's request and every entry
+            // is an RL-trained brain now, so a missing model is always a fault.
+            if (character.inferenceModel == null)
             {
                 Debug.LogError($"Systems_MatchRoster: character '{character.behaviorName}' has no " +
                                $"inferenceModel — {agent.name} will have no brain and will not fight. " +
-                               "Deploy a trained ONNX to that character asset, or set useBot " +
-                               "to drive it with Agent_Bot instead.");
+                               "Deploy a trained ONNX to that character asset.");
             }
 
             Agent_BipedBody body = agent.GetComponent<Agent_BipedBody>();

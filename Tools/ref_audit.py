@@ -101,7 +101,15 @@ def scan_files() -> list[str]:
     found: list[str] = []
     assets = os.path.join(REPO, "Assets")
     for dirpath, dirnames, filenames in os.walk(assets):
-        dirnames[:] = [d for d in dirnames if d != ".git"]
+        # `Assets/_Recovery/` is the Editor's crash-recovery copy of whatever
+        # scene was open when it went down — gitignored, never built, never
+        # loaded, and frozen at the moment of the crash. It therefore keeps
+        # pointing at assets deleted since: on 2026-10-04 a recovery copy of
+        # SCN_TOURNAMENT still listed the removed Bot_Character in its roster
+        # and failed this audit over a file that is not project content. A
+        # stale backup is not a broken reference in the game.
+        dirnames[:] = [d for d in dirnames
+                       if d != ".git" and not (d == "_Recovery" and dirpath == assets)]
         for name in filenames:
             if name.endswith(SCAN_EXTS):
                 found.append(os.path.join(dirpath, name))

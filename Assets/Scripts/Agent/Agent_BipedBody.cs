@@ -72,12 +72,6 @@ namespace PoSumo
         [Tooltip("Multiplies joint motor torque caps to carry the extra mass.")]
         public float torqueScale = 1f;
 
-        /// Runtime-only multiplier on top of the character's torqueScale. Written
-        /// by Systems_MatchRoster for the BOT LADDER (EASY 0.7 / MEDIUM 1.0 / HARD
-        /// 1.3) before Awake builds the joints; never serialized, never 1-not for
-        /// a trained fighter.
-        [System.NonSerialized] public float torqueMultiplier = 1f;
-
         /// Whole-body torque multiplier for transient GAME-LAYER effects; 1 is
         /// normal. Written by `Systems_CrowdMomentum` and by nothing else.
         ///
@@ -509,9 +503,7 @@ namespace PoSumo
                 headSprite = character.headSprite;
                 massScale = character.massScale;
                 widthScale = character.widthScale;
-                // torqueMultiplier is runtime-only (the BOT LADDER's difficulty dial,
-                // written by Systems_MatchRoster before this Awake); 1 for everyone else.
-                torqueScale = character.torqueScale * torqueMultiplier;
+                torqueScale = character.torqueScale;
                 _faceArtFacesLeft = character.faceArtFacesLeft;
             }
             // AFTER the character block, so a mirror match's second side keeps every
@@ -1798,48 +1790,8 @@ namespace PoSumo
         /// other way, with the drawn face overhanging the hitbox. The only real fix
         /// is square-cropped face art, which is an asset task — do not re-open this
         /// one in code.
-        ///
-        /// True once the head has been repainted as the BOT's solid disc. Locks out
-        /// face art permanently — see ApplyBotHead.
-        public bool BotHead { get; private set; }
-
-        /// Paint the head as a solid colour disc so the BOT is obvious at a glance
-        /// next to the photo-faced fighters.
-        ///
-        /// Reuses the plain-circle path the build already has for a character with
-        /// no face art, including its scaling: CircleSprite is one world unit
-        /// across, so dividing by the stored head cell draws the disc at exactly
-        /// headDiameter — the same size as the CircleCollider2D. Art only; the
-        /// collider is untouched, so this cannot change the dynamics or invalidate
-        /// a brain.
-        ///
-        /// Sets BotHead, which makes SetHeadSprite a no-op from here on. That guard
-        /// is the point: Systems_FaceMood swaps the face sprite constantly during a
-        /// match, so without it the blue head would survive for a frame and then be
-        /// overwritten by an expression the BOT is not even driving.
-        public void ApplyBotHead(Color color)
-        {
-            BotHead = true;
-            if (HeadRenderer == null) return;
-            Sprite circle = CircleSprite();
-            HeadRenderer.sprite = circle;
-            HeadRenderer.color = color;
-            HeadRenderer.flipX = false;   // a disc has no facing
-            if (HeadMask != null)
-            {
-                // Keep the decal mask on the same silhouette, or blood and bruises
-                // would clip against whatever face was there before.
-                HeadMask.sprite = circle;
-            }
-            HeadRenderer.transform.localScale =
-                new Vector3(headDiameter / Mathf.Max(0.0001f, _headCellW),
-                            headDiameter / Mathf.Max(0.0001f, _headCellH), 1f);
-        }
-
         public void SetHeadSprite(Sprite s)
         {
-            // The BOT keeps its solid head against everything, including FaceMood.
-            if (BotHead) return;
             if (HeadRenderer == null || s == null) return;
             HeadRenderer.sprite = s;
             HeadRenderer.color = Color.white;

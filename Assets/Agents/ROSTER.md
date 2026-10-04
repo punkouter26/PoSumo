@@ -1,8 +1,9 @@
 # PoSumo Fighter Roster (4)
 
-Four trained fighters. The tournament is built and playable: `SCN_TOURNAMENT`
-auto-seeds an 8-slot single-elimination bracket from this roster, so each fighter
-appears twice and can meet itself.
+Four RL-trained fighters, and nothing else: the hand-coded heuristic `Bot` was removed
+from the game on 2026-10-04 at the user's request. The tournament is built and
+playable: `SCN_TOURNAMENT` seeds a 4-slot single-elimination bracket from this roster
+— each fighter once, two semifinals and a final, no byes and no mirror bouts.
 
 There is no code mirror of this table — each fighter's `<Name>_Character.asset`
 is the single source of truth, and `Systems_TournamentBracket._roster` is where
@@ -45,7 +46,6 @@ touches no mass, no collider and no observation, so it cannot invalidate a brain
 | Grandma (formerly Standard) | grey sweatpants | beige knit sweater | long sleeves | cream socks |
 | Nick | navy shorts | light tank | — | light sneakers |
 | Kim | dark mawashi | — (bare chest) | — | — (barefoot) |
-| Bot | charcoal shorts | red singlet | — | dark boots |
 
 Physique is mass / width / torque scale. Each folder's `MANIFEST.md` holds the
 full spec and the exact retrain command.

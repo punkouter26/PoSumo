@@ -11,7 +11,9 @@ disagrees with the code, **the code wins**.
 Process and convention rules — master-only branching, reading `DOCS/` for the project
 overview, TensorBoard-with-every-run, pruning obsolete behaviours from the logdir before a
 launch, the RED-heuristic-bot / GREEN-reference-RL colour convention, the
-coded-bot + reference-bot + custom-bots cast, the TL;DR-on-long-answers rule, **never
+coded-bot + reference-bot + custom-bots cast (a family rule — **PoSumo itself carries no
+heuristic bot since 2026-10-04**, only RL-trained fighters, at the user's request), the
+TL;DR-on-long-answers rule, **never
 pushing to a remote without the explicit phrase `git sync`**, and the
 **`joanllobera/mujoco-bin` Android toolchain for the MuJoCo-backed rigs** — live in
 **`CLAUDE.md` → *Standing working agreements***. They apply here too.

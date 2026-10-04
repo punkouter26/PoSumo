@@ -90,7 +90,7 @@ footer{margin-top:48px;padding:20px 32px;color:var(--muted);font-size:12px;borde
 
 <header>
   <h1>PoSumo - Creatures Dashboard</h1>
-  <p>Interactive view of the four shipped fighters and the bot. Toggle between <b>Executive</b> (behaviour evolution, training status, progress bars, high-level diagrams) and <b>Technical</b> (ONNX tensor graphs, joint physics, observation vector, hyperparameters).</p>
+  <p>Interactive view of the four shipped fighters. Toggle between <b>Executive</b> (behaviour evolution, training status, progress bars, high-level diagrams) and <b>Technical</b> (ONNX tensor graphs, joint physics, observation vector, hyperparameters).</p>
 </header>
 
 <div class="toolbar">
@@ -113,7 +113,7 @@ footer{margin-top:48px;padding:20px 32px;color:var(--muted);font-size:12px;borde
 
 <section>
   <h2>Fighter Roster</h2>
-  <p>Four trained fighters plus one deliberately brainless bot. The bot exists to pad the 8-slot bracket and is accepted as broken.</p>
+  <p>Four RL-trained fighters. The hand-coded heuristic Bot was removed from the game on 2026-10-04; the bracket is a 4-slot draw (two semifinals and a final).</p>
 
   <div class="grid cols4">
     <div class="card">
@@ -143,13 +143,6 @@ footer{margin-top:48px;padding:20px 32px;color:var(--muted);font-size:12px;borde
       <p><b>Role:</b> Heavy planted anchor (massScale 1.45, widthScale 1.30). Higher stance reward, lower closing - the "lean and hold" playstyle. Cheers a win, silent when losing or taunting (only Happy voice set).</p>
       <div class="progress"><div class="fill" style="width:78%"></div><span class="label">Behaviour evolution 78%</span></div>
       <div class="meta">Final ELO (vs pool) <b>~1050</b> &middot; mean reward (fight) <b>~30</b></div>
-    </div>
-    <div class="card">
-      <div class="head"><span class="swatch" style="background:#7d7d7d"></span><h3>Bot</h3><span class="tag bot">Bot (no brain)</span></div>
-      <div class="meta">Behavior: <code>Bot</code> &middot; v01 &middot; 0 ONNX</div>
-      <p><b>Role:</b> Deliberately brainless. <code>Agent_Bot</code> drives a procedural heuristic so the body still moves, but logs <code>character 'Bot' has no inferenceModel</code> on every match and collapses as a ragdoll. Accepted.</p>
-      <div class="progress"><div class="fill" style="width:0%;background:var(--bad)"></div><span class="label">No brain assigned</span></div>
-      <div class="meta">ELO <b>n/a</b> &middot; reward <b>n/a</b> &middot; logs at <span class="tag bad">Error</span> on every match</div>
     </div>
   </div>
 </section>
@@ -276,7 +269,6 @@ footer{margin-top:48px;padding:20px 32px;color:var(--muted);font-size:12px;borde
       <tr><td><span class="swatch" style="background:#3bd6a8;display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle;margin-right:6px"></span>Grandma</td><td><code>Assets/Agents/Grandma_v01/Grandma.onnx</code></td><td>2.13</td><td>obs_0 [batch, 45]</td><td>3x Dense(512)</td><td>continuous_actions [batch, 13]</td><td>14</td><td>~445k</td></tr>
       <tr><td><span class="swatch" style="background:#3b9ad6;display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle;margin-right:6px"></span>Nick</td><td><code>Assets/Agents/Nick_v01/Nick.onnx</code></td><td>2.13</td><td>obs_0 [batch, 45]</td><td>3x Dense(512)</td><td>continuous_actions [batch, 13]</td><td>14</td><td>~445k</td></tr>
       <tr><td><span class="swatch" style="background:#b89040;display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle;margin-right:6px"></span>Kim</td><td><code>Assets/Agents/Kim_v01/Kim.onnx</code></td><td>2.13</td><td>obs_0 [batch, 45]</td><td>3x Dense(512)</td><td>continuous_actions [batch, 13]</td><td>14</td><td>~445k</td></tr>
-      <tr><td><span class="swatch" style="background:#7d7d7d;display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle;margin-right:6px"></span>Bot</td><td>-</td><td>0</td><td>n/a</td><td>n/a</td><td>n/a</td><td>0</td><td>0</td></tr>
     </tbody>
   </table>
   </div>

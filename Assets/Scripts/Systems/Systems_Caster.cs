@@ -423,7 +423,7 @@ namespace PoSumo
 
         private static string Behaviour(Agent_Biped fighter)
         {
-            if (fighter == null || fighter.character == null || fighter.character.useBot)
+            if (fighter == null || fighter.character == null)
             {
                 return null;
             }

@@ -105,7 +105,7 @@ namespace PoSumo
         /// active pane.
         private VisualElement _content;
         /// The two tab panes and their host: BRACKET (title area, palette and
-        /// rounds) and RECORD (promotion news, career/banzuke, bot ladder, rules).
+        /// rounds) and RECORD (promotion news, career/banzuke, rules).
         /// Replaces the ScrollView — the zero-scroll constraint (checklist #3)
         /// means every pane fits the viewport, and the overflow audit polices it.
         private const int TAB_BRACKET = 0;
@@ -118,10 +118,12 @@ namespace PoSumo
         private Systems_CareerScreen _careerScreen;
         private Systems_PromotionCeremony _promotionCeremony;
 
-        /// The three round blocks (header + card) and the last height each was
-        /// laid out at — see FitRounds.
-        private VisualElement _quarterfinalGroup, _semifinalGroup, _finalGroup;
-        private float _seedingHeight, _quarterfinalHeight, _semifinalHeight, _finalHeight;
+        /// The two round blocks (header + card) and the last height each was
+        /// laid out at — see FitRounds. There were three until 2026-10-04, when
+        /// the frame went from eight slots to four and the quarterfinals went
+        /// with it.
+        private VisualElement _semifinalGroup, _finalGroup;
+        private float _seedingHeight, _semifinalHeight, _finalHeight;
 
         /// The settings bottom sheet (top-right menu button) and the two layers
         /// it is shown on — see BuildSettings.
@@ -371,40 +373,38 @@ namespace PoSumo
             _seedSlots.Clear();
             _winnerSlots.Clear();
 
-            VisualElement quarterfinals = AddRound("QUARTERFINALS");
-            for (int match = 0; match < 4; match++)
+            // FOUR FIGHTERS, THREE BOUTS (2026-10-04): the semifinals are the
+            // first round now, so they are the SEED rows — the ones a fighter is
+            // dragged onto — and the final is the only row fed by earlier winners.
+            VisualElement semifinals = AddRound("SEMIFINALS");
+            for (int match = 0; match < Systems_TournamentState.FIRST_ROUND_MATCHES; match++)
             {
-                AddPairRow(quarterfinals, seedA: match * 2, seedB: match * 2 + 1, winnerMatch: match);
+                AddPairRow(semifinals, seedA: match * 2, seedB: match * 2 + 1, winnerMatch: match);
             }
 
-            VisualElement semifinals = AddRound("SEMIFINALS");
-            AddResultRow(semifinals, feederA: 0, feederB: 1, winnerMatch: 4);
-            AddResultRow(semifinals, feederA: 2, feederB: 3, winnerMatch: 5);
-
             VisualElement final = AddRound("FINAL");
-            AddResultRow(final, feederA: 4, feederB: 5,
+            AddResultRow(final, feederA: 0, feederB: 1,
                          winnerMatch: Systems_TournamentState.FINAL_MATCH);
             // The header+card blocks, for FitRounds: a round card's parent is its
             // group (see AddRound).
-            _quarterfinalGroup = quarterfinals.parent;
             _semifinalGroup = semifinals.parent;
             _finalGroup = final.parent;
 
             BuildSpotlight();
 
-            // ---- Pane 2: RECORD (career/banzuke + bot ladder + rules) --------
+            // ---- Pane 2: RECORD (career/banzuke + rules) ------------------------
             //
             // The old inline CAREER button, the top-3 standings block and the
             // career overlay's ScrollView are all folded in here (screen merging,
             // checklist #1): Systems_CareerScreen builds its segmented
-            // BANZUKE/FIGHTERS view straight into this pane, the ladder card
-            // follows, and the rules footnote closes it. The palette stays on the
+            // BANZUKE/FIGHTERS view straight into this pane, and the rules
+            // footnote closes it. (A BOT LADDER card sat between the two until
+            // the heuristic Bot was removed on 2026-10-04.) The palette stays on the
             // BRACKET pane because dragging a fighter onto a SLOT only works when
             // the roster and the slots are on screen together — a ROSTER tab
             // would have severed every drag.
             _content = _paneRecord;
             _careerScreen = new Systems_CareerScreen(_paneRecord);
-            BuildLadderCard();
             BuildRulesNote();
 
             // flex-shrink 0 on every pane child (was one pass over the scroll
@@ -989,11 +989,12 @@ namespace PoSumo
         /// cut once (66 -> 48) to chase this and there is no 200pt left in them.
         ///
         /// What gives way is what carries no information at that moment. Before
-        /// START the FINAL is always "- v -", and the SEMIFINALS show only the
-        /// byes' walkovers, which the quarterfinal card's own winner column
-        /// already shows. The palette and the quarterfinals — the two things a
-        /// player is actually dragging between — are never dropped. Once the
-        /// bracket is running the palette is gone and all three rounds return.
+        /// START the FINAL is always "- v -". The palette and the seed rows — the
+        /// two things a player is actually dragging between — are never dropped.
+        /// Once the bracket is running the palette is gone and every round
+        /// returns. (The measurement above is from the eight-slot frame, whose
+        /// seed rows were the QUARTERFINALS; since 2026-10-04 the seed rows are
+        /// the SEMIFINALS and there are two round cards, not three.)
         ///
         /// Decided from each block's NATURAL height, remembered from when it was
         /// last laid out, never from its current one: a hidden block measures
@@ -1006,21 +1007,18 @@ namespace PoSumo
                 return;
             }
             RememberHeight(_seedingGroup, ref _seedingHeight);
-            RememberHeight(_quarterfinalGroup, ref _quarterfinalHeight);
             RememberHeight(_semifinalGroup, ref _semifinalHeight);
             RememberHeight(_finalGroup, ref _finalHeight);
 
-            bool showSemifinal = true;
+            // The semifinals are the seed rows now and are never dropped; only
+            // the FINAL — "- v -" until a semifinal is decided — can give way.
             bool showFinal = true;
             float available = _paneBracket.contentRect.height;
             if (!BracketLocked && !float.IsNaN(available) && available > 0f)
             {
-                float core = _seedingHeight + _quarterfinalHeight;
-                showSemifinal = core + _semifinalHeight <= available + 1f;
-                showFinal = showSemifinal
-                            && core + _semifinalHeight + _finalHeight <= available + 1f;
+                float core = _seedingHeight + _semifinalHeight;
+                showFinal = core + _finalHeight <= available + 1f;
             }
-            SetDisplay(_semifinalGroup, showSemifinal);
             SetDisplay(_finalGroup, showFinal);
         }
 
@@ -1127,7 +1125,7 @@ namespace PoSumo
             }
         }
 
-        /// A quarterfinal row: two draggable seed slots plus the winner readout.
+        /// A first-round (seed) row: two draggable seed slots plus the winner readout.
         private void AddPairRow(VisualElement round, int seedA, int seedB, int winnerMatch)
         {
             var row = MakeRow();
@@ -1322,18 +1320,17 @@ namespace PoSumo
         /// Chip label, with a brainless entrant marked as such.
         ///
         /// A character with no `inferenceModel` has no policy: it collapses as a
-        /// ragdoll, loses on `downOutSeconds`, and since 2026-08-07 its bouts are
-        /// unrated. `Bot_v01` is exactly this, deliberately. Presenting it in the
-        /// palette and the draw with the same treatment as a trained fighter told
-        /// the player it was a peer, and it is not — a measured bracket had it
-        /// WINNING a quarterfinal, which reads as a broken fighter rather than an
-        /// intentional dummy.
+        /// ragdoll and its bouts are unrated. Presenting it in the palette and
+        /// the draw with the same treatment as a trained fighter would tell the
+        /// player it is a peer, and it is not. Nothing in the roster is like this
+        /// today (the heuristic Bot entry this was written for was removed on
+        /// 2026-10-04); it stays so a fighter whose model was never deployed is
+        /// labelled rather than silently limp.
         ///
         /// The separator is the interpunct already used elsewhere on this screen
         /// ("CAREER · BANZUKE"), and the suffix is plain ASCII on purpose: this
         /// project ships no font asset, so an unsupported glyph draws as a box.
-        /// "BOT" is short enough that the suffix fits the width "STANDARD" needs;
-        /// the chip clips rather than spills if a longer brainless name is added.
+        /// The chip clips rather than spills if the suffix does not fit.
         private static string ChipName(Agent_CharacterDefinition character, string emptyLabel)
         {
             if (character == null)
@@ -1447,7 +1444,6 @@ namespace PoSumo
 
         private void Refresh()
         {
-            RefreshLadder();
             for (int seedSlotIndex = 0; seedSlotIndex < _seedSlots.Count; seedSlotIndex++)
             {
                 int seedIndex = (int)_seedSlots[seedSlotIndex].userData;
@@ -1515,8 +1511,8 @@ namespace PoSumo
                 string bName = b != null ? b.behaviorName.ToUpperInvariant() : "?";
                 // No arena suffix any more: every bout is on the same clay, so
                 // naming it on every line was noise rather than information.
-                // BOUTS, not match slots — a bye is a walkover nobody plays, so
-                // five fighters are four bouts in the seven-slot frame.
+                // BOUTS, not match slots — a bye is a walkover nobody plays. With
+                // the full four-fighter draw the two happen to agree: three.
                 _statusLabel.text = $"BOUT {Systems_TournamentState.BoutsPlayed + 1} of " +
                                     $"{Systems_TournamentState.BoutCount} — {aName} v {bName}";
                 _statusLabel.style.color = Systems_UiKit.Gold;
@@ -1530,9 +1526,9 @@ namespace PoSumo
             // the project's tuning convention tells you to do — left this screen
             // stating a rule the game no longer followed.
             // SLOTS, fighters and BYES, each counted off the live draw. SEED_COUNT
-            // is 8 and the roster is 5: every fighter is drawn once and the other
-            // three slots are byes. (They used to be filled by drawing fighters
-            // twice, which is where the mirror bouts came from.)
+            // is 4 and the roster is 4, so today the bye clause is empty; it is
+            // still counted rather than assumed, because a roster of three draws
+            // one.
             _statusLabel.style.color = Systems_UiKit.Gold;
             if (offerResume)
             {
@@ -1638,171 +1634,6 @@ namespace PoSumo
         /// press START — with no automated coverage. That is how two
         /// NullReferenceExceptions per bout survived in it unnoticed.
         public void PressAction() => OnAction();
-
-        // ---- BOT LADDER ----------------------------------------------------------
-        //
-        // A card under the career row: pick a challenger, pick a rung, fight the
-        // Bot. Lives on this screen rather than its own because the roster, the
-        // arena launch and the "you came back with a result" news line are all
-        // already here. State is Systems_BotLadderState; this is only the view.
-
-        private readonly List<Button> _ladderChallengerButtons = new List<Button>();
-        private readonly List<Button> _ladderTierButtons = new List<Button>();
-        private Label _ladderStatus;
-        private Label _ladderNews;
-
-        /// Selects the RECORD tab, where the ladder card lives. Kept under its
-        /// old name because the screenshot flow calls it — but there is nothing
-        /// to scroll any more: the zero-scroll constraint put the card on a pane
-        /// that fits the viewport, so bringing it into view IS switching to it.
-        public void ScrollToLadder()
-        {
-            SelectTab(TAB_RECORD);
-        }
-        private Agent_CharacterDefinition _ladderChallenger;
-        private Agent_CharacterDefinition _ladderBot;
-
-        private void BuildLadderCard()
-        {
-            if (_roster == null) return;
-            _ladderBot = null;
-            for (int index = 0; index < _roster.Length; index++)
-            {
-                if (_roster[index] != null && _roster[index].useBot) { _ladderBot = _roster[index]; break; }
-            }
-            if (_ladderBot == null) return;   // no Bot in the roster, no ladder
-
-            VisualElement card = AddRound("BOT LADDER");
-            card.style.paddingBottom = Systems_UiKit.SPACE_3;
-
-            Label hint = Systems_UiKit.Caption("beat the bot at each rung to unlock the next",
-                                               Systems_UiKit.FONT_MICRO, Systems_UiKit.TextLow);
-            hint.style.unityTextAlign = TextAnchor.MiddleCenter;
-            hint.style.marginBottom = Systems_UiKit.SPACE_2;
-            card.Add(hint);
-
-            // Challenger chips: every trained fighter, 2-up like the palette.
-            VisualElement challengers = Systems_UiKit.Row();
-            challengers.style.flexWrap = Wrap.Wrap;
-            challengers.style.justifyContent = Justify.Center;
-            card.Add(challengers);
-            _ladderChallengerButtons.Clear();
-            for (int index = 0; index < _roster.Length; index++)
-            {
-                Agent_CharacterDefinition character = _roster[index];
-                if (character == null || character.useBot) continue;
-                if (_ladderChallenger == null) _ladderChallenger = character;
-                Agent_CharacterDefinition captured = character;
-                Button chip = Systems_UiKit.ChipButton(character.behaviorName.ToUpperInvariant(),
-                                                      () => { _ladderChallenger = captured; RefreshLadder(); },
-                                                      0);
-                chip.style.flexGrow = 1;
-                chip.style.flexBasis = Length.Percent(46f);
-                chip.style.marginLeft = Systems_UiKit.SPACE_1;
-                chip.style.marginRight = Systems_UiKit.SPACE_1;
-                chip.style.marginBottom = Systems_UiKit.SPACE_1;
-                chip.userData = character;
-                challengers.Add(chip);
-                _ladderChallengerButtons.Add(chip);
-            }
-
-            // Tier buttons: EASY / MEDIUM / HARD. Locked until the one below is beaten.
-            VisualElement tiers = Systems_UiKit.Row();
-            tiers.style.justifyContent = Justify.Center;
-            tiers.style.marginTop = Systems_UiKit.SPACE_2;
-            card.Add(tiers);
-            _ladderTierButtons.Clear();
-            for (int tier = 0; tier < Systems_BotLadderState.TIER_COUNT; tier++)
-            {
-                int captured = tier;
-                Button button = Systems_UiKit.ChipButton(Systems_BotLadderState.TierNames[tier],
-                                                        () => PressLadder(captured), 0);
-                button.style.flexGrow = 1;
-                button.style.flexBasis = 0;
-                button.style.marginLeft = Systems_UiKit.SPACE_1;
-                button.style.marginRight = Systems_UiKit.SPACE_1;
-                tiers.Add(button);
-                _ladderTierButtons.Add(button);
-            }
-
-            _ladderStatus = Systems_UiKit.Caption("", Systems_UiKit.FONT_MICRO, Systems_UiKit.TextLow);
-            _ladderStatus.style.unityTextAlign = TextAnchor.MiddleCenter;
-            _ladderStatus.style.marginTop = Systems_UiKit.SPACE_2;
-            card.Add(_ladderStatus);
-
-            _ladderNews = Systems_UiKit.Text("", Systems_UiKit.FONT_SMALL, Systems_UiKit.Gold, true);
-            _ladderNews.style.unityTextAlign = TextAnchor.MiddleCenter;
-            _ladderNews.style.whiteSpace = WhiteSpace.Normal;
-            _ladderNews.style.display = DisplayStyle.None;
-            card.Add(_ladderNews);
-
-            RefreshLadder();
-        }
-
-        /// Launch a ladder bout at `tier` for the selected challenger. Public so a
-        /// harness can drive it without a tap.
-        public void PressLadder(int tier)
-        {
-            if (_ladderChallenger == null || _ladderBot == null) return;
-            if (!Systems_BotLadderState.IsUnlocked(_ladderChallenger.behaviorName, tier))
-            {
-                if (_ladderStatus != null) _ladderStatus.text = "beat the rung below first";
-                return;
-            }
-            // A ladder bout is played OUTSIDE the bracket; a tournament in progress
-            // stays exactly where it is and resumes when you come back.
-            Systems_BotLadderState.Begin(_ladderChallenger, _ladderBot, tier);
-            SceneManager.LoadScene(ARENA_SCENE);
-        }
-
-        /// Writes text and style on retained elements — never rebuilds.
-        private void RefreshLadder()
-        {
-            if (_ladderStatus == null || _ladderChallenger == null) return;
-            string name = _ladderChallenger.behaviorName;
-            int beaten = Systems_BotLadderState.RungsBeaten(name);
-
-            for (int index = 0; index < _ladderChallengerButtons.Count; index++)
-            {
-                Button chip = _ladderChallengerButtons[index];
-                var character = (Agent_CharacterDefinition)chip.userData;
-                bool selected = character == _ladderChallenger;
-                chip.style.color = selected ? character.teamColor : Systems_UiKit.TextLow;
-                chip.style.borderBottomWidth = selected ? 3 : 0;
-                chip.style.borderBottomColor = character.teamColor;
-            }
-            for (int tier = 0; tier < _ladderTierButtons.Count; tier++)
-            {
-                Button button = _ladderTierButtons[tier];
-                bool unlocked = beaten >= tier;
-                bool done = beaten > tier;
-                // Plain ASCII suffixes: no font asset ships, so a glyph is a box on
-                // any device whose default font lacks it (see PauseButton).
-                button.text = done ? Systems_BotLadderState.TierNames[tier] + " - BEATEN"
-                            : unlocked ? Systems_BotLadderState.TierNames[tier]
-                            : Systems_BotLadderState.TierNames[tier] + " - LOCKED";
-                button.style.color = done ? Systems_UiKit.Good : unlocked ? Systems_UiKit.Gold : Systems_UiKit.TextLow;
-                button.style.opacity = unlocked ? 1f : 0.55f;
-            }
-            _ladderStatus.text = beaten >= Systems_BotLadderState.TIER_COUNT
-                ? $"{name.ToUpperInvariant()} has cleared the ladder"
-                : $"{name.ToUpperInvariant()} · {beaten}/{Systems_BotLadderState.TIER_COUNT} rungs beaten · tap a rung to fight";
-
-            if (Systems_BotLadderState.TryTakeResult(out Systems_BotLadderState.Result result))
-            {
-                string tierName = Systems_BotLadderState.TierNames[result.Tier];
-                string who = (result.Challenger ?? "?").ToUpperInvariant();
-                _ladderNews.text = result.Won
-                    ? (result.Tier + 1 < Systems_BotLadderState.TIER_COUNT
-                        ? $"{who} BEAT THE {tierName} BOT — {Systems_BotLadderState.TierNames[result.Tier + 1]} UNLOCKED"
-                        : $"{who} BEAT THE {tierName} BOT — LADDER CLEARED")
-                    : $"THE {tierName} BOT HELD {who}";
-                _ladderNews.style.color = result.Won ? Systems_UiKit.Gold : Systems_UiKit.Bad;
-                _ladderNews.style.display = DisplayStyle.Flex;
-                _ladderNews.FadeIn();
-                Systems_Log.Info($"[LADDER] {_ladderNews.text}");
-            }
-        }
 
         private void OnAction()
         {

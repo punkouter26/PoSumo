@@ -22,7 +22,6 @@ namespace PoSumo.EditorTools
         private static readonly string[] ArenaScenes =
         {
             "Assets/Scenes/SCN_SUMO.unity",
-            "Assets/Scenes/SCN_BOT.unity",
         };
 
         [MenuItem("PoSumo/Rebuild Arena Foreground Tiers")]

@@ -187,7 +187,9 @@ namespace PoSumo
                 if (_clinchFor >= CLINCH_HOLD)
                 {
                     _clinchFor = 0f;
-                    Punch(wpA >= 0.5f ? _wrestlerA : _wrestlerB);
+                    // The header calls this a tight TWO-shot; until 2026-10-04 it
+                    // was the same single-fighter punch the comeback uses.
+                    Punch(wpA >= 0.5f ? _wrestlerA : _wrestlerB, keepPair: true);
                     return;
                 }
             }
@@ -200,11 +202,16 @@ namespace PoSumo
         /// Close-up on a fighter's head, one heartbeat long. Ortho 2.0 frames
         /// head and shoulders the way `knockbackOrtho` does — tighter than that
         /// and a moving head will not stay in a blend this fast.
-        private void Punch(Agent_Biped fighter)
+        ///
+        /// `keepPair` false is the COMEBACK: deliberately one fighter, the one
+        /// who just climbed back. True is the CLINCH, which is about the two of
+        /// them and must not crop either.
+        private void Punch(Agent_Biped fighter, bool keepPair = false)
         {
             Transform focus = Systems_CameraFollow.FocusPoint(fighter);
             if (focus == null) return;
-            _camera.PunchIn(focus, COMEBACK_ORTHO, 1.1f, SHOT_BLEND);
+            _camera.PunchIn(focus, keepPair ? CLINCH_ORTHO : COMEBACK_ORTHO, 1.1f, SHOT_BLEND,
+                            keepPair: keepPair);
             _coolUntil = Time.realtimeSinceStartup + SHOT_COOLDOWN;
         }
 

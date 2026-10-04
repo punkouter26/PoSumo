@@ -74,7 +74,6 @@ footer{margin-top:48px;padding:20px 32px;color:var(--muted);font-size:12px;borde
       <tr><td><code>SCN_TRAIN_GRANDMA</code></td><td><code>Assets/Scenes/Training/</code></td><td>none</td><td><code>BuildTrainingEnv</code> -&gt; <code>Builds/GrandmaEnv/GrandmaEnv.exe</code></td><td><span class="tag train">Training</span></td></tr>
       <tr><td><code>SCN_TRAIN_NICK</code></td><td><code>Assets/Scenes/Training/</code></td><td>none</td><td><code>BuildTrainingEnv</code> -&gt; <code>Builds/NickEnv/NickEnv.exe</code></td><td><span class="tag train">Training</span></td></tr>
       <tr><td><code>SCN_TRAIN_KIM</code></td><td><code>Assets/Scenes/Training/</code></td><td>none</td><td><code>BuildTrainingEnv</code> -&gt; <code>Builds/KimEnv/KimEnv.exe</code></td><td><span class="tag train">Training</span></td></tr>
-      <tr><td><code>SCN_BOT</code></td><td><code>Assets/Scenes/</code></td><td>none</td><td>nothing (deliberately brainless Bot_v01 companion)</td><td><span class="tag stale">Tracked, not loaded</span></td></tr>
     </tbody>
   </table>
   <p><b>Always play from <code>SCN_TOURNAMENT</code>.</b> Entering Play mode inside <code>SCN_SUMO</code> directly runs a standalone exhibition - no bracket, no <code>Systems_TournamentState</code>, no <code>Systems_TournamentReporter</code> spawned, no title awarded. Nothing bracket-, career- or banzuke-shaped can be observed from there.</p>
@@ -173,23 +172,6 @@ new GameObject("AudioListener").AddComponent&lt;AudioListener&gt;();</code></pre
     <p><code>SCN_TRAIN_GRANDMA</code> currently contains <b>zero</b> references to <code>Grandma_Character.asset</code> - eight fields sit at <code>character: {fileID: 0}</code>. The other three training scenes reference theirs correctly. Verified by GUID-grepping the saved <code>.unity</code> file. It is harmless <i>by coincidence</i> (Grandma's sheet is byte-identical to <code>Agent_Biped</code>'s code defaults), but it becomes a real bug the moment anyone tunes the sheet.</p>
     <pre><code># Verify a scene's character assignment by reading the saved .unity file
 grep -n 'character:' Assets/Scenes/Training/SCN_TRAIN_GRANDMA.unity</code></pre>
-  </div>
-</section>
-
-<section>
-  <h2>SCN_BOT <span class="idx">Tracked but not in build settings</span></h2>
-  <p>The bot's home scene. Ships in no build (only build-settings scenes are included), belongs with the deliberately brainless <code>Bot_v01</code> roster entry. <b>Do not delete it as orphaned</b> - it looks exactly like a stray scene and is not one.</p>
-
-  <div class="scene">
-    <h3>Manager objects in this scene</h3>
-    <table>
-      <thead><tr><th>Object</th><th>Component</th><th>Responsibility</th></tr></thead>
-      <tbody>
-        <tr><td><code>Arena</code></td><td><code>Systems_SumoArena</code></td><td>Same dohyo as <code>SCN_SUMO</code>.</td></tr>
-        <tr><td><code>GameReferee</code></td><td><code>Systems_GameMatchManager</code></td><td>Same match state machine. Spawns the same companions.</td></tr>
-        <tr><td><code>BotWrestler</code></td><td><code>Agent_Biped</code> with <code>useBot = true</code></td><td>Drives <code>Agent_Bot</code> heuristic instead of a trained model. Logs <code>character 'Bot' has no inferenceModel</code> at Error level on every match.</td></tr>
-      </tbody>
-    </table>
   </div>
 </section>
 

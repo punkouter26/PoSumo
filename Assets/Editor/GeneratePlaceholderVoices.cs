@@ -59,16 +59,10 @@ namespace PoSumo.EditorTools
         private const int SAMPLE_RATE = 44100;
         private const string VOICE_DIR = "Assets/Resources/Audio/Voice";
 
-        /// Every fighter that should own a voice.
-        ///
-        /// `Bot` USED TO BE EXCLUDED HERE, on the stated grounds that it is "the
-        /// intentionally brainless roster entry". That was wrong: Bot_v01 carries
-        /// `useBot: 1`, so Agent_Biped puts it on BehaviorType.HeuristicOnly and it
-        /// is driven by Agent_Bot — 822 lines of hand-written rules — not by a limp
-        /// ragdoll. Measured in a played bracket it won its quarterfinal 2-0 by
-        /// ring-out. It is the project's rules-based baseline and it fights, so a
-        /// silent fighter was the odd one out rather than the correct default.
-        private static readonly string[] Behaviors = { "Matt", "Grandma", "Nick", "Kim", "Bot" };
+        /// Every fighter that should own a voice: the four RL-trained fighters.
+        /// A fifth, `Bot` (the hand-coded heuristic fighter), was listed here until
+        /// it was removed from the game on 2026-10-04; its 15 clips went with it.
+        private static readonly string[] Behaviors = { "Matt", "Grandma", "Nick", "Kim" };
 
         private static readonly string[] Moods = { "Happy", "Sad", "Insult" };
 
@@ -99,10 +93,6 @@ namespace PoSumo.EditorTools
                 case "Nick":     return new VoiceId(128f, 1.04f, 37);
                 case "Grandma": return new VoiceId(110f, 1.00f, 53);
                 case "Matt":     return new VoiceId(98f,  0.94f, 71);
-                // Lowest and flattest of the five. Bot is the machine in the
-                // bracket, so it reads as gruff and unbothered next to four
-                // human-pitched voices rather than as a fifth personality.
-                case "Bot":      return new VoiceId(88f,  0.90f, 97);
                 default:         return new VoiceId(112f, 1.00f, 11);
             }
         }

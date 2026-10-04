@@ -359,8 +359,8 @@ namespace PoSumo
         /// Points the camera at `arenaBackground` instead of whatever the scene was
         /// saved with (Skybox, which renders black here).
         ///
-        /// Done in code rather than on the scene camera because SCN_SUMO, SCN_BOT
-        /// and the training scenes each carry their own camera, and a serialized
+        /// Done in code rather than on the scene camera because SCN_SUMO and the
+        /// training scenes each carry their own camera, and a serialized
         /// value would have to be fixed in all of them — the same reason every
         /// other look setting lives on this companion.
         private void ApplyCameraBackground()

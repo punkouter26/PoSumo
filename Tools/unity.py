@@ -245,6 +245,61 @@ def cmd_exec(args):
     ) else 1
 
 
+# Every open play-mode view (Game view, Device Simulator) as "Type WxH;", so the
+# caller can count them. PlayModeView is internal, hence the reflection.
+_VIEW_PROBE = r'''
+var pmv = typeof(UnityEditor.EditorWindow).Assembly.GetType("UnityEditor.PlayModeView");
+var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public
+          | System.Reflection.BindingFlags.Instance;
+var sb = new System.Text.StringBuilder();
+foreach (var o in UnityEngine.Resources.FindObjectsOfTypeAll(pmv)) {
+    var size = (UnityEngine.Vector2)pmv.GetProperty("targetSize", flags).GetValue(o);
+    sb.Append(o.GetType().Name + " " + (int)size.x + "x" + (int)size.y + ";");
+}
+return sb.ToString();
+'''
+
+# Reads back the render target of the play-mode view that matches `Screen` and
+# writes it as a PNG. The raw readback came out upside down on this machine
+# (Windows, measured 2026-10-04 — the only backend this was checked on), so the
+# rows are reversed before encoding. UI Toolkit's runtime panel draws into this
+# same target, which is the point: a Camera render would not contain the HUD.
+_VIEW_CAPTURE = r'''
+var pmv = typeof(UnityEditor.EditorWindow).Assembly.GetType("UnityEditor.PlayModeView");
+var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public
+          | System.Reflection.BindingFlags.Instance;
+UnityEngine.RenderTexture pick = null; string who = "";
+foreach (var o in UnityEngine.Resources.FindObjectsOfTypeAll(pmv)) {
+    var rt = pmv.GetField("m_TargetTexture", flags).GetValue(o) as UnityEngine.RenderTexture;
+    if (rt != null && rt.width == UnityEngine.Screen.width && rt.height == UnityEngine.Screen.height) {
+        pick = rt; who = o.GetType().Name;
+    }
+}
+if (pick == null) return "no-view Screen=" + UnityEngine.Screen.width + "x" + UnityEngine.Screen.height;
+int w = pick.width, h = pick.height;
+var prev = UnityEngine.RenderTexture.active;
+UnityEngine.RenderTexture.active = pick;
+var tex = new UnityEngine.Texture2D(w, h, UnityEngine.TextureFormat.RGB24, false);
+tex.ReadPixels(new UnityEngine.Rect(0, 0, w, h), 0, 0);
+UnityEngine.RenderTexture.active = prev;
+var px = tex.GetPixels32();
+var row = new UnityEngine.Color32[w];
+for (int y = 0; y < h / 2; y++) {
+    int top = y * w, bottom = (h - 1 - y) * w;
+    System.Array.Copy(px, top, row, 0, w);
+    System.Array.Copy(px, bottom, px, top, w);
+    System.Array.Copy(row, 0, px, bottom, w);
+}
+tex.SetPixels32(px);
+tex.Apply();
+string dir = System.IO.Path.GetDirectoryName("__PATH__");
+if (!string.IsNullOrEmpty(dir)) System.IO.Directory.CreateDirectory(dir);
+System.IO.File.WriteAllBytes("__PATH__", UnityEngine.ImageConversion.EncodeToPNG(tex));
+UnityEngine.Object.DestroyImmediate(tex);
+return "captured " + who + " " + w + "x" + h;
+'''
+
+
 def cmd_shot(args):
     """Capture the Game view, INCLUDING UI Toolkit overlays.
 
@@ -266,14 +321,59 @@ def cmd_shot(args):
         time.sleep(args.settle)
 
     escaped = path.replace("\\", "\\\\").replace('"', '\\"')
-    resp = call("execute_code", {
-        "action": "execute",
-        "code": f'UnityEngine.ScreenCapture.CaptureScreenshot("{escaped}", {args.scale}); return "queued";',
-    })
-    ok, payload = _unwrap(resp)
-    if not ok:
-        report("capture", resp)
-        return 1
+
+    # WHICH VIEW IS THE GAME ACTUALLY DRAWING FOR? Ask before capturing.
+    #
+    # ScreenCapture photographs the GAME VIEW. With a Device Simulator window
+    # open beside it there are two play-mode views, and in Play mode the
+    # Simulator is the one that owns `Screen` — so the HUD is laid out, inset and
+    # clipped for the simulated phone while the picture is taken of the other
+    # window. MEASURED 2026-10-04: Screen 960x2658 with a 92 px cutout, panel
+    # 720x1993.5 pt, capture 1080x2520 — the dock cut off at x = 960 (the right
+    # 11%) and the menu button and version stamp missing from their corners.
+    # Closing the Simulator alone, in the same Play session, produced a complete
+    # HUD; the game's layout was never wrong, the photograph was of the wrong
+    # view. It read as a safe-area fault and cost a wrong fix in Systems_SafeArea.
+    #
+    # So when more than one play-mode view exists, the view whose render target
+    # matches `Screen` is read back directly — that IS what a player sees.
+    try:
+        probe = call("execute_code", {"action": "execute", "code": _VIEW_PROBE})
+        ok, payload = _unwrap(probe)
+        views = payload.get("data", {}).get("result", "") if ok and isinstance(payload, dict) else ""
+    except BridgeError:
+        views = ""
+    view_count = views.count(";")
+    if view_count > 1:
+        print(f"[..] {view_count} play-mode views open ({views.strip(';')}); "
+              "capturing the one that owns Screen, not the Game view")
+        try:
+            resp = call("execute_code", {"action": "execute",
+                                         "code": _VIEW_CAPTURE.replace("__PATH__", escaped)})
+            ok, payload = _unwrap(resp)
+            if not ok:
+                report("capture", resp)
+                return 1
+            result = payload.get("data", {}).get("result", "") if isinstance(payload, dict) else ""
+            if str(result).startswith("no-view"):
+                print("[ERR] no play-mode view matches Screen "
+                      f"({result}). Close the Device Simulator window, or focus "
+                      "the view you want, and retry.")
+                return 1
+            print(f"[..] {result}")
+        except BridgeError:
+            # The bridge has been seen to drop the socket on the reply to a long
+            # snippet while the snippet itself completed; the file is the truth.
+            pass
+    else:
+        resp = call("execute_code", {
+            "action": "execute",
+            "code": f'UnityEngine.ScreenCapture.CaptureScreenshot("{escaped}", {args.scale}); return "queued";',
+        })
+        ok, payload = _unwrap(resp)
+        if not ok:
+            report("capture", resp)
+            return 1
 
     deadline = time.time() + args.timeout
     while time.time() < deadline:

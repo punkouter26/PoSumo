@@ -26,13 +26,19 @@ where they touch code, the code is still the ground truth for what currently *is
 
   | Fighter kind | Colour |
   |---|---|
-  | Heuristic hand-coded bot (`useBot: 1`, driven by `Agent_Bot`) | **RED** |
+  | Heuristic hand-coded bot | **RED** — family rule; **PoSumo has none since 2026-10-04**, see below |
   | The reference RL brain (Grandma, fka Standard), before any creature variation | **GREEN**, no texture |
   | Custom RL variations | custom texture, supplied by the user |
 
 - **Every RL app in this family carries the same cast:** one heuristic coded bot, one
   reference RL bot, and 0..n custom bots — the custom ones usually with custom textures and
   custom skinned meshes.
+
+  > **PoSumo is the exception, by the user's instruction (2026-10-04): "remove the red
+  > heuristic player from game. i want only rl trained creatures."** The game carries only
+  > RL-trained fighters — Matt, Grandma (the reference), Nick, Kim. `Bot_v01`, `Agent_Bot`,
+  > the `useBot` flag, the BOT LADDER and `SCN_BOT` are deleted (git history: 7835145 and
+  > earlier). Do not re-add a heuristic fighter here without being asked.
 - **TL;DR every long answer.** Any reply longer than ~100 words ends with a ~20-word
   `TL;DR:` line.
 - **NEVER push to a remote unless asked.** Committing locally is fine when the work is
@@ -54,14 +60,6 @@ where they touch code, the code is still the ground truth for what currently *is
   > here. Do not "apply" it to this project's Unity Android build — they are different
   > pipelines solving different problems. Ask before treating it as a migration
   > instruction.
-
-> **Bot is now red; Matt still collides with it (2026-09-05).** `Bot_Character.asset`
-> `teamColor` was blue `(0.16, 0.45, 1)` and is now red `(0.85, 0.16, 0.14)`, satisfying the
-> rule. `Grandma_Character.asset` (renamed from `Standard_Character.asset` on 2026-09-22) is green `(0.2, 0.5, 0.3)` and was already correct. But
-> **`Matt_Character.asset` is `(0.85, 0.25, 0.2)`** — a red within a rounding error of the
-> bot's, so a Bot-v-Matt bout renders two near-identical fighters. Matt is an RL variation,
-> and variation appearance is the user's to choose, so it was left alone rather than
-> guessed at. Re-tint him before that bracket matters.
 
 ## What this is
 
@@ -133,25 +131,10 @@ name), **Nick**, **Kim** — each
 with an `.onnx`, a `*_Character.asset` and a `MANIFEST.md`. `Assets/Agents/ROSTER.md` is
 the roster overview; there is no code mirror of it.
 
-**A fifth entry, `Bot_v01`, is in the roster ON PURPOSE and is NOT a defect — do not
-"fix" it by deleting it or dropping it from the seeding** (confirmed 2026-08-07). It holds
-only `Bot_Character.asset` with `inferenceModel: {fileID: 0}`: no `.onnx` and no manifest.
-
-**It does NOT collapse as a ragdoll, and this file said it did until 2026-08-25.** The
-asset carries **`useBot: 1`**, so `Agent_Biped.Awake` sets `BehaviorType.HeuristicOnly` and
-the fighter is driven by `Agent_Bot` — 822 lines of hand-written rules, a real opponent
-with no neural policy at all. Measured in a played bracket on 2026-08-25 it **won its
-quarterfinal 2-0 by ring-out** (`[ROUND] 1 RingOut winner=BOT t=9.0s`, `t=7.0s`). Treat it
-as the project's rules-based baseline, which is what makes it useful: toggling `useBot` on
-any character compares the bot and a trained brain on identical physique and reward setup.
-
-The `Systems_MatchRoster` error it used to log every match — "will have no brain and will
-not fight", about a fighter that had just won — is now suppressed for `useBot` characters.
-An Error-level line that is routinely false is worse than no line: it teaches whoever is
-reading the console to skip real ones.
-
-Consequence: the 8-slot bracket no longer seeds four fighters twice each. With five
-entries it draws Grandma ×2, Matt ×2, Nick ×2, Kim ×1, Bot ×1.
+**There is no fifth entry any more.** `Bot_v01` — a hand-coded heuristic fighter
+(`useBot`, driven by `Agent_Bot`) that this file used to insist must not be deleted — was
+removed on 2026-10-04 at the user's request. The roster is the four RL-trained fighters and
+the bracket is a clean 4-slot draw: two semifinals and a final, no byes.
 
 `ROSTER.md` and the four per-fighter `MANIFEST.md` files were rewritten on 2026-08-02 and
 now describe 45 obs, one unified brain each, and the `*_unifiedNN` runs that actually back
@@ -1004,14 +987,10 @@ fraction of rounds end before `shrinkStartSeconds`". It was 6%.
 >   `Systems_FaceMood` hold happy3 twice as long. Two, not three — a bracket bout is
 >   first-to-2, so three could never happen there. Each companion tracks the streak itself;
 >   they do not read each other.
-> - **BOT LADDER** (`Systems_BotLadderState` static + `Systems_BotLadderReporter`, card on
->   the bracket screen under the career row): pick a trained fighter, beat `Bot_v01` at
->   EASY → MEDIUM → HARD. Difficulty is ONE number, `Agent_BipedBody.torqueMultiplier`
->   (0.7 / 1.0 / 1.3), written by `Systems_MatchRoster` before the joints are built.
->   Progress is `PlayerPrefs` `ladder.<behaviorName>`, not `career.json`, because a Bot
->   bout is unrated (`Systems_CareerRecorder.NameOf` returns null for it). Ladder bouts are
->   best-of-3 and show CONTINUE, exactly like a bracket bout. `PressLadder(tier)` on the
->   bracket drives it from the bridge.
+> - **BOT LADDER** — **REMOVED 2026-10-04** with the heuristic Bot it was fought against
+>   (`Systems_BotLadderState`, `Systems_BotLadderReporter`, `PressLadder` and
+>   `Agent_BipedBody.torqueMultiplier` are gone; a leftover `ladder.*` PlayerPrefs key is
+>   simply never read).
 
 - **The low-friction `tawara` band** at the rim (`tawaraBandWidth` / `tawaraFriction`) that
   turns "almost out" into "out". **Now in both.** `Systems_SumoMatchManager` writes both
@@ -1039,7 +1018,10 @@ asset is assigned**, so a code default and the asset can disagree indefinitely a
 the asset takes effect (`roundTimeoutSeconds` is 30 in code, **20** in the asset).
 
 ### Tournament
-`Systems_TournamentState` is a **static** 8-slot single-elimination bracket (it must
+`Systems_TournamentState` is a **static** single-elimination bracket — **4 slots, 3 bouts
+(two semifinals and a final) since 2026-10-04**, when the heuristic Bot was removed and the
+roster became exactly four; it was 8 slots / 7 matches before, and the paragraphs below
+that say "QF" describe that frame. It is static because it must
 outlive the scene loads that play each match). Enter Play Mode domain reload is
 **disabled** in this project, so it clears itself via
 `[RuntimeInitializeOnLoadMethod(SubsystemRegistration)]` — any new static game state needs
@@ -1662,11 +1644,8 @@ Build settings are exactly two scenes: `SCN_TOURNAMENT` (index 0) and `SCN_SUMO`
 therefore always boots into the bracket, which loads `SCN_SUMO` for every bout and gets the
 winner back via `Systems_TournamentReporter`.
 
-A third scene, **`Assets/Scenes/SCN_BOT.unity`, is tracked in git but is NOT in build
-settings** and is loaded by nothing (found 2026-08-07). It belongs with the deliberately
-brainless `Bot_v01` roster entry above, so **do not delete it as orphaned** — it looks
-exactly like a stray scene and is not one. It ships in no build, because only
-build-settings scenes are included.
+`SCN_BOT` (a copy of `SCN_SUMO` for watching the heuristic Bot, never in build settings)
+was deleted on 2026-10-04 with the Bot.
 
 **Always start a play session from `SCN_TOURNAMENT`** — never from `SCN_SUMO`, a
 `SCN_TRAIN_*` scene, or whatever the Editor was last left on (frequently `SCN_SUMO`).
@@ -2449,8 +2428,8 @@ Short index of a large pass; the code and the commit messages are the detail. Se
 above that contradict this are stale.
 
 - **Bracket:** each roster entry is seeded ONCE; empty slots are byes settled without
-  loading the arena, so five fighters play **4 bouts**, not 7, and no mirror bout can be
-  seeded. An in-progress bracket persists to `bracket.json` and the bracket screen offers
+  loading the arena, and no mirror bout can be seeded. (Later the same day the frame went
+  to **4 slots / 3 bouts, no byes** — see *Heuristic Bot removed* below.) An in-progress bracket persists to `bracket.json` and the bracket screen offers
   RESUME. `BracketTestHarness` asserts the real bout count.
 - **HUD:** `Systems_HudDensity` (MINIMAL default / BROADCAST / FULL, PlayerPrefs) gates
   presentation companions only. `Systems_SettingsSheet` (AUDIO / DISPLAY / GAMEPLAY)
@@ -2473,11 +2452,36 @@ above that contradict this are stale.
   `Systems_FighterPanel`, `Systems_PostFx`, `Systems_HitSmear`, `Systems_ArenaLanterns`,
   `Systems_RingShrink`, `Systems_SafeArea`.
 
-> **OPEN DEFECT, found by the new observation range guard: slot 37 reads ~20 on training
-> walk agents.** The walk target's Y is world 1.2 while the walk lane sits at y = -60, so
-> the training walk population sees ~20 where the game's walk-in sees ~0.05. Same class as
-> the old world-absolute observation 0. Fixing it changes what the vector contains, so it
-> belongs in the next retrain, not a hotfix.
+### Later on 2026-10-04 — a scene play-through, and the heuristic Bot removed
+
+- **Heuristic Bot removed** (user: "i want only rl trained creatures"). Deleted:
+  `Assets/Agents/Bot_v01/`, `Agent_Bot.cs`, the `useBot` field on `Agent_Biped` /
+  `Agent_CharacterDefinition`, `Systems_BotLadderState` / `Systems_BotLadderReporter`, the
+  ladder card and `PressLadder`, `torqueMultiplier`, `SCN_BOT`, the 15 `Bot_*` voice clips.
+  `Systems_TournamentState` is now **4 seeds / 3 matches** (`FIRST_ROUND_MATCHES`); the
+  bracket screen draws SEMIFINALS (the seed rows) and FINAL. A `bracket.json` this build
+  cannot resume (old 8-slot shape, or naming a fighter that no longer exists) is deleted
+  on the first peek; `Systems_CareerStats` drops a retired `Bot` record on load.
+  `Systems_MatchRoster`'s "no brain" error is unconditional again.
+- **Slot 37 FIXED.** The walk target height is `arenaGroundY + 1.2`, not world `1.2`. The
+  training walk agents read ~0.1 where they read ~20; the game's value is bit-identical
+  (its `arenaGroundY` is exactly 0 — verified by recomputing the old formula beside the
+  live slot during a walk-in). The range guard is silent in all four training scenes. The
+  `*Rebuild02` runs are the first to train on the corrected slot.
+- **Training scenes can be watched:** `Systems_TrainingSpectator`, compiled only under
+  `UNITY_EDITOR` and spawned from code when the scene has a training referee and no
+  camera. OVERVIEW stacks both arenas and a walker; TAB / arrows / digits switch views;
+  `Systems_TrainingSpectator.Instance.Show(n)` from the bridge.
+- **`Tools/unity.py shot` and the Device Simulator.** With a Simulator window open beside
+  the Game view, the Simulator owns `Screen` in Play mode and the HUD is laid out for it,
+  while `ScreenCapture` photographs the Game view — a complete HUD rendered as clipped at
+  the right edge with the menu and version corners missing. It was never a layout fault.
+  `shot` now reads back the play-mode view that matches `Screen` when more than one is
+  open.
+- **A punch-in fired during a live round is a two-shot** (`PunchIn(..., keepPair: true)`):
+  the knockback close-up (ortho 1.9 = +/-0.82 m in portrait) was cutting the attacker out
+  of frame on most exchanges. Round-end, KO, match-end and intro close-ups are deliberate
+  single-fighter shots and unchanged.
 
 **Not done in that pass:** the body-realism items (standing assist, knee-on-mat loss,
 tachiai, grip, arm collision, recovery-step reward, neck hinge), the four env builds, a

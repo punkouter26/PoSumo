@@ -421,11 +421,6 @@ namespace PoSumo
                 return null;
             }
 
-            if (fighter.character.useBot)
-            {
-                return null;
-            }
-
             return fighter.character.behaviorName;
         }
 
