@@ -33,7 +33,7 @@ namespace PoSumo
         [Tooltip("Friction of the dohyo clay in the GAME. 0.55, down from 0.9.\n\nAt 0.9 the force to start sliding a 69.6 kg opponent is 0.9*69.6*9.81 = 614 N, and measured sustained push in contact was 71-500 N — so no fighter could move another at all. 0.55 drops the wall to ~375 N, which the harder pushes clear.\n\nSafe without retraining: Systems_SumoMatchManager already randomises friction over [0.5, 1.1] during training, so 0.55 is inside the distribution every brain has seen.")]
         public float surfaceFriction = 0.55f;
 
-        [Tooltip("Width in metres of the low-friction tawara band at each rim. A fighter driven onto the bales loses grip and slides out instead of planting — which is what the bales physically do. 0 disables the band.\n\nSystems_SumoMatchManager carries its own copy and now writes it onto the training arena too (2026-08-15), so keep the two equal. The asset ships 1.2; this code default is the old 0.7 and only applies when no tuning asset is assigned.")]
+        [Tooltip("Width in metres of the low-friction tawara band at each rim. A fighter driven onto the bales loses grip and slides out instead of planting — which is what the bales physically do. 0 disables the band.\n\nSystems_SumoMatchManager reads this asset too (since 2026-10-04) and writes the band onto the training arena, so game and training share the one value; its own serialized copy is only the fallback for a scene with no tuning asset. The asset ships 1.2; this code default is the old 0.7 and only applies when no tuning asset is assigned.")]
         public float tawaraBandWidth = 0.7f;
 
         [Tooltip("Friction inside the tawara band. Deliberately slick so 'almost out' becomes 'out'.")]
@@ -97,6 +97,36 @@ namespace PoSumo
         public int knockoutsToLoseMatch = 3;
         [Tooltip("Realtime seconds between the deciding knockout and the result card. Must outlast Systems_MatchPresentation.koSlowMoRealSeconds or the card cuts off the slow-motion replay of the hit that ended it.")]
         public float knockoutAnnounceSeconds = 2.2f;
+        [Tooltip("Fraction of each joint's END-OF-ROUND fatigue a fighter carries into the next round of the SAME match. 0 = today's behaviour: every round opens on fresh legs. 1 = no rest at all between rounds.\n\nGAME-ONLY, and it must stay that way. Systems_SumoMatchManager never sets it, so a training episode still opens at zero fatigue — carrying it across an ML-Agents episode boundary would make an episode's difficulty depend on how hard the previous one was fought, which is the hidden non-stationary term Agent_BipedBody.ResetPose exists to prevent. It never crosses a MATCH either: a rematch and every bracket bout start fresh.\n\nNo brain has trained against a round that opens tired, but every shipped brain observes stamina (the +1 slot), so the state is at least visible to the policy. Above 0 this changes who wins later rounds — measure with MatchTestHarness before shipping a value.")]
+        [Range(0f, 1f)] public float roundFatigueCarry = 0f;
+
+        // Systems_BodyDamage's designer-facing dials. They lived only on the
+        // component until 2026-10-04, and that component is spawned fresh per
+        // match by Systems_GameMatchManager — so its CODE DEFAULTS were what ran
+        // and there was no asset to tune. The defaults below are those same
+        // numbers, so moving them here changed nothing about a bout. The long
+        // measurement history behind each one stays in the tooltips on
+        // Systems_BodyDamage, which is still the fallback when no tuning asset
+        // is assigned; read those before moving a value.
+        [Header("Body damage / dismemberment (GAME-ONLY)")]
+        [Tooltip("Summed mark strength at which a region reads fully RED on the HUD mannequin. Every detach gate below is a multiple of this.")]
+        public float regionRedAt = 2.5f;
+        [Tooltip("Multiple of regionRedAt past which an ARM or LEG can tear off (10 x 2.5 = a gate of 25). Measured three times: moving this relocates the pop, it does not change the rate — limbDetachChance and regionDamageRefractory are the levers.")]
+        public float detachAtRedMultiple = 10f;
+        [Tooltip("Same, for the HEAD (1.2 x 2.5 = a gate of 3.0). Far lower than the limb figure so decapitation stays the showpiece finish.")]
+        public float headDetachAtRedMultiple = 1.2f;
+        [Tooltip("Minimum seconds between damage applications to the SAME region. Turns limb damage from a contact-count process into a time process; 0 restores unlimited accumulation.")]
+        public float regionDamageRefractory = 0.15f;
+        [Tooltip("Master switch for limb loss and decapitation. OFF leaves bruising, the mannequin colouring and the head KO intact. The player's REALISTIC MODE setting forces this off for a bout regardless of the value here.")]
+        public bool allowDetach = true;
+        [Tooltip("Probability that an arm or leg actually comes off once it has reached the detach gate. Rolled ONCE per limb and remembered for the tournament. The head is exempt.")]
+        [Range(0f, 1f)] public float limbDetachChance = 0.5f;
+        [Tooltip("Master switch for the gib (all four limbs and the head on one blow). Independent of allowDetach. REALISTIC MODE forces it off too.")]
+        public bool allowGib = true;
+        [Tooltip("Impact speed at or above which a hit is ELIGIBLE to gib. Above Systems_BodyDamage.koSpeed (7.5) on purpose.")]
+        public float gibSpeed = 11f;
+        [Tooltip("Probability that a hit at or above gibSpeed gibs. 1% of QUALIFYING hits, not of all contacts.")]
+        [Range(0f, 1f)] public float gibChance = 0.01f;
 
         // Which runtime companions the match manager spawns.
         //

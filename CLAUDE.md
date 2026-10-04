@@ -93,6 +93,17 @@ months, and only a new scene would ever have been bitten by it.
 Grep the `.unity` files, not the `.cs`, to learn what an existing env trains against;
 the `.cs` is what a NEW scene inherits, so both have to be right.
 
+> **SUPERSEDED 2026-10-04 — the training referee now READS `GameTuning.asset`.**
+> `Systems_SumoMatchManager.tuning` is assigned on both referees in all four
+> `SCN_TRAIN_*` scenes, and `ApplyTuning` copies ring half-width, the opening gap,
+> the tawara band, the shrink schedule and `ringOutOnFloorContact` from it in `Start`,
+> the way the game referee always has. The serialized fields are now only the fallback
+> for a scene with no asset assigned. Measured before the change: all eight referees
+> already equalled the asset on every shared value, so nothing a brain sees moved.
+> `roundTimeoutSeconds` (20), `frictionRange` and the curriculum dials are
+> deliberately NOT copied — the list and the reasons are on `ApplyTuning` in that file.
+> An env built before that date still runs on its baked serialized copy.
+
 > **That warning fired for real on 2026-08-07, and the fix is the template for next time.**
 > `GameTuning.asset` held `ringHalfWidth: 3.5` (a **7 m** mat) while all four training
 > scenes serialized **4** (an **8 m** mat). Every brain up to and including the
@@ -1316,6 +1327,14 @@ gib is a rare showpiece with its own `gibChance`, and `allowGib` is already inde
 Note `Systems_BodyDamage` does **not** read `GameTuning` and is spawned fresh per match, so
 unlike most tuning in this project its **code defaults are what actually run**.
 
+> **SUPERSEDED 2026-10-04.** Nine dials — `regionRedAt`, `detachAtRedMultiple`,
+> `headDetachAtRedMultiple`, `regionDamageRefractory`, `allowDetach`,
+> `limbDetachChance`, `allowGib`, `gibSpeed`, `gibChance` — now live on
+> `GameTuning.asset` and are copied in `Systems_BodyDamage.ApplyTuning` before
+> `ReapplyStandingDismemberment`. The asset was written with the values that were
+> already running, so a bout is unchanged. Everything else on the component (bruise
+> sizes, KO speed, bleed budgets) still runs on its code defaults.
+
 Decapitation stays the common showpiece finish. Both wounds of a break bleed —
 stump and severed end, neck stump and the head's cut face — through `OpenBleed`, and the
 jets carry a `severJetSpeed` / `decapJetSpeed` multiplier into
@@ -2423,3 +2442,44 @@ After scene or body changes, verify in Game view (via the screenshot flow above)
 fighters clearly visible on the dohyo, realistic gravity/contacts, no console errors, and
 the HUD/score readable in portrait. For behavioural changes, run `MatchTestHarness.Run(n)`
 and report the tally rather than an impression.
+
+## Session of 2026-10-04 — what changed, in one place
+
+Short index of a large pass; the code and the commit messages are the detail. Sections
+above that contradict this are stale.
+
+- **Bracket:** each roster entry is seeded ONCE; empty slots are byes settled without
+  loading the arena, so five fighters play **4 bouts**, not 7, and no mirror bout can be
+  seeded. An in-progress bracket persists to `bracket.json` and the bracket screen offers
+  RESUME. `BracketTestHarness` asserts the real bout count.
+- **HUD:** `Systems_HudDensity` (MINIMAL default / BROADCAST / FULL, PlayerPrefs) gates
+  presentation companions only. `Systems_SettingsSheet` (AUDIO / DISPLAY / GAMEPLAY)
+  replaces the pause card. TAB toggles `Systems_AgentDebug`, which opens with a NEEDS
+  ATTENTION block fed by `Systems_SessionStats`. `Systems_SafeArea` rejects a safe area
+  that does not fit the screen (the Editor reported the desktop work area).
+- **Look and sound:** garments tinted to team colour, head sorts at 5 above near arms at
+  3, arena wall and lit crowd tiers (grid and banners removed), `Sensor_Impact` blends
+  speed with normal impulse, `Systems_FootScrape`, stamina-driven sweat. Music stays off.
+- **Referees and tuning:** `Systems_SumoMatchManager` and `Systems_BodyDamage` now READ
+  `GameTuning.asset`. `shrink_start` is an environment parameter. `Systems_RealisticMode`
+  (player setting, default off) disables dismemberment. `roundFatigueCarry` (default 0)
+  carries fatigue between rounds in the game referee only.
+- **Training:** `Training/venv` recreated. `*Rebuild02.yaml` and `MattBuffer01.yaml` are
+  new and untrained; `Training/results/` and `Builds/` are still absent, so the envs must
+  be rebuilt before any run.
+- **Companions added since this file was last complete, described only in their own
+  header comments:** `Systems_TensionEngine`, `Systems_DirectorAI`, `Systems_Caster`,
+  `Systems_Storylines`, `Systems_ArenaMutators`, `Systems_BiometricsCard`,
+  `Systems_FighterPanel`, `Systems_PostFx`, `Systems_HitSmear`, `Systems_ArenaLanterns`,
+  `Systems_RingShrink`, `Systems_SafeArea`.
+
+> **OPEN DEFECT, found by the new observation range guard: slot 37 reads ~20 on training
+> walk agents.** The walk target's Y is world 1.2 while the walk lane sits at y = -60, so
+> the training walk population sees ~20 where the game's walk-in sees ~0.05. Same class as
+> the old world-absolute observation 0. Fixing it changes what the vector contains, so it
+> belongs in the next retrain, not a hotfix.
+
+**Not done in that pass:** the body-realism items (standing assist, knee-on-mat loss,
+tachiai, grip, arm collision, recovery-step reward, neck hinge), the four env builds, a
+shipped `FontAsset`, and any history rewrite to shrink `.git` (1.3 GB; `git gc` reclaimed
+nothing).

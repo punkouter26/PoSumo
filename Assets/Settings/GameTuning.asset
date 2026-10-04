@@ -40,6 +40,16 @@ MonoBehaviour:
   ringOutOnFloorContact: 1
   knockoutsToLoseMatch: 2
   knockoutAnnounceSeconds: 2.2
+  roundFatigueCarry: 0
+  regionRedAt: 2.5
+  detachAtRedMultiple: 10
+  headDetachAtRedMultiple: 1.2
+  regionDamageRefractory: 0.15
+  allowDetach: 1
+  limbDetachChance: 0.5
+  allowGib: 1
+  gibSpeed: 11
+  gibChance: 0.01
   enableArenaBand: 0
   arenaBandBottom: 0.2
   arenaBandTop: 0.88
@@ -48,7 +58,10 @@ MonoBehaviour:
   enableFaceMood: 1
   enableVoice: 1
   enableLighting: 1
+  enablePostFx: 1
+  enableLanterns: 1
   enableImpactFx: 1
+  enableHitSmear: 1
   enableAtmosphere: 1
   enableMusic: 0
   enableBodyDamage: 1

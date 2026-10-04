@@ -1,0 +1,252 @@
+# Kim REBUILD 02 - the shrink-start curriculum. Created 2026-10-04.
+#
+# A COPY OF KimRebuild01.yaml WITH EXACTLY ONE THING ADDED: the `shrink_start`
+# curriculum at the bottom of this file. Hyperparameters, network, self-play
+# settings, `threaded: false` and the `platform_difficulty` curriculum are
+# byte-for-byte Rebuild01's. Read KimRebuild01.yaml's header for the changelog
+# of the generation itself (51-slot vector, live mat observation, asymmetric
+# joints, leg/trunk self-collision, one torque cost, driveReward live) - none of
+# that moved, so none of it is repeated here.
+#
+# WHY THIS RUN EXISTS - THE MAT DECIDES THE FIGHT, NOT THE FIGHTERS.
+#
+# Measured in a driven bracket on 2026-09-05: 17 logged rounds, 100% ring-out,
+# mean round 18.0 s, and 16 of the 17 ran past shrinkStartSeconds (8). ONE round
+# in seventeen - 6% - was settled before the floor began to close. The honest
+# description of a round is not "one fighter drives the other out", it is "the
+# floor is withdrawn from under both of them until one runs out of clay".
+#
+# That is a property of the POLICY, and the reason is in how it was trained.
+# With the mat closing from t = 8 s on every single round, a fighter is paid +1
+# for outlasting its opponent on a shrinking floor, and it is never once required
+# to win any other way. Holding the middle and waiting is correct play.
+#
+# THE NEW DIAL. Systems_SumoMatchManager now reads an environment parameter
+# `shrink_start` (seconds) in ResetRound, once per round, with the value already
+# on the referee as the default - and that value comes from GameTuning.asset
+# (shrinkStartSeconds, 8). So a config that does not mention `shrink_start`
+# trains exactly what it always did; Rebuild01 is unaffected.
+#
+# THE DIRECTION, AND WHY IT IS NOT THE OBVIOUS ONE.
+#
+# The curriculum moves the shrink LATER as training progresses: 8 -> up to 11 ->
+# up to 14. It was tempting to write it the other way round - open on a mat that
+# never closes "so they have to learn to push" and bring the shrink in at the
+# end. That is the HARD task first, and it is the one ordering a curriculum must
+# not use:
+#
+#   - A late shrink is the hard end. With the floor holding still, the only route
+#     to +1 inside the 20 s episode bound is to physically drive a 70 kg opponent
+#     across a full mat. Anything short of that is a timeout, which the referee
+#     scores as EpisodeInterrupted - a DRAW, zero terminal reward for both sides.
+#   - Open a run there and almost every episode ends in that draw. The +1/-1
+#     terminals - the only signal that says who WON - nearly stop firing, and
+#     what is left is per-step shaping. This project has measured what a policy
+#     does with shaping and no terminal: it farms it (reward climbed to ~36 while
+#     ELO fell 1198 -> 1140).
+#   - An early shrink is the easy end: the floor hands out a decisive terminal on
+#     nearly every round, so the win signal is dense from step one.
+#
+# So: start where the terminals are dense, and withdraw the mat's help once the
+# policy can already win. Stage 1 is 8 s, which is TODAY'S value on purpose - it
+# is what Rebuild01 trained on and what the game ships, so a warm start from
+# `kim_rebuild01` begins on an arena it already knows and a cold start begins
+# on the one recipe that has produced shipped brains. Each later stage keeps the
+# floor still for longer, so a fighter that only knows how to wait watches its
+# wins turn into draws, and the only way to keep the +1 is to finish the round
+# itself.
+#
+# TWO DETAILS THAT ARE LOAD-BEARING:
+#
+# 1. Stages 2 and 3 are UNIFORM RANGES WITH THE LOWER BOUND HELD AT 8, not single
+#    later values. ML-Agents samples a range fresh on every read and the referee
+#    reads once per round, so each round draws its own start time.
+#      - 8 s - the value the GAME runs - never leaves the distribution, so the
+#        policy is not being fitted to an arena players will not see.
+#      - A share of rounds always keeps the early, dense terminal, which is the
+#        guard against the draw-farming failure above.
+#      - The fighter cannot learn a clock. Time is not in the observation vector;
+#        the live mat width is (it has been since Rebuild01). With the start time
+#        varying per round the only usable cue is the mat itself, which is the
+#        cue that transfers to the game.
+#
+# 2. It moves at progress 0.45 and 0.75, deliberately NOT at platform_difficulty's
+#    0.30 and 0.60. Two curricula stepping on the same summary would make a kink
+#    in the ELO curve unattributable.
+#
+# WHAT THE NUMBERS MEAN ON THE MAT. The episode bound stays 20 s (training-only;
+# the game has no clock) and the contraction still takes shrinkSeconds = 12 from
+# full width to shrinkToHalfWidth. On a full 3.5 m round:
+#     shrink_start  8 -> the mat is at 1.80 m at the 20 s bound (today)
+#     shrink_start 11 -> 2.23 m
+#     shrink_start 14 -> 2.65 m
+# So at the late end the squeeze barely begins before the bound. The narrow-mat
+# endgame is still trained: platform_difficulty randomises the START width down
+# to 1.7 m, and every round that draws a start near 8 closes as it does today.
+#
+# HOW TO JUDGE IT - ELO SHAPE FIRST, THEN THE TWO NEW SCALARS.
+#
+#   ELO, as always, on the shape of the curve and never on mean reward. Mean
+#   reward here is expected to FALL in stages 2-3 (more draws, fewer +1s) and
+#   that is not a regression.
+#
+#   Referee/Kim/PreShrinkFinish - new. 1 when a round was won before the mat
+#   began to close, else 0, so the series is the fraction of rounds the FIGHTERS
+#   decided. This is the quantity this run exists to move; the game measured 6%.
+#   Compare like with like: its denominator changes when shrink_start does (a
+#   later start makes "before the shrink" a longer window), so read it WITHIN a
+#   stage, and read the game-side figure from the debug panel / a bracket for
+#   the number that matters.
+#
+#   Referee/Kim/RoundSeconds - new. Mean round length. REJECT the run if this
+#   pins near 20 with PreShrinkFinish flat through stage 3: that is a policy that
+#   answered a later shrink by stalling to the draw, and the fix is the shaping-
+#   to-win ratio on the character sheet, not more steps.
+#
+#   Policy/Kim/ActionSaturation - new, from Systems_Telemetry. Fraction of the
+#   13 motor commands with |a| > 0.95. Context for the above, not a criterion.
+#
+# NEW OPTIONAL RULE FLAGS - PLACEHOLDER, TO BE FILLED IN BY THE RULE-FLAGS PASS.
+#
+# A separate pass is adding optional rule flags to the referees. They are NOT
+# listed here because they did not exist when this file was written, and a
+# guessed name in a training config is worse than a gap. Whoever lands that pass:
+# replace this block with one line per flag, in this form -
+#
+#     <flag name> : <default> : <what it changes> : <environment parameter or
+#                   GameTuning field that drives it> : <is it ON for this run?>
+#
+#     (none recorded yet)
+#
+# and state for each whether this run trains with it on. A flag that changes a
+# rule and is not recorded here makes this header a lie about what was trained.
+#
+# num-envs: 4 - RECORD IT. Same as Rebuild01, deliberately; it changes how
+# experience is batched, so changing it would be a second variable.
+#
+# WARM START, AND THE CATCH. The intended launch warm-starts from Rebuild01:
+#     --initialize-from=kim_rebuild01
+# That resolves BY BEHAVIOR NAME, RELATIVE TO --results-dir, so it only works if
+# Training/results/kim_rebuild01 exists - and as of 2026-10-04 Training/results
+# IS ABSENT from this working copy. The shipped Kim.onnx is not a checkpoint
+# and cannot be initialised from. Until that run directory is recreated this
+# config can only start COLD, in which case the lesson thresholds below are
+# fractions of a full 15M-step run, as written. On a warm start they are
+# fractions of this run's own step count, which is still what you want.
+#
+# PRECONDITIONS - none of this is optional:
+#   1. Rebuild the env AFTER the 2026-10-04 code change:
+#      *PoSumo -> Build Kim Training Env* -> Builds/KimEnv/KimEnv.exe
+#      An env built before it has no `shrink_start` read, so every lesson below
+#      would be silently ignored and the run would be a second Rebuild01.
+#   2. TensorBoard must be running, serving Training/results. It is a hard rule
+#      with a blocking hook, and every signal named above is a TensorBoard scalar.
+#   3. Do not use the Unity Editor while it trains.
+#
+# Launch:
+#   Training/Start-StaminaExtension.ps1 -Phase Rebuild02 -InitializeFromPhase Rebuild01 -Minutes <n>
+#   (drop -InitializeFromPhase for a cold start)
+# or by hand:
+#   Training/venv/Scripts/mlagents-learn.exe Training/configs/KimRebuild02.yaml
+#     --run-id=kim_rebuild02 --results-dir=Training/results
+#     --initialize-from=kim_rebuild01
+#     --env=Builds/KimEnv/KimEnv.exe --num-envs=4 --no-graphics --base-port=5035
+
+behaviors:
+  Kim:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 3.0e-4
+      beta: 5.0e-3
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:
+      normalize: true
+      hidden_units: 512
+      num_layers: 3
+      vis_encode_type: simple
+    reward_signals:
+      extrinsic:
+        gamma: 0.997
+        strength: 1.0
+    keep_checkpoints: 5
+    checkpoint_interval: 250000
+    max_steps: 15000000
+    time_horizon: 1000
+    summary_freq: 30000
+    threaded: false   # self-play: ML-Agents recommends false. Changed 2026-10-04; shipped Rebuild01 brains trained with true.
+    self_play:
+      window: 25
+      play_against_latest_model_ratio: 0.25
+      save_steps: 50000
+      swap_steps: 50000
+      team_change: 250000
+
+# Ring-width curriculum. Systems_SumoMatchManager randomises each round's platform
+# half-width within startHalfRange (1.7 .. 3.5); platform_difficulty controls how far
+# toward the narrow end it may go.
+#
+# THIS LESSON ONLY STARTS WORKING WITH THIS RUN. Its purpose is to teach edge
+# distance across SCALES rather than let the policy memorise one mat width - and
+# until change 1 above, the width it varied was not in the observation vector at
+# all, so every lesson looked identical from inside the policy. Expect it to bite
+# for the first time here, and expect the wide -> mixed -> full progression to
+# actually cost something.
+environment_parameters:
+  platform_difficulty:
+    curriculum:
+      - name: wide
+        completion_criteria:
+          measure: progress
+          behavior: Kim
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.3
+        value: 0.0
+      - name: mixed
+        completion_criteria:
+          measure: progress
+          behavior: Kim
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.6
+        value: 0.5
+      - name: full
+        value: 1.0
+
+  # When the mat starts closing, in seconds. NEW IN REBUILD02 - see the header for
+  # the direction and why. Stage 1 is today's value; the later stages hold the
+  # floor still for longer on a growing share of rounds, with 8 always in range.
+  # Thresholds are offset from platform_difficulty's (0.30 / 0.60) on purpose.
+  shrink_start:
+    curriculum:
+      - name: today
+        completion_criteria:
+          measure: progress
+          behavior: Kim
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.45
+        value: 8.0
+      - name: later
+        completion_criteria:
+          measure: progress
+          behavior: Kim
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.75
+        value:
+          sampler_type: uniform
+          sampler_parameters:
+            min_value: 8.0
+            max_value: 11.0
+      - name: late
+        value:
+          sampler_type: uniform
+          sampler_parameters:
+            min_value: 8.0
+            max_value: 14.0

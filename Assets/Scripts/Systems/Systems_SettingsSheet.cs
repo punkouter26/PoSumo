@@ -333,6 +333,20 @@ namespace PoSumo
 
         private static void BuildGameplay(VisualElement body, string rules)
         {
+            // REALISTIC MODE. Read once per bout by Systems_BodyDamage.Start, so
+            // the note has to say when it lands — in the arena this sheet is the
+            // pause card, and a switch that visibly did nothing to the fight in
+            // front of the player would read as broken.
+            AddToggleRow(body, "REALISTIC MODE (no dismemberment)",
+                         () => Systems_RealisticMode.Enabled,
+                         () => Systems_RealisticMode.Enabled = !Systems_RealisticMode.Enabled);
+            Label realisticNote = Systems_UiKit.Text(
+                "Limbs and heads stay on. Bruising and knockouts are unchanged. Applies from the next bout.",
+                Systems_UiKit.FONT_MICRO, Systems_UiKit.TextLow);
+            realisticNote.style.whiteSpace = WhiteSpace.Normal;
+            realisticNote.style.marginBottom = Systems_UiKit.SPACE_2;
+            body.Add(realisticNote.NoPick());
+
             Label caption = Systems_UiKit.Text("HOW A ROUND IS WON", Systems_UiKit.FONT_SMALL,
                                                Systems_UiKit.TextMid, true);
             caption.style.marginTop = Systems_UiKit.SPACE_1;

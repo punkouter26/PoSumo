@@ -68,6 +68,8 @@ namespace PoSumo
         public float shrinkStartSeconds = 8f;
         public float shrinkToHalfWidth = 1.8f;
         public float shrinkSeconds = 12f;
+        [Tooltip("Fraction of each joint's end-of-round fatigue carried into the next round of the same match. 0 = every round opens fresh (today's behaviour). GAME-ONLY — the training referee never carries fatigue. Copied from GameTuning in Start.")]
+        [Range(0f, 1f)] public float roundFatigueCarry = 0f;
         /// Half-width the mat is currently at, so the contraction is only pushed to
         /// the arena when it actually changes — SetPlatformHalfWidth rebuilds
         /// collider and sprite scales, and calling it every physics step with an
@@ -406,6 +408,7 @@ namespace PoSumo
                 shrinkStartSeconds = tuning.shrinkStartSeconds;
                 shrinkToHalfWidth = tuning.shrinkToHalfWidth;
                 shrinkSeconds = tuning.shrinkSeconds;
+                roundFatigueCarry = tuning.roundFatigueCarry;
                 knockoutAnnounceSeconds = tuning.knockoutAnnounceSeconds;
                 ringHalfWidth = tuning.ringHalfWidth;
                 neutralGapHalf = tuning.neutralGapHalf;
@@ -1914,6 +1917,9 @@ namespace PoSumo
             // Before HideModal, or a reveal scheduled by the match just finished
             // fires into this one and freezes it behind a stale card.
             CancelPendingAnnounce();
+            // A rematch is a new match: no fatigue from the one just finished.
+            // Before the EndEpisode pair below, whose ResetPose would re-seed it.
+            SetFatigueCarry(0f);
             MatchReset?.Invoke();
             UpdateScoreboard(false);
             _hud.HideModal();            // clears the result card and the backdrop

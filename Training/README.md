@@ -51,6 +51,50 @@ changelog for this generation (live mat observation, asymmetric joints, leg/trun
 self-collision, one torque cost, `driveReward` live) and lists three preconditions
 that are not optional.
 
+### Written 2026-10-04, NOT yet run: `*Rebuild02` and `MattBuffer01`
+
+Five more configs are launchable. None has produced a run, so none backs a brain;
+they are listed here so the 1:1 config ↔ run-id rule holds from the day they exist.
+
+| Config | Behavior | Run id | Base port | Starts from | What it changes |
+|---|---|---|---|---|---|
+| `MattRebuild02.yaml` | Matt | `matt_rebuild02` | 5005 | `matt_rebuild01` (warm) or cold | adds the `shrink_start` curriculum |
+| `GrandmaRebuild02.yaml` | Grandma | `grandma_rebuild02` | 5015 | `grandma_rebuild01` or cold | same |
+| `NickRebuild02.yaml` | Nick | `nick_rebuild02` | 5025 | `nick_rebuild01` or cold | same |
+| `KimRebuild02.yaml` | Kim | `kim_rebuild02` | 5035 | `kim_rebuild01` or cold | same |
+| `MattBuffer01.yaml` | Matt | `matt_buffer01` | 5045 | same start as `matt_rebuild02` | `buffer_size` 20480 → 40960, `batch_size` 2048 → 4096 |
+
+**`*Rebuild02`** is `*Rebuild01` byte-for-byte plus one environment parameter,
+`shrink_start` — the second at which the mat begins to close — staged 8 →
+uniform(8, 11) → uniform(8, 14) at progress 0.45 / 0.75. The reason is the measured
+6%: one round in seventeen is decided before the floor starts moving. The direction
+(start at today's 8, push the shrink LATER) is argued in each header; the short
+version is that a late shrink is the hard end, because without the floor's help most
+rounds time out to a draw and the win/loss terminals stop firing. Judge it on ELO
+shape, then on two scalars the referee now records per round:
+`Referee/<Name>/PreShrinkFinish` and `Referee/<Name>/RoundSeconds`.
+
+**`MattBuffer01`** is a single-variable test of the PPO buffer, to be judged on ELO
+shape against `matt_rebuild02` — by steps and by wall time, which answer different
+questions. It is only a test if `--num-envs`, the env build and the start are
+identical to `matt_rebuild02`'s.
+
+Three things to know before launching any of them:
+
+- **The warm start needs a run directory that does not exist.** `--initialize-from`
+  resolves by behavior name relative to `--results-dir`, and `Training/results/` is
+  absent as of 2026-10-04. Until `<name>_rebuild01` is recreated there, these start
+  cold. A shipped `.onnx` is not a checkpoint and cannot be initialised from.
+- **The envs must be rebuilt first.** `shrink_start` is read by
+  `Systems_SumoMatchManager`; an env built before 2026-10-04 ignores every lesson
+  silently and the run is a second Rebuild01.
+- **Each header carries a marked placeholder for optional rule flags** that a later
+  pass will add. It is empty on purpose. Fill it in when those flags land, and
+  record for each run whether it trained with them on.
+
+`Start-StaminaExtension.ps1` accepts `-Phase Rebuild02` and `-Phase Buffer01`
+(the latter with `-Fighters Matt`).
+
 **The 45 superseded configs are kept deliberately and must not be deleted.** Their
 headers are the only written record of several measured negative results — the
 `tall01..tall04` sweep, why `gait01` made the gait worse, why the ring adaptation

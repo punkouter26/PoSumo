@@ -188,8 +188,8 @@ MonoBehaviour:
     NumStackedVectorObservations: 1
     m_ActionSpec:
       m_NumContinuousActions: 0
-      BranchSizes: 01000000
-    VectorActionSize: 01000000
+      BranchSizes: 01000000i
+    VectorActionSize: 01000000i
     VectorActionDescriptions: []
     VectorActionSpaceType: 0
     hasUpgradedBrainParametersWithActionSpec: 1
@@ -329,8 +329,8 @@ MonoBehaviour:
     NumStackedVectorObservations: 1
     m_ActionSpec:
       m_NumContinuousActions: 0
-      BranchSizes: 01000000
-    VectorActionSize: 01000000
+      BranchSizes: 01000000i
+    VectorActionSize: 01000000i
     VectorActionDescriptions: []
     VectorActionSpaceType: 0
     hasUpgradedBrainParametersWithActionSpec: 1
@@ -508,8 +508,8 @@ MonoBehaviour:
     NumStackedVectorObservations: 1
     m_ActionSpec:
       m_NumContinuousActions: 0
-      BranchSizes: 01000000
-    VectorActionSize: 01000000
+      BranchSizes: 01000000i
+    VectorActionSize: 01000000i
     VectorActionDescriptions: []
     VectorActionSpaceType: 0
     hasUpgradedBrainParametersWithActionSpec: 1
@@ -731,8 +731,8 @@ MonoBehaviour:
     NumStackedVectorObservations: 1
     m_ActionSpec:
       m_NumContinuousActions: 0
-      BranchSizes: 01000000
-    VectorActionSize: 01000000
+      BranchSizes: 01000000i
+    VectorActionSize: 01000000i
     VectorActionDescriptions: []
     VectorActionSpaceType: 0
     hasUpgradedBrainParametersWithActionSpec: 1
@@ -857,8 +857,8 @@ MonoBehaviour:
     NumStackedVectorObservations: 1
     m_ActionSpec:
       m_NumContinuousActions: 0
-      BranchSizes: 01000000
-    VectorActionSize: 01000000
+      BranchSizes: 01000000i
+    VectorActionSize: 01000000i
     VectorActionDescriptions: []
     VectorActionSpaceType: 0
     hasUpgradedBrainParametersWithActionSpec: 1
@@ -983,8 +983,8 @@ MonoBehaviour:
     NumStackedVectorObservations: 1
     m_ActionSpec:
       m_NumContinuousActions: 0
-      BranchSizes: 01000000
-    VectorActionSize: 01000000
+      BranchSizes: 01000000i
+    VectorActionSize: 01000000i
     VectorActionDescriptions: []
     VectorActionSpaceType: 0
     hasUpgradedBrainParametersWithActionSpec: 1
@@ -1109,8 +1109,8 @@ MonoBehaviour:
     NumStackedVectorObservations: 1
     m_ActionSpec:
       m_NumContinuousActions: 0
-      BranchSizes: 01000000
-    VectorActionSize: 01000000
+      BranchSizes: 01000000i
+    VectorActionSize: 01000000i
     VectorActionDescriptions: []
     VectorActionSpaceType: 0
     hasUpgradedBrainParametersWithActionSpec: 1
@@ -1198,17 +1198,23 @@ MonoBehaviour:
   wrestlerA: {fileID: 687244891}
   wrestlerB: {fileID: 1476417986}
   arena: {fileID: 186417205}
+  tuning: {fileID: 11400000, guid: b40c783b035d5814a918a508fb517706, type: 2}
   ringHalfWidth: 3.5
   roundTimeoutSeconds: 20
-  knockdownLoses: 0
+  ringOutOnFloorContact: 1
   fallY: -0.2
   footOffMatY: -0.06
+  tawaraBandWidth: 1.2
+  tawaraFriction: 0.18
   randomizeRounds: 1
   startHalfRange: {x: 1.7, y: 3.5}
   frictionRange: {x: 0.5, y: 1.1}
   spawnGapHalf: 2.5
   shoveImpulse: 0
   platformDifficulty: 1
+  shrinkStartSeconds: 8
+  shrinkToHalfWidth: 1.8
+  shrinkSeconds: 12
 --- !u!1 &1146319500
 GameObject:
   m_ObjectHideFlags: 0
@@ -1449,8 +1455,8 @@ MonoBehaviour:
     NumStackedVectorObservations: 1
     m_ActionSpec:
       m_NumContinuousActions: 0
-      BranchSizes: 01000000
-    VectorActionSize: 01000000
+      BranchSizes: 01000000i
+    VectorActionSize: 01000000i
     VectorActionDescriptions: []
     VectorActionSpaceType: 0
     hasUpgradedBrainParametersWithActionSpec: 1
@@ -1595,8 +1601,8 @@ MonoBehaviour:
     NumStackedVectorObservations: 1
     m_ActionSpec:
       m_NumContinuousActions: 0
-      BranchSizes: 01000000
-    VectorActionSize: 01000000
+      BranchSizes: 01000000i
+    VectorActionSize: 01000000i
     VectorActionDescriptions: []
     VectorActionSpaceType: 0
     hasUpgradedBrainParametersWithActionSpec: 1
@@ -1717,17 +1723,23 @@ MonoBehaviour:
   wrestlerA: {fileID: 1646994351}
   wrestlerB: {fileID: 4392839}
   arena: {fileID: 1356077660}
+  tuning: {fileID: 11400000, guid: b40c783b035d5814a918a508fb517706, type: 2}
   ringHalfWidth: 3.5
   roundTimeoutSeconds: 20
-  knockdownLoses: 0
+  ringOutOnFloorContact: 1
   fallY: -0.2
   footOffMatY: -0.06
+  tawaraBandWidth: 1.2
+  tawaraFriction: 0.18
   randomizeRounds: 1
   startHalfRange: {x: 1.7, y: 3.5}
   frictionRange: {x: 0.5, y: 1.1}
   spawnGapHalf: 2.5
   shoveImpulse: 0
   platformDifficulty: 1
+  shrinkStartSeconds: 8
+  shrinkToHalfWidth: 1.8
+  shrinkSeconds: 12
 --- !u!1 &1931487967
 GameObject:
   m_ObjectHideFlags: 0
@@ -1843,8 +1855,8 @@ MonoBehaviour:
     NumStackedVectorObservations: 1
     m_ActionSpec:
       m_NumContinuousActions: 0
-      BranchSizes: 01000000
-    VectorActionSize: 01000000
+      BranchSizes: 01000000i
+    VectorActionSize: 01000000i
     VectorActionDescriptions: []
     VectorActionSpaceType: 0
     hasUpgradedBrainParametersWithActionSpec: 1

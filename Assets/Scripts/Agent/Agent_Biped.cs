@@ -476,8 +476,98 @@ namespace PoSumo
         /// NaN/Inf sanitization guard for every value submitted to the model.
         private static float San(float v) => float.IsFinite(v) ? v : 0f;
 
+        // ---- Observation range guard (Editor + development builds only) ------
+        //
+        // Every slot in the vector is hand-scaled to sit around [-1, 1]. Twice
+        // already a slot has been wildly outside that for months with nothing
+        // saying so: observation 0 fed -29.5 to the six walk agents (a world Y on
+        // a lane at y = -60), and the mat slots described a mat that did not
+        // exist. Neither raised an error, because a large finite float is a
+        // perfectly valid observation — `San` only catches NaN and Inf — and
+        // `normalize: true` quietly absorbs it into a running variance that then
+        // flattens every in-range reading of the same slot.
+        //
+        // So: warn ONCE per behaviour per slot when |value| leaves the band. It
+        // is a diagnostic and nothing else — the value is submitted unchanged,
+        // and both guard methods are [Conditional], so a release player and a
+        // non-development env build contain no call to them at all.
+
+        /// |value| above this is far outside anything a slot is scaled to produce.
+        /// ~5 rather than ~1 on purpose: several slots legitimately run a little
+        /// past 1 (a fast joint, a foot at full stride) and a guard that fires on
+        /// ordinary motion teaches whoever reads the console to skip it.
+        private const float OBSERVATION_RANGE_LIMIT = 5f;
+
+        /// Slots already reported, per behaviour name. One `bool[]` per behaviour,
+        /// SHARED by every agent of that name, so ten agents in a training scene
+        /// produce one warning per bad slot rather than ten.
+        ///
+        /// Cleared on SubsystemRegistration like the other statics here — Enter
+        /// Play Mode domain reload is off, so without it a slot reported in one
+        /// Play session would stay silent in every later one.
+        private static readonly System.Collections.Generic.Dictionary<string, bool[]>
+            _rangeWarnedByBehavior = new System.Collections.Generic.Dictionary<string, bool[]>();
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetRangeGuard() => _rangeWarnedByBehavior.Clear();
+
+        /// This agent's view of its behaviour's entry above. Resolved lazily
+        /// inside the guard, so a build that strips the guard never allocates it.
+        private bool[] _rangeWarned;
+        private int _guardSlot;
+
+        /// The ONE place a value enters the vector. Adds exactly what it is
+        /// given, in the order it is called — the guard after it only reads.
+        private void Observe(VectorSensor sensor, float value)
+        {
+            sensor.AddObservation(value);
+            GuardObservationRange(value);
+        }
+
+        // DEBUG, not DEVELOPMENT_BUILD: this Unity version's analyzer (UAC0009)
+        // deprecates the latter and names DEBUG as the managed-code-variant
+        // replacement. It is defined for a development player and never for a
+        // release one, which is the only direction that matters here — if a
+        // build ever lacked it the guard would be absent, not wrong.
+        [System.Diagnostics.Conditional("UNITY_EDITOR")]
+        [System.Diagnostics.Conditional("DEBUG")]
+        private void BeginObservationGuard()
+        {
+            _guardSlot = 0;
+        }
+
+        [System.Diagnostics.Conditional("UNITY_EDITOR")]
+        [System.Diagnostics.Conditional("DEBUG")]
+        private void GuardObservationRange(float value)
+        {
+            int slot = _guardSlot++;
+            // The common path: two compares and out. No allocation, no lookup.
+            if (value <= OBSERVATION_RANGE_LIMIT && value >= -OBSERVATION_RANGE_LIMIT) return;
+
+            if (_rangeWarned == null)
+            {
+                string key = behaviorName ?? string.Empty;
+                if (!_rangeWarnedByBehavior.TryGetValue(key, out _rangeWarned))
+                {
+                    // Sized to the widest vector this class can build (51) with
+                    // room to spare, so a future block cannot index past it.
+                    _rangeWarned = new bool[64];
+                    _rangeWarnedByBehavior[key] = _rangeWarned;
+                }
+            }
+            if (slot >= _rangeWarned.Length || _rangeWarned[slot]) return;
+            _rangeWarned[slot] = true;
+            Debug.LogWarning(
+                $"[OBS] RANGE: '{behaviorName}' slot {slot} = {value:F3} on '{name}' " +
+                $"(mode {mode}), outside +/-{OBSERVATION_RANGE_LIMIT:F0}. Slots are scaled to " +
+                $"sit near [-1, 1]; a reading this far out is usually a scale or a frame " +
+                $"mistake, and with normalize: true it also flattens every in-range reading " +
+                $"of that slot. Reported once per behaviour per slot.", this);
+        }
+
         public override void CollectObservations(VectorSensor sensor)
         {
+            BeginObservationGuard();
             Vector2 tp = Torso.position;
             Vector2 tv = Torso.linearVelocity;
 
@@ -499,25 +589,25 @@ namespace PoSumo
             // training alike. Note the other height-ish observations below are
             // already relative -- the foot slots are measured against `tp` -- so
             // this was the only absolute one in the vector.
-            sensor.AddObservation(San((tp.y - arenaGroundY) / 2f));               // 1
-            sensor.AddObservation(San(tv.x * Fs / 5f));                           // 1
-            sensor.AddObservation(San(tv.y / 5f));                                // 1
+            Observe(sensor,San((tp.y - arenaGroundY) / 2f));               // 1
+            Observe(sensor,San(tv.x * Fs / 5f));                           // 1
+            Observe(sensor,San(tv.y / 5f));                                // 1
             float lean = Vector2.SignedAngle(Vector2.up, _b.Chest.transform.up);
-            sensor.AddObservation(San(lean * Fs / 180f));                         // 1
-            sensor.AddObservation(San(_b.Chest.angularVelocity * Fs / 500f));     // 1
+            Observe(sensor,San(lean * Fs / 180f));                         // 1
+            Observe(sensor,San(_b.Chest.angularVelocity * Fs / 500f));     // 1
 
             for (int actionIndex = 0; actionIndex < ActionCount; actionIndex++)                                 // 26
             {
-                sensor.AddObservation(San(_b.JointAngleNorm(actionIndex)));
-                sensor.AddObservation(San(_b.JointSpeedNorm(actionIndex)));
+                Observe(sensor,San(_b.JointAngleNorm(actionIndex)));
+                Observe(sensor,San(_b.JointSpeedNorm(actionIndex)));
             }
 
             Vector2 fn = _b.FootNear.position - tp;                               // 4
             Vector2 ff = _b.FootFar.position - tp;
-            sensor.AddObservation(San(fn.x * Fs / 2f));
-            sensor.AddObservation(San(fn.y / 2f));
-            sensor.AddObservation(San(ff.x * Fs / 2f));
-            sensor.AddObservation(San(ff.y / 2f));
+            Observe(sensor,San(fn.x * Fs / 2f));
+            Observe(sensor,San(fn.y / 2f));
+            Observe(sensor,San(ff.x * Fs / 2f));
+            Observe(sensor,San(ff.y / 2f));
 
             // TASK FLAG — 1 when this is a real bout, 0 when the four "opponent"
             // slots below are carrying a virtual target instead.
@@ -529,7 +619,7 @@ namespace PoSumo
             // locomotion mode (1,0,1 in the extended block) — an accident, not a
             // signal. With it, the policy can condition on the task explicitly.
             bool fighting = mode == Mode.Sumo && opponent != null;
-            sensor.AddObservation(fighting ? 1f : 0f);                            // 1
+            Observe(sensor,fighting ? 1f : 0f);                            // 1
 
             // Opponent torso (or, in Walk mode, a virtual target at ring center).
             Vector2 op, ov;
@@ -541,10 +631,10 @@ namespace PoSumo
             {
                 op = new Vector2(arenaCenterX, 1.2f); ov = Vector2.zero;
             }
-            sensor.AddObservation(San((op.x - tp.x) * Fs / 10f));                 // 1
-            sensor.AddObservation(San((op.y - tp.y) / 3f));                       // 1
-            sensor.AddObservation(San((ov.x - tv.x) * Fs / 5f));                  // 1
-            sensor.AddObservation(San((ov.y - tv.y) / 5f));                       // 1
+            Observe(sensor,San((op.x - tp.x) * Fs / 10f));                 // 1
+            Observe(sensor,San((op.y - tp.y) / 3f));                       // 1
+            Observe(sensor,San((ov.x - tv.x) * Fs / 5f));                  // 1
+            Observe(sensor,San((ov.y - tv.y) / 5f));                       // 1
 
             // THE MAT, AS IT IS RIGHT NOW — three slots.                         // 3
             //
@@ -572,12 +662,12 @@ namespace PoSumo
             float xLocal = (tp.x - arenaCenterX) * Fs;
             if (fighting)
             {
-                sensor.AddObservation(San((ringHalfWidth - xLocal) / RING_REFERENCE_HALF)); // edge ahead
-                sensor.AddObservation(San((ringHalfWidth + xLocal) / RING_REFERENCE_HALF)); // edge behind
+                Observe(sensor,San((ringHalfWidth - xLocal) / RING_REFERENCE_HALF)); // edge ahead
+                Observe(sensor,San((ringHalfWidth + xLocal) / RING_REFERENCE_HALF)); // edge behind
                 // How much mat exists at all. Without this the two slots above are
                 // ambiguous: "1.0 ahead, 1.0 behind" is a full mat and also a fighter
                 // dead-centre on a mat half that size, and only one of those is safe.
-                sensor.AddObservation(San(ringHalfWidth / RING_REFERENCE_HALF));
+                Observe(sensor,San(ringHalfWidth / RING_REFERENCE_HALF));
             }
             else
             {
@@ -587,17 +677,17 @@ namespace PoSumo
                 // duplicate of the target distance the opponent block already gives.
                 // Neutral constants instead, matching how the extended block below
                 // already handles having no opponent.
-                sensor.AddObservation(1f);
-                sensor.AddObservation(1f);
-                sensor.AddObservation(1f);
+                Observe(sensor,1f);
+                Observe(sensor,1f);
+                Observe(sensor,1f);
             }
 
             if (contactObservations)                                              // +4
             {
-                sensor.AddObservation(_b.FootDownNear ? 1f : 0f);
-                sensor.AddObservation(San(_b.FootLoadNear));
-                sensor.AddObservation(_b.FootDownFar ? 1f : 0f);
-                sensor.AddObservation(San(_b.FootLoadFar));
+                Observe(sensor,_b.FootDownNear ? 1f : 0f);
+                Observe(sensor,San(_b.FootLoadNear));
+                Observe(sensor,_b.FootDownFar ? 1f : 0f);
+                Observe(sensor,San(_b.FootLoadFar));
             }
 
             if (staminaObservation)                                               // +1
@@ -606,7 +696,7 @@ namespace PoSumo
                 // not arbitrary — the order here IS the input layer's layout, and the
                 // only rule that matters is that it never changes again once a brain
                 // has been trained on it.
-                sensor.AddObservation(San(_b.Stamina));
+                Observe(sensor,San(_b.Stamina));
             }
 
             if (extendedObservations)                                             // +3
@@ -617,15 +707,15 @@ namespace PoSumo
                     float oppUp = _opponentBody != null
                         ? Vector2.Dot(_opponentBody.Chest.transform.up, Vector2.up) : 1f;
                     float oppEdge = (ringHalfWidth - Mathf.Abs(opponent.TorsoX - arenaCenterX)) / ringHalfWidth;
-                    sensor.AddObservation(San(oppUp));
-                    sensor.AddObservation(opponent.IsDown ? 1f : 0f);
-                    sensor.AddObservation(San(Mathf.Clamp01(oppEdge)));
+                    Observe(sensor,San(oppUp));
+                    Observe(sensor,opponent.IsDown ? 1f : 0f);
+                    Observe(sensor,San(Mathf.Clamp01(oppEdge)));
                 }
                 else
                 {
-                    sensor.AddObservation(1f);
-                    sensor.AddObservation(0f);
-                    sensor.AddObservation(1f);
+                    Observe(sensor,1f);
+                    Observe(sensor,0f);
+                    Observe(sensor,1f);
                 }
             }
         }

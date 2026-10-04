@@ -124,6 +124,32 @@ namespace PoSumo
             return w.Torso.position.y < floorTop - 2f;
         }
 
+        /// Seeds (or, at 0, clears) the fatigue both fighters open their next
+        /// round with — GameTuning.roundFatigueCarry.
+        ///
+        /// GAME-ONLY and it has to stay that way: Systems_SumoMatchManager has no
+        /// equivalent on purpose, because in training a round IS an ML-Agents
+        /// episode and fatigue carried across that boundary is a hidden
+        /// non-stationary term (see Agent_BipedBody.ResetPose). Here a round is
+        /// not an episode anybody learns from, so the between-rounds rest can be
+        /// made partial without touching what a brain trains against.
+        ///
+        /// At the default of 0 this only ever clears a flag that was never set.
+        private void SetFatigueCarry(float fraction)
+        {
+            ApplyFatigueCarry(wrestlerA, fraction);
+            ApplyFatigueCarry(wrestlerB, fraction);
+        }
+
+        private static void ApplyFatigueCarry(Agent_Biped fighter, float fraction)
+        {
+            if (fighter == null) return;
+            var body = fighter.GetComponent<Agent_BipedBody>();
+            if (body == null) return;
+            if (fraction > 0f) body.CaptureFatigueCarry(fraction);
+            else body.ClearFatigueCarry();
+        }
+
         private void EndRound(Agent_Biped roundWinner, RoundOutcome outcome,
                               string drawText, string winText = null)
         {
@@ -179,6 +205,13 @@ namespace PoSumo
             }
 
             bool matchOver = _scoreA >= pointsToWin || _scoreB >= pointsToWin;
+            // END-OF-ROUND fatigue, sampled here rather than at the reset that
+            // follows: betweenRoundsPause is 2.5 s of cut motors, during which
+            // every joint recovers at the unloaded rate, so sampling at the reset
+            // would carry what was left after the rest instead of what the round
+            // cost. A decided match carries nothing — fatigue never crosses from
+            // one match into the next.
+            SetFatigueCarry(matchOver ? 0f : roundFatigueCarry);
             if (matchOver)
             {
                 // Match decided: the loser goes fully limp and stays down, while

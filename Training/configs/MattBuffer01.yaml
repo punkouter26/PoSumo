@@ -1,0 +1,177 @@
+# Matt BUFFER 01 - a single-variable throughput/quality test. Created 2026-10-04.
+#
+# A COPY OF MattRebuild02.yaml WITH EXACTLY TWO NUMBERS CHANGED, AND THEY ARE ONE
+# VARIABLE:
+#
+#     buffer_size: 20480 -> 40960
+#     batch_size:   2048 ->  4096
+#
+# Both doubled together so the ratio between them - 10 minibatches per epoch, 30
+# gradient steps per policy update at num_epoch 3 - is unchanged. What changes is
+# how much experience each update is computed from: twice as much, half as often.
+# Everything else in this file, including both curricula, `threaded: false` and
+# the self-play block, is MattRebuild02's. Read that header for what the run
+# trains and how its curriculum is meant to be judged; none of it is repeated.
+#
+# WHAT IT TESTS. PPO's buffer is how many steps are collected before the policy
+# moves. This env produces a great deal of highly correlated experience - ten
+# bipeds per env, 50 Hz physics, decisions every third step - and a 20480 buffer
+# is filled in very little wall-clock time. Two things could follow from doubling
+# it, and they pull in opposite directions:
+#
+#   - QUALITY: each update averages over twice as many rounds, so the gradient is
+#     less noisy and self-play, which is non-stationary by construction, gets a
+#     steadier target. That is the case for a bigger buffer.
+#   - THROUGHPUT: the same 15M steps now buy HALF as many policy updates. If the
+#     updates were the bottleneck, wall-clock per step improves (less time in
+#     torch, more in the envs) while learning per step gets worse.
+#
+# Which one wins on this body cannot be reasoned out. It has to be measured, and
+# this is the run that measures it.
+#
+# IT IS ONLY A TEST IF NOTHING ELSE MOVES. Launch it with the SAME --num-envs (4),
+# the SAME env build and the SAME start (warm from matt_rebuild01, or cold) as
+# matt_rebuild02. --num-envs in particular changes how experience is batched, so
+# a different value here would be a second variable wearing the first one's name.
+# learning_rate is deliberately NOT scaled up with the batch: that is a common
+# companion change and it would make this a two-variable run.
+#
+# HOW TO JUDGE IT - ON ELO SHAPE AGAINST matt_rebuild02, AND NOTHING ELSE.
+#
+#   Overlay the two runs' self-play ELO in TensorBoard, against STEPS and again
+#   against WALL TIME (the "Relative" axis). They answer different questions:
+#     - by steps: is a step worth more or less with the bigger buffer?
+#     - by wall time: does the run reach a given ELO sooner on the clock?
+#   Accept Buffer01's settings for the roster only if its curve is at least as
+#   good on BOTH. Better per hour but worse per step is a throughput win that
+#   costs sample efficiency, and whether that trade is worth it depends on how
+#   long the box can be left training - say which it is rather than calling it a
+#   win.
+#
+#   Mean reward is NOT a criterion, here as everywhere in this project, and it is
+#   doubly unusable across these two: fewer, larger updates change how quickly
+#   shaping is farmed independently of whether bouts are won.
+#
+#   A resumed run's ELO restarts at 1200 (it is not stored in the checkpoint), so
+#   compare the two only if both were launched the same way and neither was
+#   resumed part-way, or compare shapes from each run's own restart.
+#
+# Matt only, on purpose: he is the neutral baseline (massScale 1.0, widthScale
+# 1.0), and one fighter is enough to decide whether the other three are worth
+# the same change.
+#
+# NEW OPTIONAL RULE FLAGS - PLACEHOLDER. Same as MattRebuild02.yaml: a separate
+# pass is adding optional rule flags, none are recorded yet, and this run must
+# use exactly the set matt_rebuild02 uses or the comparison is void.
+#
+#     (none recorded yet)
+#
+# PRECONDITIONS: identical to MattRebuild02.yaml - env rebuilt after 2026-10-04,
+# TensorBoard up and serving Training/results, Editor closed to the run.
+#
+# Launch (after matt_rebuild02, or alongside it on a different base port):
+#   Training/Start-StaminaExtension.ps1 -Fighters Matt -Phase Buffer01 -InitializeFromPhase Rebuild01 -Minutes <n>
+# or by hand:
+#   Training/venv/Scripts/mlagents-learn.exe Training/configs/MattBuffer01.yaml
+#     --run-id=matt_buffer01 --results-dir=Training/results
+#     --initialize-from=matt_rebuild01
+#     --env=Builds/MattEnv/MattEnv.exe --num-envs=4 --no-graphics --base-port=5045
+
+behaviors:
+  Matt:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 4096   # 2048 in MattRebuild02 - THE variable under test
+      buffer_size: 40960  # 20480 in MattRebuild02 - THE variable under test
+      learning_rate: 3.0e-4
+      beta: 5.0e-3
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:
+      normalize: true
+      hidden_units: 512
+      num_layers: 3
+      vis_encode_type: simple
+    reward_signals:
+      extrinsic:
+        gamma: 0.997
+        strength: 1.0
+    keep_checkpoints: 5
+    checkpoint_interval: 250000
+    max_steps: 15000000
+    time_horizon: 1000
+    summary_freq: 30000
+    threaded: false   # self-play: ML-Agents recommends false. Changed 2026-10-04; shipped Rebuild01 brains trained with true.
+    self_play:
+      window: 25
+      play_against_latest_model_ratio: 0.25
+      save_steps: 50000
+      swap_steps: 50000
+      team_change: 250000
+
+# Ring-width curriculum. Systems_SumoMatchManager randomises each round's platform
+# half-width within startHalfRange (1.7 .. 3.5); platform_difficulty controls how far
+# toward the narrow end it may go.
+#
+# THIS LESSON ONLY STARTS WORKING WITH THIS RUN. Its purpose is to teach edge
+# distance across SCALES rather than let the policy memorise one mat width - and
+# until change 1 above, the width it varied was not in the observation vector at
+# all, so every lesson looked identical from inside the policy. Expect it to bite
+# for the first time here, and expect the wide -> mixed -> full progression to
+# actually cost something.
+environment_parameters:
+  platform_difficulty:
+    curriculum:
+      - name: wide
+        completion_criteria:
+          measure: progress
+          behavior: Matt
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.3
+        value: 0.0
+      - name: mixed
+        completion_criteria:
+          measure: progress
+          behavior: Matt
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.6
+        value: 0.5
+      - name: full
+        value: 1.0
+
+  # When the mat starts closing, in seconds. NEW IN REBUILD02 - see the header for
+  # the direction and why. Stage 1 is today's value; the later stages hold the
+  # floor still for longer on a growing share of rounds, with 8 always in range.
+  # Thresholds are offset from platform_difficulty's (0.30 / 0.60) on purpose.
+  shrink_start:
+    curriculum:
+      - name: today
+        completion_criteria:
+          measure: progress
+          behavior: Matt
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.45
+        value: 8.0
+      - name: later
+        completion_criteria:
+          measure: progress
+          behavior: Matt
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.75
+        value:
+          sampler_type: uniform
+          sampler_parameters:
+            min_value: 8.0
+            max_value: 11.0
+      - name: late
+        value:
+          sampler_type: uniform
+          sampler_parameters:
+            min_value: 8.0
+            max_value: 14.0

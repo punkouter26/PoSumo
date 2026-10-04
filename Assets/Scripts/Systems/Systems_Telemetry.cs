@@ -98,6 +98,37 @@ namespace PoSumo
         /// string twice a second per biped for the whole life of the process.
         private readonly Dictionary<Agent_Biped, string> _staminaKeys =
             new Dictionary<Agent_Biped, string>();
+        // ---- Action saturation (2026-10-04) --------------------------------
+        //
+        // The fraction of a fighter's 13 motor commands sitting on the rails.
+        // A policy that slams most of its motors to +/-1 is running bang-bang
+        // control: it has stopped modulating, the quadratic effort cost is not
+        // biting, and there is nothing left for the optimiser to refine. It was
+        // measured once by hand (7 to 12 of 13 motors above |0.9|) and then never
+        // watched again, because nothing recorded it.
+        //
+        // Sampled here at 2 Hz off `Agent_Biped.LastActions` rather than counted
+        // in OnActionReceived: that is the hottest path in the project and this
+        // needs no more resolution than the trainer's summary window gives it.
+
+        /// |action| above this counts as saturated. Just inside the +/-1 clamp,
+        /// so a command that is merely large does not count and one pinned to
+        /// the rail does.
+        private const float SATURATION_THRESHOLD = 0.95f;
+
+        /// One TensorBoard key per agent, cached for the same reason as the
+        /// stamina keys above. The KEY is per behaviour, so the trainer averages
+        /// every agent of that name into one series over its summary window.
+        private readonly Dictionary<Agent_Biped, string> _saturationKeys =
+            new Dictionary<Agent_Biped, string>();
+
+        /// Per-behaviour accumulators for the JSON block, reused every snapshot.
+        /// Parallel lists and a linear search: a scene has one to five behaviour
+        /// names, and a Dictionary would need its keys enumerated to print it.
+        private readonly List<string> _saturationNames = new List<string>(8);
+        private readonly List<float> _saturationSums = new List<float>(8);
+        private readonly List<int> _saturationCounts = new List<int>(8);
+
         private float _nextSample;
         private float _nextRescan;
         private int _boundPort = -1;
@@ -311,6 +342,9 @@ namespace PoSumo
             // skipped, so keying the separator off the loop index emits a leading
             // comma and produces JSON that no parser will accept.
             bool wroteAny = false;
+            _saturationNames.Clear();
+            _saturationSums.Clear();
+            _saturationCounts.Clear();
             for (int agentIndex = 0; agentIndex < _agents.Length; agentIndex++)
             {
                 Agent_Biped agent = _agents[agentIndex];
@@ -337,6 +371,21 @@ namespace PoSumo
                 _builder.Append(",\"x\":").Append(agent.TorsoX.ToString("F2"));
                 _builder.Append(",\"down\":").Append(agent.IsDown ? "true" : "false");
                 _builder.Append(",\"limp\":").Append(body.IsLimp ? "true" : "false");
+
+                // Saturation is only meaningful while the policy is actually
+                // driving. A frozen or limp fighter has LastActions zeroed by
+                // Agent_Biped, and averaging those zeros in would report a
+                // bang-bang policy as a gentle one for as long as the game spends
+                // between rounds. The per-fighter value is still printed; it is
+                // the per-behaviour mean and the TensorBoard series that skip it.
+                float saturation = SaturatedFraction(agent.LastActions);
+                bool driving = agent.actionsEnabled && !body.IsLimp;
+                _builder.Append(",\"driving\":").Append(driving ? "true" : "false");
+                _builder.Append(",\"saturation\":").Append(saturation.ToString("F3"));
+                if (driving)
+                {
+                    AccumulateSaturation(agent.behaviorName, saturation);
+                }
                 _builder.Append('}');
 
                 // Aggregated by the trainer over the summary window, so one series
@@ -350,16 +399,76 @@ namespace PoSumo
                         _staminaKeys.Add(agent, key);
                     }
                     stats.Add(key, stamina);
+
+                    if (driving)
+                    {
+                        if (!_saturationKeys.TryGetValue(agent, out string saturationKey))
+                        {
+                            saturationKey = "Policy/" + agent.behaviorName + "/ActionSaturation";
+                            _saturationKeys.Add(agent, saturationKey);
+                        }
+                        stats.Add(saturationKey, saturation);
+                    }
                 }
             }
 
-            _builder.Append("]}");
+            _builder.Append(']');
+
+            // Mean saturation per behaviour over the agents driving right now —
+            // the same number the TensorBoard series converges on, readable from
+            // a headless env without waiting for a summary.
+            _builder.Append(",\"actionSaturation\":{");
+            for (int nameIndex = 0; nameIndex < _saturationNames.Count; nameIndex++)
+            {
+                if (nameIndex > 0)
+                {
+                    _builder.Append(',');
+                }
+                float mean = _saturationSums[nameIndex] / Mathf.Max(1, _saturationCounts[nameIndex]);
+                _builder.Append('"').Append(_saturationNames[nameIndex]).Append("\":")
+                        .Append(mean.ToString("F3"));
+            }
+            _builder.Append("}}");
 
             string json = _builder.ToString();
             lock (_snapshotLock)
             {
                 _snapshot = json;
             }
+        }
+
+        /// Share of the action vector pinned to a rail, 0..1.
+        private static float SaturatedFraction(float[] actions)
+        {
+            if (actions == null || actions.Length == 0)
+            {
+                return 0f;
+            }
+            int saturated = 0;
+            for (int actionIndex = 0; actionIndex < actions.Length; actionIndex++)
+            {
+                if (Mathf.Abs(actions[actionIndex]) > SATURATION_THRESHOLD)
+                {
+                    saturated++;
+                }
+            }
+            return saturated / (float)actions.Length;
+        }
+
+        private void AccumulateSaturation(string behaviorName, float saturation)
+        {
+            for (int nameIndex = 0; nameIndex < _saturationNames.Count; nameIndex++)
+            {
+                if (_saturationNames[nameIndex] == behaviorName)
+                {
+                    _saturationSums[nameIndex] += saturation;
+                    _saturationCounts[nameIndex]++;
+                    return;
+                }
+            }
+            _saturationNames.Add(behaviorName);
+            _saturationSums.Add(saturation);
+            _saturationCounts.Add(1);
         }
 
         /// Accept loop. Serves `/metrics` (and `/`) as JSON, 404 for anything else.

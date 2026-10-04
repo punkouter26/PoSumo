@@ -9,12 +9,23 @@ namespace PoSumo
     /// Each round can randomize the starting platform width and surface friction
     /// so policies train across the whole endgame space. Timeout is a draw.
     ///
-    /// Every number here that also exists in Assets/Settings/GameTuning.asset
-    /// must equal the value in that asset. This component does NOT read it —
-    /// each training scene carries its own serialized copy — so the code default
-    /// is what a NEW scene inherits, and it is the thing that goes stale
-    /// silently. It had: ring 5.5 vs a shipped 3.5, timeout 30 vs 20, spawn gap
-    /// 1.2 vs 2.5. Corrected 2026-08-15.
+    /// ONE SOURCE FOR THE SHARED NUMBERS (2026-10-04). Every rule this referee
+    /// shares with the game — ring width, opening gap, tawara band, the shrink
+    /// schedule, the ring-out rule — is copied from `tuning`
+    /// (Assets/Settings/GameTuning.asset) in Start, exactly as
+    /// Systems_GameMatchManager does it. The four SCN_TRAIN_* scenes reference
+    /// that asset, and a scene reference is what carries it into a headless env
+    /// build.
+    ///
+    /// Until then each training scene carried its own serialized copy, and that
+    /// copy drifted silently: ring 5.5 vs a shipped 3.5, timeout 30 vs 20, spawn
+    /// gap 1.2 vs 2.5 (corrected 2026-08-15), and before that a whole generation
+    /// of brains trained on a mat 0.5 m wider than the one they fight on.
+    ///
+    /// The serialized fields below are still there and still matter: they are
+    /// the FALLBACK for a scene with no tuning asset assigned, so keep their
+    /// defaults equal to the asset. What stays training-only, by design, is
+    /// listed on ApplyTuning.
     ///
     /// The one shipped rule not reproduced here is the head-KO count; see the
     /// NOT PORTED note below for why it cannot be.
@@ -23,6 +34,8 @@ namespace PoSumo
         public Agent_Biped wrestlerA;
         public Agent_Biped wrestlerB;
         public Systems_SumoArena arena;
+        [Tooltip("Assets/Settings/GameTuning.asset — the same asset the game referee reads. When assigned, the shared rule numbers below are overwritten from it in Start and the serialized values on this component are only a fallback.")]
+        public Systems_GameTuning tuning;
         // Matches Systems_GameMatchManager's ring. These two referees are kept in
         // step on the rules a policy has to learn, and ring width is one of them:
         // it is fed to the agent as a normalised edge-distance observation, so
@@ -35,9 +48,12 @@ namespace PoSumo
         // only the scenes were ever right. Anyone adding a fifth training scene
         // inherited the wrong arena silently. Keep this equal to GameTuning.
         public float ringHalfWidth = 3.5f;
-        // Episode bound for TRAINING ONLY. The GAME has NO clock any more
+        // Episode bound for TRAINING ONLY, and deliberately NOT read from the
+        // tuning asset even though a field of the same name exists there. The
+        // GAME has NO clock any more
         // (GameTuning.roundTimeoutSeconds is 0 and the timeout-decision path was
         // deleted 2026-08-26) — this is a deliberate divergence, see CLAUDE.md.
+        // Copying the asset's 0 here would end every episode on its first step.
         // A training episode still needs a bound so a stalemate is interrupted
         // (a draw, not a terminal) rather than running forever; the shrinking mat
         // below normally ends a round well before it. The four training scenes
@@ -92,7 +108,7 @@ namespace PoSumo
         [Tooltip("0 = always full stable platform, 1 = full width/friction randomization.")]
         public float platformDifficulty = 1f;
 
-        [Tooltip("Seconds into the round before the mat starts closing in. 0 disables the shrink. Must match GameTuning.shrinkStartSeconds.\n\nDeliberately late: the opening exchange should be fought on a full mat, and starting the squeeze at t=0 would make every round a scramble for the middle.")]
+        [Tooltip("Seconds into the round before the mat starts closing in. 0 disables the shrink. Copied from GameTuning.shrinkStartSeconds in Start, then overridable per round by the `shrink_start` environment parameter (see the *Rebuild02 configs).\n\nDeliberately late: the opening exchange should be fought on a full mat, and starting the squeeze at t=0 would make every round a scramble for the middle.")]
         public float shrinkStartSeconds = 8f;
         [Tooltip("Half-width the mat closes to by the bell, at the default ring size. Must match GameTuning.shrinkToHalfWidth.\n\nScaled by the round's randomized start width, so a domain-randomized small ring shrinks by the same PROPORTION rather than to the same absolute number — which would mean no shrink at all on an already-narrow round.")]
         public float shrinkToHalfWidth = 1.8f;
@@ -104,9 +120,46 @@ namespace PoSumo
         private float _appliedHalf;
         private float _nextShoveTime;
         private Agent_BipedBody _bodyA, _bodyB;
+        /// TensorBoard keys for the two per-round stats below, built once.
+        private string _preShrinkKey, _roundSecondsKey;
+
+        /// Copies every rule this referee SHARES with the game from the tuning
+        /// asset. The game is the ground truth: a brain should be fitted to the
+        /// arena players actually see.
+        ///
+        /// Deliberately NOT copied, because they are training-only:
+        ///   roundTimeoutSeconds  the episode bound; the game has no clock (0).
+        ///   frictionRange        domain randomisation around the game's
+        ///                        surfaceFriction (0.55 sits inside 0.5..1.1).
+        ///   startHalfRange.x     how narrow a randomised round may open.
+        ///   shoveImpulse, platformDifficulty   curriculum dials.
+        ///   fallY, footOffMatY   only live with ringOutOnFloorContact off, and
+        ///                        the asset does not carry them.
+        ///
+        /// `startHalfRange.y` IS derived: the widest randomised round is the full
+        /// mat by definition, and a stale upper bound is exactly how this
+        /// referee once randomised across mat the game does not have.
+        private void ApplyTuning()
+        {
+            if (tuning == null) return;
+            ringHalfWidth = tuning.ringHalfWidth;
+            startHalfRange.y = ringHalfWidth;
+            startHalfRange.x = Mathf.Min(startHalfRange.x, ringHalfWidth);
+            // The opening stand-off. Still a curriculum dial — `spawn_gap_half`
+            // overrides it per round in ResetRound — but its DEFAULT is the game's.
+            spawnGapHalf = tuning.neutralGapHalf;
+            tawaraBandWidth = tuning.tawaraBandWidth;
+            tawaraFriction = tuning.tawaraFriction;
+            shrinkStartSeconds = tuning.shrinkStartSeconds;
+            shrinkToHalfWidth = tuning.shrinkToHalfWidth;
+            shrinkSeconds = tuning.shrinkSeconds;
+            ringOutOnFloorContact = tuning.ringOutOnFloorContact;
+        }
 
         private void Start()
         {
+            // First, before anything below reads a rule number.
+            ApplyTuning();
             if (wrestlerA == null || wrestlerB == null)
             {
                 var agents = FindObjectsByType<Agent_Biped>();
@@ -149,6 +202,8 @@ namespace PoSumo
             wrestlerB.arenaCenterX = transform.position.x;
             _bodyA = wrestlerA.GetComponent<Agent_BipedBody>();
             _bodyB = wrestlerB.GetComponent<Agent_BipedBody>();
+            _preShrinkKey = "Referee/" + wrestlerA.behaviorName + "/PreShrinkFinish";
+            _roundSecondsKey = "Referee/" + wrestlerA.behaviorName + "/RoundSeconds";
             if (arena != null)
             {
                 wrestlerA.BindArenaFloor(transform.position.y - FLOOR_MARGIN);
@@ -293,8 +348,30 @@ namespace PoSumo
             return false;
         }
 
+        /// Two per-ROUND scalars for TensorBoard, so the `shrink_start` curriculum
+        /// can be judged on what it is for.
+        ///
+        /// PreShrinkFinish is 1 when a round was won before the mat began to
+        /// close and 0 otherwise (a draw counts as 0), so its windowed mean is
+        /// the fraction of rounds the FIGHTERS decided rather than the floor. The
+        /// same quantity measured 6% in the game (1 round in 17). ELO says whether
+        /// a policy got better; this says whether it got better at the thing the
+        /// curriculum is staging.
+        ///
+        /// Once per round, off the physics path, and two cached keys — nothing
+        /// here allocates. It reads nothing back, so it cannot change a simulation.
+        private void RecordRoundStats(bool decided)
+        {
+            if (!Academy.IsInitialized || _preShrinkKey == null) return;
+            StatsRecorder stats = Academy.Instance.StatsRecorder;
+            bool preShrink = decided && (shrinkStartSeconds <= 0f || _elapsed < shrinkStartSeconds);
+            stats.Add(_preShrinkKey, preShrink ? 1f : 0f);
+            stats.Add(_roundSecondsKey, _elapsed);
+        }
+
         private void EndRound(Agent_Biped winner, Agent_Biped loser)
         {
+            RecordRoundStats(decided: true);
             winner.AddReward(1f);
             loser.AddReward(-1f);
             winner.EndEpisode();
@@ -304,6 +381,7 @@ namespace PoSumo
 
         private void Draw()
         {
+            RecordRoundStats(decided: false);
             // Interrupted (not terminal) so value bootstrapping stays correct.
             wrestlerA.EpisodeInterrupted();
             wrestlerB.EpisodeInterrupted();
@@ -322,6 +400,13 @@ namespace PoSumo
                 spawnGapHalf = ep.GetWithDefault("spawn_gap_half", spawnGapHalf);
                 shoveImpulse = ep.GetWithDefault("shove_impulse", shoveImpulse);
                 platformDifficulty = ep.GetWithDefault("platform_difficulty", platformDifficulty);
+                // When the mat starts closing, in seconds. Absent from a config,
+                // this returns the value already here — GameTuning's, via
+                // ApplyTuning — so every existing config trains exactly what it
+                // always did. Read per ROUND, never mid-round: TickShrinkingRing
+                // compares against it every step, and a schedule that moved under
+                // a round in progress would jump the mat.
+                shrinkStartSeconds = ep.GetWithDefault("shrink_start", shrinkStartSeconds);
             }
 
             float cx = transform.position.x;

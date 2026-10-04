@@ -329,9 +329,48 @@ namespace PoSumo
         private bool _gibbed;
         private Systems_GameMatchManager _manager;
 
+        /// Copies the designer-facing dials from the tuning asset, then applies
+        /// the player's REALISTIC MODE on top.
+        ///
+        /// This component is spawned fresh per match and nothing serializes it,
+        /// so until 2026-10-04 its CODE DEFAULTS were what ran and there was no
+        /// asset to tune. The fields above are now the fallback for a bout with
+        /// no tuning asset assigned — keep them equal to GameTuning's.
+        ///
+        /// Must run BEFORE ReapplyStandingDismemberment, which reads the gate and
+        /// the master switch.
+        private void ApplyTuning()
+        {
+            Systems_GameTuning tuning = _manager != null ? _manager.tuning : null;
+            if (tuning != null)
+            {
+                regionRedAt = tuning.regionRedAt;
+                detachAtRedMultiple = tuning.detachAtRedMultiple;
+                headDetachAtRedMultiple = tuning.headDetachAtRedMultiple;
+                regionDamageRefractory = tuning.regionDamageRefractory;
+                allowDetach = tuning.allowDetach;
+                limbDetachChance = tuning.limbDetachChance;
+                allowGib = tuning.allowGib;
+                gibSpeed = tuning.gibSpeed;
+                gibChance = tuning.gibChance;
+            }
+
+            // The player's switch wins over the asset, and only ever turns things
+            // OFF. Both masters, because the gib is deliberately independent of
+            // allowDetach and would otherwise still take all four limbs and the
+            // head. Decapitation needs no third switch: it is reached only through
+            // the allowDetach gate in AddRegionDamage and through Gib.
+            if (Systems_RealisticMode.Enabled)
+            {
+                allowDetach = false;
+                allowGib = false;
+            }
+        }
+
         private void Start()
         {
             _manager = FindAnyObjectByType<Systems_GameMatchManager>();
+            ApplyTuning();
             if (body == null)
             {
                 body = GetComponentInParent<Agent_BipedBody>();
@@ -407,6 +446,25 @@ namespace PoSumo
         /// past its gate when the semi-final scene loads and this pass would tear it
         /// off with no roll and no log line — turning "50% of limbs survive" into
         /// "50% of limbs survive until the next scene load".
+        ///
+        /// It re-severs only a limb whose roll came out ALLOWED, not merely one
+        /// that was "not spared", and REALISTIC MODE is why the difference
+        /// matters. With the mode on, allowDetach is off, so a limb can run far
+        /// past its gate with NO roll ever taken (ROLL_NONE) — AddRegionDamage
+        /// returns before the roll. Damage is tournament-persistent, so if the
+        /// player then switched the mode off, the old "not spared" test would
+        /// tear that limb off on the next scene load: no roll, no blow, no log
+        /// line. Requiring ALLOWED leaves it attached, and the next real contact
+        /// rolls for it in AddRegionDamage the ordinary way.
+        ///
+        /// With the mode off this is the same set as before: a limb past its gate
+        /// has always been rolled, so "not spared" and "allowed" coincide.
+        ///
+        /// With the mode ON nothing is re-severed at all (allowDetach is false),
+        /// so a limb lost in an earlier bout of the bracket is whole again for
+        /// this one. The record is not erased — the bruises replay, and the
+        /// stored verdict means it comes off again, silently, if the mode is
+        /// switched back off — the mode masks dismemberment, it does not heal it.
         private void ReapplyStandingDismemberment()
         {
             if (!allowDetach || body == null) return;
@@ -414,7 +472,7 @@ namespace PoSumo
             for (int r = 0; r < REGION_COUNT; r++)
             {
                 if (_regionDamage[r] < limit) continue;
-                if (_detachRoll != null && _detachRoll[r] == ROLL_SPARED) continue;
+                if (_detachRoll == null || _detachRoll[r] != ROLL_ALLOWED) continue;
                 int rootPart = RootPartOf((Region)r);
                 if (rootPart < 0) continue;
                 int joint = Agent_BipedBody.JointIndexForChild(rootPart);

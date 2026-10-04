@@ -983,6 +983,19 @@ namespace PoSumo
             if (_fatigue != null)
             {
                 System.Array.Clear(_fatigue, 0, _fatigue.Length);
+                // Between-round carry, GAME ONLY — see CaptureFatigueCarry. Seeded
+                // here, after the clear and BEFORE RestoreMotors, for the same
+                // reason the clear sits here: RestoreMotors scales the torque it
+                // writes back by StrengthFactor, so fatigue written after it would
+                // hand the body one step at a strength it does not have.
+                //
+                // `_hasFatigueCarry` is false unless the game referee set it, so a
+                // training episode — and every game round at the default carry of
+                // 0 — takes exactly the path it always did.
+                if (_hasFatigueCarry)
+                {
+                    System.Array.Copy(_fatigueCarry, _fatigue, _fatigue.Length);
+                }
             }
             // Same reasoning as fatigue: a slew-limited motor command is carried
             // state, so leaving last episode's value in place would start the new
@@ -1004,6 +1017,54 @@ namespace PoSumo
             foreach (var t in _thighs)
                 t.angularVelocity = Random.Range(-12f, 12f);
             Physics2D.SyncTransforms();
+        }
+
+        /// Fatigue to re-seed on the next ResetPose, per joint, and whether there
+        /// is any. Allocated on first capture, so a body that never carries
+        /// fatigue — every training agent — never owns the array.
+        private float[] _fatigueCarry;
+        private bool _hasFatigueCarry;
+
+        /// Remember `fraction` of each joint's CURRENT fatigue, to be restored by
+        /// every ResetPose until ClearFatigueCarry is called.
+        ///
+        /// Called by `Systems_GameMatchManager` at the end of a round that does
+        /// not end the match (GameTuning.roundFatigueCarry). It is a standing
+        /// seed rather than a one-shot because the round transition resets the
+        /// pose more than once — EndEpisode -> OnEpisodeBegin -> ResetPose, then
+        /// HoldUpright -> PoseNeutral -> ResetPose — and a value consumed by the
+        /// first would be wiped by the second.
+        ///
+        /// NEVER call this from the training referee. Carrying fatigue across an
+        /// ML-Agents episode boundary makes an episode's difficulty depend on how
+        /// hard the previous one was fought — see the note at the top of
+        /// ResetPose. A fraction of 0 or less clears the seed, which is today's
+        /// behaviour.
+        public void CaptureFatigueCarry(float fraction)
+        {
+            if (_fatigue == null || fraction <= 0f)
+            {
+                _hasFatigueCarry = false;
+                return;
+            }
+            if (_fatigueCarry == null || _fatigueCarry.Length != _fatigue.Length)
+            {
+                _fatigueCarry = new float[_fatigue.Length];
+            }
+            float clamped = Mathf.Clamp01(fraction);
+            for (int jointIndex = 0; jointIndex < _fatigue.Length; jointIndex++)
+            {
+                _fatigueCarry[jointIndex] = _fatigue[jointIndex] * clamped;
+            }
+            _hasFatigueCarry = true;
+        }
+
+        /// Drop the seed: the next ResetPose opens on fresh legs. The game
+        /// referee calls this when a match is decided and when one is reset, so
+        /// fatigue never crosses from one match into the next.
+        public void ClearFatigueCarry()
+        {
+            _hasFatigueCarry = false;
         }
 
         /// True ragdoll: switch every joint motor OFF so the body goes limp and
