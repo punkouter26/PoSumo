@@ -22,6 +22,97 @@ family's MuJoCo siblings rather than PoSumo's current pipeline.
 
 ---
 
+## Standing rules (as given by the user, 2026-10-04)
+
+The family-wide `UNITY_AGENT` rule list, recorded as given. It came with one override:
+**ignore the MuJoCo / Newton / Isaac Lab instructions in any app that trains with
+ML-Agents.** PoSumo trains with ML-Agents, so the rules in the first table are recorded
+for the MuJoCo-backed siblings and are **not acted on here**.
+
+### Not applicable to PoSumo (ML-Agents app) — family rules for the MuJoCo siblings
+
+| Rule | Status here |
+|---|---|
+| All training is done with MuJoCo / Newton | overridden — PoSumo trains with ML-Agents |
+| Ask the user for a skinned mesh before attempting to train; take the rig structure from that model and import it into MuJoCo / Newton | overridden — the biped is built in code from `PART_DEFS` / `JOINT_DEFS`, and there is no skinned mesh |
+| When training in MuJoCo or Isaac Lab, show those apps' UI so the creature can be watched during and after training; use Newton to show training if that is optimal | overridden — watch a run through TensorBoard and the telemetry endpoint |
+| Use `joanllobera/mujoco-bin` to compile for Android phones | overridden — see the caveat at the top of this file |
+| When 30+ minutes of MuJoCo RL training is needed, close the Unreal / Unity editor if that dramatically speeds training, and say when it can be reopened | the ML-Agents equivalent below applies instead |
+
+### Process
+
+- **`master` only.** Use another branch only when specifically asked.
+- **Check `DOCS/` in the repo root** for the overall project summary.
+- **Always start TensorBoard when training starts**, so progress is watchable.
+- **Before starting training, check TensorBoard for obsolete behaviours** taking up room,
+  and remove them.
+- **TL;DR.** Any answer longer than 100 words ends with a 20-word TL;DR summary.
+- **`git sync` always commits all changes first**, then pushes.
+- **Editor tooling:** use whichever of the Unity CLI pipeline,
+  [CoplayDev/unity-mcp](https://github.com/CoplayDev/unity-mcp) and
+  [IvanMurzak/Unity-MCP](https://github.com/IvanMurzak/Unity-MCP) gives the best result.
+  Here that is `Tools/unity.py`, which speaks the CoplayDev bridge.
+- **Avoid Editor stalling:** enable *No Throttling* in Editor preferences and *Run In
+  Background* in Player settings via MCP, and turn on the auto tick that keeps the Editor
+  updating in the background. (`Systems_AcademyLifecycle` already sets
+  `runInBackground = true` at runtime; the Editor preference has not been verified.)
+- **RL-only training with no Unity changes: close the Unity Editor, and reopen it when
+  training is complete.** Tell the user when it is safe to open again. This agrees with
+  §4.6, which measured what an open Editor costs a run.
+
+### Reporting
+
+- **UI changes get an annotated before/after screenshot.** Capture the old and the new
+  UI, annotate what changed, and put it in an HTML file.
+- **Training runs over 30 minutes get an HTML report.** Screenshot the 3 most
+  consequential TensorBoard charts and explain in simple terms what each describes.
+  Compare the running training with previous runs and say in simple terms whether it is
+  doing better or worse, and why. Describe each graph at 3 levels: (1) toddler,
+  (2) child, (3) adult. For a self-play fight run ELO is one of the three (§4.5).
+
+### Physical realism
+
+- Creatures move realistically under **Earth gravity**, with realistic joint movement and
+  **mass according to size**.
+- When the trained agent is a human, joints move at a **speed and a force that resemble
+  real humans**. (§2.2 holds the current budgets.)
+- **All body parts of all creatures collide accurately** with each other. Creatures
+  cannot pass through each other or through anything in the environment.
+
+### Scene authoring
+
+- **Create as many prefabs / scene objects as possible through MCP**, so static objects
+  can be repositioned in the scene instead of being created by code.
+
+> **Discrepancy, stated rather than resolved.** `.claude/rules/architecture.md` says the
+> opposite for this project: scenes hold only managers, everything else is built in code,
+> and the project has no `.prefab` assets at all. The arena is the one part that already
+> matches this rule — it is baked into `SCN_SUMO` as saved children. Apply the rule to
+> **new static scenery**. Ask before converting the biped or the presentation companions.
+
+### Self-collision
+
+- Every creature collides with itself using simple shapes (capsules, boxes, spheres)
+  fitted inside its skinned mesh. Never use the visual mesh or the bones as colliders.
+- All body-part pairs collide except parent–child pairs and pairs that overlap in the
+  default standing pose; joint limits handle those.
+- Before training, verify that no pair touches in the T-pose, the default stance and a
+  normal arm and leg swing.
+- Self-contact never ends an episode. If the policy leans on it, add a small self-contact
+  force penalty.
+- Train a new skill from a warm start (a brain trained without self-collision, or the
+  previous rung) rather than from scratch.
+
+> **Discrepancy, stated rather than resolved.** The shipped 2D biped does not meet the
+> all-pairs rule. Intra-biped collisions are off pairwise except the 30 leg-versus-trunk
+> pairs (`Agent_BipedBody.EnableLegTrunkCollisions`). Arms and leg-versus-leg pass through
+> on purpose: the model is sagittal, and those pairs clear each other in the third
+> dimension. Turning them on changes the dynamics and **invalidates all four brains**, and
+> `Training/results/` may hold no trunk to warm-start from. Treat this section as the rule
+> for new rigs. Ask before applying it to the existing biped.
+
+---
+
 ## 0. Read this before writing a joint
 
 **This project is 2D.** The shipped biped is a 14-part `Rigidbody2D` ragdoll driven by

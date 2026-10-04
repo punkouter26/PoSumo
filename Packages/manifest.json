@@ -2,7 +2,7 @@
   "dependencies": {
     "com.besty.unity-skills": "https://github.com/Besty0728/Unity-Skills.git?path=/SkillsForUnity",
     "com.coplaydev.unity-mcp": "https://github.com/CoplayDev/unity-mcp.git?path=/MCPForUnity#main",
-    "com.ivanmurzak.unity.mcp": "0.91.0",
+    "com.ivanmurzak.unity.mcp": "0.93.2",
     "com.ivanmurzak.unity.mcp.animation": "1.2.32",
     "com.unity.2d.sprite": "1.0.0",
     "com.unity.collab-proxy": "2.13.6",
