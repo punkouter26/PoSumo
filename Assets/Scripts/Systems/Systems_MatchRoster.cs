@@ -34,17 +34,17 @@ namespace PoSumo
 
             // A MIRROR match: both sides drew the same character asset.
             //
-            // `Systems_TournamentState.SeparateFirstRoundMirrors` repairs the opening
-            // round, but it documents that later mirrors are structural — with two
-            // copies of a fighter alive in opposite halves nothing in a seeding pass
-            // can stop them meeting, and a Nick-v-Nick FINAL was measured on
-            // 2026-08-25. Both fighters rendered the same blue with the same face,
-            // and the scorebug read "NICK 1 : 1 NICK", so nobody watching could tell
-            // which side was which.
+            // The BRACKET can no longer produce one: since 2026-10-04 it seeds every
+            // fighter exactly once and fills the spare slots with byes. This stays
+            // for EXHIBITION use — assign the same asset to both sides of this
+            // component and the two fighters render the same colour with the same
+            // face, and the scorebug reads "NICK 1 : 1 NICK", so nobody watching
+            // can tell which side is which. (That was measured in a bracket final
+            // on 2026-08-25, back when the draw seeded fighters twice.)
             //
-            // Compared by REFERENCE, not by behaviorName: the bracket seeds the same
-            // ScriptableObject instance into several slots, so this is the same
-            // object rather than two assets that happen to agree.
+            // Compared by REFERENCE, not by behaviorName: a mirror is the same
+            // ScriptableObject instance on both sides, not two assets that happen
+            // to agree.
             bool mirror = slotA != null && slotA == slotB;
 
             var agents = FindObjectsByType<Agent_Biped>(FindObjectsInactive.Include);

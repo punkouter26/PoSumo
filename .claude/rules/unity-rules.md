@@ -31,8 +31,10 @@ Principal Unity ML-Agents Architect: modular, production-ready C# for active-rag
 - Safe area mandatory: absolute children resolve against the parent's *padding* box, so the
   inset belongs on that layer.
 - Portrait 9:16, 60 FPS (`vSyncCount = 0` or `targetFrameRate` is ignored).
-- `Application.version` top-left of the opening scene: inset layer, outside any ScrollView,
-  non-pickable.
+- Five fixed corners on every screen, owned by `Systems_ScreenChrome`: title top-left,
+  frame rate top-centre, menu top-right, DBG bottom-left, `Application.version`
+  bottom-right. Inset layer, outside any ScrollView. (This line said version top-left
+  until 2026-10-04; the chrome and the user's anchor standard both say bottom-right.)
 - The panel scales on width — size against a live capture.
 
 ## 4. MLOps

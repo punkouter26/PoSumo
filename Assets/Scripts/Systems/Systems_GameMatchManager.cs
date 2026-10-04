@@ -1013,8 +1013,12 @@ namespace PoSumo
                 // "QUARTERFINAL · MATCH 1/7" — the word MATCH is the one piece
                 // of this line nobody has to read to understand it, and the
                 // bracket screen already said it in full a moment earlier.
+                // BOUTS, not match slots: byes are walkovers nobody plays, so a
+                // five-fighter bracket is four bouts in a seven-slot frame and
+                // "QUARTERFINAL 4/7" would count three matches that never happen.
                 Label round = Systems_UiKit.Text(
-                    $"{Systems_TournamentState.RoundName(match)} {match + 1}/{Systems_TournamentState.MATCH_COUNT}",
+                    $"{Systems_TournamentState.RoundName(match)} " +
+                    $"{Systems_TournamentState.BoutsPlayed + 1}/{Systems_TournamentState.BoutCount}",
                     Systems_UiKit.FONT_MICRO, Systems_UiKit.Gold, true);
                 round.style.unityTextAlign = TextAnchor.MiddleCenter;
                 round.style.marginBottom = Systems_UiKit.SPACE_1;

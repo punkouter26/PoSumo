@@ -83,8 +83,9 @@ namespace PoSumo
 
         private void Start()
         {
-            _isTournamentFinal = Systems_TournamentState.Active
-                && Systems_TournamentState.CurrentMatch == Systems_TournamentState.FINAL_MATCH;
+            // The bout that leaves one fighter standing — which with byes in the
+            // draw is not necessarily the one sitting in the final's slot.
+            _isTournamentFinal = Systems_TournamentState.IsTitleBout;
 
             _manager = FindAnyObjectByType<Systems_GameMatchManager>();
             if (_manager == null)

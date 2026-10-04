@@ -135,7 +135,7 @@ behaviors:
     max_steps: 15000000
     time_horizon: 1000
     summary_freq: 30000
-    threaded: true
+    threaded: false   # self-play: ML-Agents recommends false. Changed 2026-10-04; shipped Rebuild01 brains trained with true.
     self_play:
       window: 25
       play_against_latest_model_ratio: 0.25

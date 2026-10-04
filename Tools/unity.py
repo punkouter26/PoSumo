@@ -205,7 +205,18 @@ def cmd_ping(_):
     return 0 if ok else 1
 
 
+def find_scene_dir(name, root):
+    """Folder under `root` holding <name>.unity. The training scenes live in
+    Assets/Scenes/Training/, which the bridge's `load` does not search."""
+    import os
+    for folder, _dirs, files in os.walk(root):
+        if name + ".unity" in files:
+            return folder.replace("\\", "/")
+    return root
+
+
 def cmd_scene(args):
+    args.path = find_scene_dir(args.name, args.path)
     return 0 if report(
         f"load {args.name}",
         call("manage_scene", {"action": "load", "name": args.name, "path": args.path}),

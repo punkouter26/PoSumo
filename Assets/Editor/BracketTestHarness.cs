@@ -29,9 +29,10 @@ namespace PoSumo.EditorTools
     ///     BracketTestHarness.Run();
     public static class BracketTestHarness
     {
-        /// Wall-clock ceiling for a whole 7-match bracket. Measured bouts run
-        /// 60-110 s (rounds average ~18 s, best-of-three, plus ceremony and the
-        /// return), so seven of them plus slack is comfortably inside this. It
+        /// Wall-clock ceiling for a whole bracket. Measured bouts run 60-110 s
+        /// (rounds average ~18 s, best-of-three, plus ceremony and the return).
+        /// Sized for a full eight-fighter draw of seven bouts plus slack; the
+        /// five-fighter roster plays four (the other three slots are byes). It
         /// exists so a hung bout reports a FAILURE rather than leaving the Editor
         /// spinning with no verdict.
         private const float TIMEOUT_SECONDS = 1500f;
@@ -95,19 +96,35 @@ namespace PoSumo.EditorTools
             }
             if (!Systems_TournamentState.SeedsReady())
             {
-                Debug.LogError("BRACKET HARNESS: seeds are not ready — every slot needs a fighter.");
+                Debug.LogError("BRACKET HARNESS: seeds are not ready — the draw needs at least two fighters.");
                 _running = false;
                 return;
             }
 
-            Debug.Log("BRACKET HARNESS: starting a full bracket from " +
-                      $"match {Systems_TournamentState.CurrentMatch}.");
+            // A bracket saved by an earlier session shows up as a RESUME offer
+            // beside START. The harness always starts a NEW one — PressAction is
+            // the primary button in either case — and says so, because the
+            // start overwrites that save.
+            if (bracket.ResumeOffered)
+            {
+                Debug.Log("BRACKET HARNESS: a saved bracket was on offer; starting a new one over it.");
+            }
+
+            Debug.Log("BRACKET HARNESS: starting a full bracket — " +
+                      $"{Systems_TournamentState.FighterCount} fighters, " +
+                      $"{Systems_TournamentState.ByeCount} byes, " +
+                      $"{Systems_TournamentState.BoutCount} bouts.");
             // Count console output for the whole bracket so the result line carries
             // a `console:` tally — the 2026-09-06 stale-brain failure ran a full
             // bracket to completion with all four models rejected and nothing
             // asserted on the console.
             ConsoleSentinel.Start();
             bracket.PressAction();
+            // Sampled AFTER the press: BeginTournament settles every bye on the
+            // way to the first real bout, so CurrentMatch may already have moved
+            // off 0 — and a transition counted from before the press would log a
+            // walkover as a bout decided in zero seconds.
+            _lastMatch = Systems_TournamentState.CurrentMatch;
             EditorApplication.update += Tick;
         }
 
@@ -180,7 +197,7 @@ namespace PoSumo.EditorTools
             if (now - _startedAt > TIMEOUT_SECONDS)
             {
                 Fail($"the bracket ran past {TIMEOUT_SECONDS:F0}s with " +
-                     $"{_matchesObserved} matches decided.");
+                     $"{Systems_TournamentState.BoutsPlayed} bouts decided.");
             }
         }
 
@@ -189,13 +206,55 @@ namespace PoSumo.EditorTools
             EditorApplication.update -= Tick;
             _running = false;
 
-            // The last transition is into the FINAL's own slot, so the champion's
-            // match is decided without CurrentMatch moving past it again — count it
-            // here rather than in the transition above.
-            if (_matchesObserved < 7) _matchesObserved = 7;
+            // The last bout is decided without CurrentMatch moving past it again,
+            // so the transition counter above never sees it. The state's own tally
+            // is the truth: BOUTS, which with byes in the draw is fewer than the
+            // seven match slots (five fighters play four).
+            int lastBout = Systems_TournamentState.CurrentMatch;
+            Agent_CharacterDefinition lastWinner = Systems_TournamentState.GetWinner(lastBout);
+            Log.AppendLine($"  match {lastBout} ({Systems_TournamentState.RoundName(lastBout)}) " +
+                           $"-> {(lastWinner != null ? lastWinner.behaviorName : "NULL")} " +
+                           $"in {Time.realtimeSinceStartup - _matchStartedAt:F0}s");
+            _matchesObserved = Systems_TournamentState.BoutsPlayed;
 
             Agent_CharacterDefinition champion = Systems_TournamentState.Champion;
             var problems = new StringBuilder();
+
+            int fighters = Systems_TournamentState.FighterCount;
+            int expectedBouts = Systems_TournamentState.BoutCount;
+            if (expectedBouts != fighters - 1)
+            {
+                problems.AppendLine($"  - BoutCount is {expectedBouts} for {fighters} fighters; single " +
+                                    "elimination plays exactly one fewer bout than it has entrants.");
+            }
+            if (_matchesObserved != expectedBouts)
+            {
+                problems.AppendLine($"  - {_matchesObserved} bouts were played but the draw calls for " +
+                                    $"{expectedBouts} — a bye was fought, or a bout was skipped.");
+            }
+            // Every fighter is seeded exactly once. A repeat is what used to make
+            // mirror bouts structural (Matt v Matt in a final), and RecordMatch
+            // drops a mirror — no Elo, no W/L — so it is asserted, not assumed.
+            for (int slot = 0; slot < Systems_TournamentState.SEED_COUNT; slot++)
+            {
+                Agent_CharacterDefinition seed = Systems_TournamentState.GetSeed(slot);
+                if (seed == null) continue;
+                for (int other = slot + 1; other < Systems_TournamentState.SEED_COUNT; other++)
+                {
+                    if (Systems_TournamentState.GetSeed(other) == seed)
+                    {
+                        problems.AppendLine($"  - {seed.behaviorName} is seeded twice (slots {slot} and " +
+                                            $"{other}); a fighter can meet itself.");
+                    }
+                }
+            }
+            // A finished bracket must leave nothing to resume.
+            string savePath = System.IO.Path.Combine(Application.persistentDataPath, "bracket.json");
+            if (System.IO.File.Exists(savePath))
+            {
+                problems.AppendLine("  - bracket.json still exists after the final; the next launch " +
+                                    "would offer to RESUME a finished bracket.");
+            }
 
             if (champion == null)
             {
@@ -324,7 +383,9 @@ namespace PoSumo.EditorTools
             ConsoleSentinel.Stop();
             Debug.Log($"BRACKET HARNESS RESULT: {(ok ? "PASS" : "FAIL")} — " +
                       $"champion {(champion != null ? champion.behaviorName : "NONE")} " +
-                      $"over {_matchesObserved} matches in {Time.realtimeSinceStartup - _startedAt:F0}s\n" +
+                      $"over {_matchesObserved} bouts ({fighters} fighters, " +
+                      $"{Systems_TournamentState.ByeCount} byes) in " +
+                      $"{Time.realtimeSinceStartup - _startedAt:F0}s\n" +
                       Log + careerLine +
                       (ok ? string.Empty : "\nPROBLEMS:\n" + problems) +
                       $"\n{ConsoleSentinel.Tally()}");

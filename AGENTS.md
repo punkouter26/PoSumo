@@ -145,7 +145,7 @@ Every change is judged against the elimination of these failure modes:
 | **Torque exploitation** | superhuman leverage, motors railed at max | per-joint torque budgets, Hill force-velocity term, quadratic `effortPenalty` |
 | **Crouch/drag degeneracy** | policy discovers the floor is cheaper than standing | see `CLAUDE.md` "the fighters crawl during the walk-in" — **five retrains have already failed here; read it before proposing a sixth** |
 
-**Tech stack:** Unity 6000.5.8f1 (C#, 2D URP) + ML-Agents 4.1.0 (local patched package)
+**Tech stack:** Unity 6000.6.0f1 (C#, 2D URP; measured 2026-10-04) + ML-Agents 4.1.0 (local patched package)
 + Python `mlagents` 1.2.0.dev0 (editable) + PyTorch 2.5.1 (pinned; 2.6+ breaks ONNX
 export).
 
@@ -180,7 +180,7 @@ Torque budgets are **physiological, per joint, and scale with segment mass** —
 tuning free-for-all. The shipped 2D values, in N·m before `torqueScale`:
 
 ```
-hip 300   knee 250   ankle 120   spine 180 (each of 3)   shoulder 80   elbow 60
+hip 300   knee 250   ankle 160   spine 180 (each of 3)   shoulder 80   elbow 60
 ```
 
 Rules:
@@ -222,7 +222,8 @@ Rules:
   **negative** of the child's geometric rotation relative to its parent. Ranges written
   as if geometric bend the limb *backwards* — this shipped a bird leg for the whole
   early life of the project. Current: hip (−120…30°), knee (0…150°), elbow (−150…0°),
-  ankle (±25°), spine (±20° each), shoulder (±120°).
+  ankle (−20…50°), spine (−12…30° each), shoulder (−175…60°), toe (−60…30°).
+  `JOINT_DEFS` is the authority; these four were symmetric until 2026-09-05.
   `Agent_Biped.KneeBendFactor()` reads the knee as positive and must move with these.
 
 ### 2.4 Energy & effort penalties
@@ -369,8 +370,9 @@ same commit. There is no second place to catch it.
 
 ### 3.6 Observations
 
-`Agent_Biped.ObservationCount = 42`, or **45** with `extendedObservations` (the standard
-for all four shipped fighters, decision period 3). Append order is fixed —
+`Agent_Biped.ObservationCount = 43`, and all four shipped fighters run **51**
+(43 base + 4 contact + 1 stamina + 3 extended, decision period 3). The `[OBS]` line each
+behaviour logs at startup is the authority, not this sentence. Append order is fixed —
 base → contact → stamina → extended — and **that order IS the input layer's layout**. It
 must never change again once a brain has trained on it. All observations pass through
 `San()` NaN/Inf sanitization. Obs count and decision period must match what the assigned

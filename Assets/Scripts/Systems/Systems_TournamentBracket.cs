@@ -5,16 +5,17 @@ using UnityEngine.UIElements;
 
 namespace PoSumo
 {
-    /// March-Madness style bracket screen for an 8-entrant single-elimination
-    /// tournament. The bracket auto-seeds each character twice (shuffled) and the
-    /// user can drag to rearrange before starting; each match is then played for
-    /// real in SCN_SUMO and the winner is filled in on return.
+    /// March-Madness style bracket screen for a single-elimination tournament
+    /// in an 8-slot frame. The bracket auto-seeds each character ONCE (shuffled)
+    /// and leaves the spare slots as BYES; the user can drag to rearrange before
+    /// starting. Each real bout is then played in SCN_SUMO and the winner is
+    /// filled in on return; a bye advances its fighter without loading the arena.
     ///
     /// UI Toolkit, built in code — same approach as the fight HUD, so there is no
     /// UXML/USS asset to keep in sync.
     public sealed class Systems_TournamentBracket : MonoBehaviour
     {
-        [Tooltip("Characters available as entrants. With 4, each appears twice in the 8-slot bracket.")]
+        [Tooltip("Characters available as entrants. Each is seeded exactly once; with fewer than 8 the spare slots are byes.")]
         [SerializeField] private Agent_CharacterDefinition[] _roster;
         [SerializeField] private PanelSettings _panelSettings;
         [Tooltip("Shared match tuning. Only used to state the correct best-of on this screen, so the status line cannot drift from the rule the matches actually run.")]
@@ -124,6 +125,48 @@ namespace PoSumo
         private VisualElement _paletteRow;
         private Button _autoButton;
         private Label _hint;
+        /// Hint + palette as ONE block, so the pane's vertical distribution
+        /// cannot pull the instruction away from the thing it describes.
+        private VisualElement _seedingGroup;
+
+        /// RESUME, and what it would resume into. A bracket in progress is saved
+        /// to disk (Systems_TournamentState), so an app kill mid-tournament comes
+        /// back to this screen with the offer up. Peeked once in Start; cleared
+        /// the moment the player resumes it or starts a new bracket over it.
+        private Button _resumeButton;
+        private bool _hasSaved;
+        private Systems_TournamentState.SavedSummary _saved;
+
+        // SPOTLIGHT — the free height below the FINAL card, put to use.
+        //
+        // Once a bracket is running the palette and its hint are hidden, and on a
+        // tall phone roughly half the pane was blank below the last round card;
+        // the champion screen was the same blank with a one-line status under it.
+        // This card fills it with the thing the player is actually waiting on:
+        // the two fighters of the next bout, or the champion — face, rank, record.
+        //
+        // It is shown ONLY WHEN IT FITS (see FitSpotlight). At 4:3 the three round
+        // cards already use the whole pane, and the zero-scroll rule means a card
+        // that does not fit must not exist rather than squeeze its neighbours.
+        // SPOTLIGHT_HEIGHT is the BUDGET the fit test reserves, not the card's
+        // height — the card sizes to its content (~270pt: caption, 84pt face,
+        // three text lines, padding). A fixed height was tried twice and both
+        // times squeezed the content it was meant to hold: at 236 the record line
+        // drew below the card, at 280 the row was still 3pt over and
+        // HudOverflowAudit failed the bracket harness on it. A constant budget
+        // keeps the fit test against a number rather than against a layout that
+        // has not happened yet, without pinning the card to it.
+        private const int SPOTLIGHT_HEIGHT = 296;
+        private const int SPOTLIGHT_FACE = 84;
+        private VisualElement _spotlight;
+        private Label _spotlightCaption;
+        private Label _spotlightVs;
+        private bool _spotlightWanted;
+        private readonly VisualElement[] _spotlightSide = new VisualElement[2];
+        private readonly VisualElement[] _spotlightFace = new VisualElement[2];
+        private readonly Label[] _spotlightName = new Label[2];
+        private readonly Label[] _spotlightRank = new Label[2];
+        private readonly Label[] _spotlightRecord = new Label[2];
 
         // Drag bookkeeping. _dragSeedIndex is -1 when dragging from the roster
         // palette instead of an existing seed slot.
@@ -153,6 +196,14 @@ namespace PoSumo
                 // vary. TickCount is wall-clock and unrelated to the frame loop.
                 Systems_TournamentState.AutoSeed(_roster, System.Environment.TickCount);
             }
+
+            // A bracket the app was killed in the middle of. OFFERED, never
+            // applied: the screen opens on the fresh draw above with RESUME beside
+            // START, so anything that presses the action button on a new session
+            // (BracketTestHarness does) still starts a new bracket. Not looked for
+            // when we are coming back from a bout — that bracket is the live one.
+            _hasSaved = !BracketLocked
+                        && Systems_TournamentState.TryPeekSaved(_roster, out _saved);
 
             BuildUi();
             Refresh();
@@ -266,6 +317,18 @@ namespace PoSumo
             _paneBracket = MakePane();
             _paneRecord = MakePane();
             _content = _paneBracket;
+            // The blocks of this pane SHARE its free height instead of stacking at
+            // the top. On a 4:3 panel there is none and this changes nothing; on a
+            // tall phone it was a column packed into the top half above a blank
+            // bottom half. Every block is still flex-shrink 0 (LockChildren), so
+            // this only ever distributes slack — it cannot compress anything.
+            //
+            // The justify itself is written by FitSpotlight, once the heights are
+            // known, and ONLY while there is slack to share. SpaceEvenly with
+            // negative free space does not fall back to stacking: it spreads the
+            // DEFICIT, so every block slides up over the one above it. Measured at
+            // 1200x1600 with the pane 35pt over — each round header was drawn on
+            // top of the previous card and the hint over the tab row.
 
             _rankNews = Systems_UiKit.Text("", Systems_UiKit.FONT_SMALL, Systems_UiKit.Gold, true);
             _rankNews.style.unityTextAlign = TextAnchor.MiddleCenter;
@@ -273,13 +336,18 @@ namespace PoSumo
             _rankNews.style.display = DisplayStyle.None;
             _content.Add(_rankNews);
 
-            _hint = Systems_UiKit.Text("drag a fighter onto a slot to change it",
+            _seedingGroup = Systems_UiKit.Column();
+            _paneBracket.Add(_seedingGroup);
+            _content = _seedingGroup;
+
+            _hint = Systems_UiKit.Text("drag a fighter onto a slot to move it",
                                        Systems_UiKit.FONT_SMALL, Systems_UiKit.TextLow);
             _hint.style.unityTextAlign = TextAnchor.MiddleCenter;
             _hint.style.marginBottom = Systems_UiKit.SPACE_2;
             _content.Add(_hint);
 
             BuildPalette();
+            _content = _paneBracket;
 
             _seedSlots.Clear();
             _winnerSlots.Clear();
@@ -297,6 +365,8 @@ namespace PoSumo
             VisualElement final = AddRound("FINAL");
             AddResultRow(final, feederA: 4, feederB: 5,
                          winnerMatch: Systems_TournamentState.FINAL_MATCH);
+
+            BuildSpotlight();
 
             // ---- Pane 2: RECORD (career/banzuke + bot ladder + rules) --------
             //
@@ -318,6 +388,18 @@ namespace PoSumo
             // visibly so HudOverflowAudit flags it, never compress silently.
             LockChildren(_paneBracket);
             LockChildren(_paneRecord);
+            // The spotlight's fit depends on heights that only exist after a
+            // layout pass, and on blocks that Refresh shows and hides. Hiding one
+            // moves its siblings, so listening on the pane AND its blocks catches
+            // the first layout, every resize and every state change.
+            _paneBracket.RegisterCallback<GeometryChangedEvent>(OnBracketPaneGeometry);
+            for (int childIndex = 0; childIndex < _paneBracket.childCount; childIndex++)
+            {
+                if (_paneBracket[childIndex] != _spotlight)
+                {
+                    _paneBracket[childIndex].RegisterCallback<GeometryChangedEvent>(OnBracketPaneGeometry);
+                }
+            }
             SelectTab(TAB_BRACKET);
 
             // The status line and the action buttons live OUTSIDE the pane host,
@@ -369,6 +451,17 @@ namespace PoSumo
             _resetButton.style.flexGrow = 1;
             _resetButton.style.flexBasis = 0;
             _resetButton.style.marginLeft = Systems_UiKit.SPACE_1;
+
+            // RESUME sits between the two, and only while a saved bracket is on
+            // offer. It is the one state in which this row holds three controls,
+            // so the primary's caption shortens to START NEW while it is up (see
+            // Refresh) — "START TOURNAMENT" does not fit a third of the row.
+            _resumeButton = Systems_UiKit.GhostButton("RESUME", OnResume);
+            _resumeButton.style.flexGrow = 1;
+            _resumeButton.style.flexBasis = 0;
+            _resumeButton.style.marginLeft = Systems_UiKit.SPACE_1;
+            _resumeButton.style.color = Systems_UiKit.Gold;
+            buttonRow.Add(_resumeButton);
             buttonRow.Add(_resetButton);
 
             // Manual play has always existed — `_autoPlay` is a serialized field
@@ -516,24 +609,6 @@ namespace PoSumo
 
 
 
-        /// Distinct fighters actually available to seed the draw.
-        private int DistinctFighters()
-        {
-            if (_roster == null)
-            {
-                return 0;
-            }
-            int count = 0;
-            for (int index = 0; index < _roster.Length; index++)
-            {
-                if (_roster[index] != null)
-                {
-                    count++;
-                }
-            }
-            return count;
-        }
-
 
 
         /// Announces a promotion or demotion once, on the first Refresh after the
@@ -629,11 +704,17 @@ namespace PoSumo
         /// rounds, and a surface behind each group.
         private VisualElement AddRound(string text)
         {
+            // Header and card travel as ONE block. The bracket pane distributes
+            // its free height between its children, and as two separate children
+            // the gap would open between a round's title and its own card.
+            VisualElement group = Systems_UiKit.Column();
+            _content.Add(group);
+
             Label header = Systems_UiKit.Caption(text, Systems_UiKit.FONT_SMALL,
                                                  Systems_UiKit.TextLow, true);
             header.style.marginTop = Systems_UiKit.SPACE_4;
             header.style.marginBottom = Systems_UiKit.SPACE_1;
-            _content.Add(header);
+            group.Add(header);
 
             VisualElement card = Systems_UiKit.ElevatedCard(
                 Systems_UiKit.Elevation.Raised, Systems_UiKit.RADIUS_MD);
@@ -642,8 +723,224 @@ namespace PoSumo
             // so a round with one row and a round with four are inset identically.
             // Padding both would double up under the final row of every card.
             card.style.paddingBottom = 0;
-            _content.Add(card);
+            group.Add(card);
             return card;
+        }
+
+        // --- spotlight ------------------------------------------------------
+
+        private void BuildSpotlight()
+        {
+            _spotlight = Systems_UiKit.ElevatedCard(
+                Systems_UiKit.Elevation.Raised, Systems_UiKit.RADIUS_MD).NoPick();
+            _spotlight.Pad(Systems_UiKit.SPACE_3, Systems_UiKit.SPACE_3);
+            _spotlight.style.display = DisplayStyle.None;
+            _paneBracket.Add(_spotlight);
+
+            _spotlightCaption = Systems_UiKit.Caption("", Systems_UiKit.FONT_SMALL,
+                                                      Systems_UiKit.Gold, true);
+            _spotlightCaption.style.unityTextAlign = TextAnchor.MiddleCenter;
+            _spotlightCaption.style.marginBottom = Systems_UiKit.SPACE_2;
+            _spotlight.Add(_spotlightCaption);
+
+            VisualElement row = Systems_UiKit.Row(Align.FlexStart);
+            row.style.justifyContent = Justify.Center;
+            row.style.flexShrink = 0;
+            _spotlight.Add(row);
+
+            row.Add(BuildSpotlightSide(0));
+            _spotlightVs = Systems_UiKit.Text("v", Systems_UiKit.FONT_LEAD, Systems_UiKit.TextLow);
+            _spotlightVs.style.flexShrink = 0;
+            // Level with the faces, not with the whole column of text under them.
+            _spotlightVs.style.marginTop = SPOTLIGHT_FACE / 2 - Systems_UiKit.FONT_LEAD / 2;
+            row.Add(_spotlightVs);
+            row.Add(BuildSpotlightSide(1));
+        }
+
+        /// One fighter in the spotlight: face over name over rank over record.
+        /// Built once; RefreshSpotlight only writes text and style into it.
+        private VisualElement BuildSpotlightSide(int side)
+        {
+            VisualElement column = Systems_UiKit.Column(Align.Center);
+            // Equal shares, like the chips: with an `auto` basis the side holding
+            // the longer name would push the "v" off centre.
+            column.style.flexGrow = 1;
+            column.style.flexBasis = 0;
+
+            var face = new VisualElement();
+            face.style.width = SPOTLIGHT_FACE;
+            face.style.height = SPOTLIGHT_FACE;
+            face.style.flexShrink = 0;
+            face.Round(SPOTLIGHT_FACE / 2);
+            column.Add(face);
+
+            Label name = Systems_UiKit.Text("", Systems_UiKit.FONT_BODY, Systems_UiKit.TextHi, true);
+            name.style.marginTop = Systems_UiKit.SPACE_1;
+            column.Add(name);
+            Label rank = Systems_UiKit.Text("", Systems_UiKit.FONT_MICRO, Systems_UiKit.TextMid);
+            column.Add(rank);
+            Label record = Systems_UiKit.Text("", Systems_UiKit.FONT_MICRO, Systems_UiKit.TextLow);
+            column.Add(record);
+
+            _spotlightSide[side] = column;
+            _spotlightFace[side] = face;
+            _spotlightName[side] = name;
+            _spotlightRank[side] = rank;
+            _spotlightRecord[side] = record;
+            return column;
+        }
+
+        /// Decides what the spotlight says, then lets FitSpotlight decide whether
+        /// there is room to say it.
+        private void RefreshSpotlight()
+        {
+            if (_spotlight == null)
+            {
+                return;
+            }
+
+            if (Systems_TournamentState.IsComplete)
+            {
+                _spotlightWanted = true;
+                _spotlightCaption.text = "CHAMPION";
+                FillSpotlightSide(0, Systems_TournamentState.Champion, true);
+                ShowSpotlightSideB(false);
+            }
+            else if (Systems_TournamentState.Active)
+            {
+                int match = Systems_TournamentState.CurrentMatch;
+                Systems_TournamentState.GetEntrants(match, out Agent_CharacterDefinition a,
+                                                    out Agent_CharacterDefinition b);
+                _spotlightWanted = a != null && b != null;
+                _spotlightCaption.text = "NEXT BOUT  ·  " + Systems_TournamentState.RoundName(match);
+                FillSpotlightSide(0, a, false);
+                FillSpotlightSide(1, b, false);
+                ShowSpotlightSideB(true);
+            }
+            else
+            {
+                // Seeding: the palette is up, and that is what this height is for.
+                _spotlightWanted = false;
+            }
+            FitSpotlight();
+        }
+
+        private void ShowSpotlightSideB(bool show)
+        {
+            DisplayStyle display = show ? DisplayStyle.Flex : DisplayStyle.None;
+            _spotlightSide[1].style.display = display;
+            _spotlightVs.style.display = display;
+        }
+
+        private void FillSpotlightSide(int side, Agent_CharacterDefinition character, bool withTitles)
+        {
+            if (character == null)
+            {
+                return;
+            }
+            VisualElement face = _spotlightFace[side];
+            if (character.headSprite != null)
+            {
+                face.style.backgroundImage = new StyleBackground(character.headSprite);
+                face.style.backgroundColor = Color.clear;
+            }
+            else
+            {
+                face.style.backgroundImage = new StyleBackground();
+                face.style.backgroundColor = character.teamColor;
+            }
+            _spotlightName[side].text = character.behaviorName.ToUpperInvariant();
+            _spotlightName[side].style.color = character.teamColor;
+
+            // Read-only: Get hands back the live record, nothing is written here.
+            Systems_CareerStats.Record record = Systems_CareerStats.Get(character.behaviorName);
+            _spotlightRank[side].text = Systems_CareerLadder.NameFor(record);
+            string line = $"{record.matchWins}W-{record.matchLosses}L  ·  ELO {record.elo:F0}";
+            if (withTitles)
+            {
+                line += record.titles == 1 ? "  ·  1 TITLE" : $"  ·  {record.titles} TITLES";
+            }
+            _spotlightRecord[side].text = line;
+        }
+
+        private void OnBracketPaneGeometry(GeometryChangedEvent evt) => FitSpotlight();
+
+        /// Shows the spotlight when it is wanted AND the pane has the height for
+        /// it; hides it otherwise.
+        ///
+        /// The room is measured from the OTHER blocks, never from the spotlight
+        /// itself, so its own appearing cannot change the answer — a fit test that
+        /// includes the thing being fitted flips on and off every layout pass.
+        private void FitSpotlight()
+        {
+            if (_spotlight == null || _paneBracket == null)
+            {
+                return;
+            }
+            bool fits = false;
+            if (_spotlightWanted)
+            {
+                float used = 0f;
+                bool measured = true;
+                for (int childIndex = 0; childIndex < _paneBracket.childCount; childIndex++)
+                {
+                    VisualElement child = _paneBracket[childIndex];
+                    // The INLINE display, not the resolved one: Refresh has just
+                    // written it and the resolved value still describes the last
+                    // layout pass.
+                    if (child == _spotlight || child.style.display == DisplayStyle.None)
+                    {
+                        continue;
+                    }
+                    float height = child.layout.height;
+                    if (float.IsNaN(height))
+                    {
+                        measured = false;   // not laid out yet; a later event will be
+                        break;
+                    }
+                    used += height;
+                }
+                float available = _paneBracket.contentRect.height;
+                fits = measured && !float.IsNaN(available)
+                       && available - used >= SPOTLIGHT_HEIGHT + Systems_UiKit.SPACE_4;
+            }
+
+            // Share the free height only when some exists (see BuildUi). Measured
+            // over the blocks WITHOUT the spotlight, like the test above: the
+            // spotlight is only ever shown when it leaves slack behind it.
+            float stacked = 0f;
+            bool known = true;
+            for (int childIndex = 0; childIndex < _paneBracket.childCount; childIndex++)
+            {
+                VisualElement child = _paneBracket[childIndex];
+                if (child == _spotlight || child.style.display == DisplayStyle.None)
+                {
+                    continue;
+                }
+                if (float.IsNaN(child.layout.height))
+                {
+                    known = false;
+                    break;
+                }
+                stacked += child.layout.height;
+            }
+            float paneHeight = _paneBracket.contentRect.height;
+            bool slack = known && !float.IsNaN(paneHeight) && paneHeight - stacked > 1f;
+            Justify justify = slack ? Justify.SpaceEvenly : Justify.FlexStart;
+            if (_paneBracket.style.justifyContent != justify)
+            {
+                _paneBracket.style.justifyContent = justify;
+            }
+
+            DisplayStyle wanted = fits ? DisplayStyle.Flex : DisplayStyle.None;
+            if (_spotlight.style.display != wanted)
+            {
+                _spotlight.style.display = wanted;
+                if (fits)
+                {
+                    _spotlight.FadeIn();
+                }
+            }
         }
 
         /// A quarterfinal row: two draggable seed slots plus the winner readout.
@@ -714,7 +1011,7 @@ namespace PoSumo
 
         private VisualElement MakeWinnerSlot(int matchIndex)
         {
-            VisualElement slot = MakeChip(Systems_TournamentState.GetWinner(matchIndex));
+            VisualElement slot = MakeChip(Systems_TournamentState.GetAdvancing(matchIndex));
             slot.userData = matchIndex;
             // Several rows show the SAME match: match 0 is both the QF-0 winner
             // readout and the semifinal's left entrant. Keeping one chip per match
@@ -780,7 +1077,7 @@ namespace PoSumo
             // the longest name on the roster clipped. The chip gained its emphasis
             // in HEIGHT instead, which costs nothing horizontally.
             Label name = Systems_UiKit.Text(
-                ChipName(character),
+                ChipName(character, EMPTY_UNDECIDED),
                 Systems_UiKit.FONT_SMALL,
                 character != null ? character.teamColor : Systems_UiKit.TextLow,
                 true);
@@ -830,6 +1127,14 @@ namespace PoSumo
             return grip;
         }
 
+        /// What an EMPTY chip says. A seed slot with nobody in it is a BYE — a
+        /// statement about the draw, and a drop target. A winner slot with nobody
+        /// in it is simply not decided yet. They were both an em-dash while every
+        /// slot always held a fighter; with byes in the draw the difference is the
+        /// whole reading of the row ("MATT v BYE -> MATT").
+        private const string EMPTY_BYE = "BYE";
+        private const string EMPTY_UNDECIDED = "—";
+
         /// Chip label, with a brainless entrant marked as such.
         ///
         /// A character with no `inferenceModel` has no policy: it collapses as a
@@ -845,11 +1150,11 @@ namespace PoSumo
         /// project ships no font asset, so an unsupported glyph draws as a box.
         /// "BOT" is short enough that the suffix fits the width "STANDARD" needs;
         /// the chip clips rather than spills if a longer brainless name is added.
-        private static string ChipName(Agent_CharacterDefinition character)
+        private static string ChipName(Agent_CharacterDefinition character, string emptyLabel)
         {
             if (character == null)
             {
-                return "—";
+                return emptyLabel;
             }
             string label = character.behaviorName.ToUpperInvariant();
             return character.inferenceModel == null ? label + "  ·  DUMMY" : label;
@@ -931,7 +1236,10 @@ namespace PoSumo
                 }
                 else
                 {
-                    Systems_TournamentState.SetSeed(target, _dragCharacter);
+                    // MOVES the fighter: every entrant is in the draw exactly
+                    // once, so a palette drop relocates it and whatever was in
+                    // the target (a fighter, or a bye) takes its old slot.
+                    Systems_TournamentState.PlaceSeed(target, _dragCharacter);
                 }
                 Refresh();
             }
@@ -959,12 +1267,15 @@ namespace PoSumo
             for (int seedSlotIndex = 0; seedSlotIndex < _seedSlots.Count; seedSlotIndex++)
             {
                 int seedIndex = (int)_seedSlots[seedSlotIndex].userData;
-                ApplyChip(_seedSlots[seedSlotIndex], Systems_TournamentState.GetSeed(seedIndex));
+                ApplyChip(_seedSlots[seedSlotIndex], Systems_TournamentState.GetSeed(seedIndex), EMPTY_BYE);
             }
             for (int winnerSlotIndex = 0; winnerSlotIndex < _winnerSlots.Count; winnerSlotIndex++)
             {
                 int matchIndex = (int)_winnerSlots[winnerSlotIndex].userData;
-                ApplyChip(_winnerSlots[winnerSlotIndex], Systems_TournamentState.GetWinner(matchIndex));
+                // GetAdvancing, not GetWinner: a bye shows who it carries through
+                // as soon as the draw exists, not only once START has settled it.
+                ApplyChip(_winnerSlots[winnerSlotIndex],
+                          Systems_TournamentState.GetAdvancing(matchIndex), EMPTY_UNDECIDED);
             }
 
             // The seeding controls only exist while seeding is possible. Left up,
@@ -972,9 +1283,14 @@ namespace PoSumo
             // and a "drag a fighter onto a slot" instruction that do nothing are
             // worse than no palette at all.
             DisplayStyle seedingControls = BracketLocked ? DisplayStyle.None : DisplayStyle.Flex;
-            if (_hint != null) _hint.style.display = seedingControls;
-            if (_paletteRow != null) _paletteRow.style.display = seedingControls;
+            if (_seedingGroup != null) _seedingGroup.style.display = seedingControls;
             if (_resetButton != null) _resetButton.style.display = seedingControls;
+            bool offerResume = _hasSaved && !BracketLocked;
+            if (_resumeButton != null)
+            {
+                _resumeButton.style.display = offerResume ? DisplayStyle.Flex : DisplayStyle.None;
+            }
+            RefreshSpotlight();
 
             // The promotion banner and the career view both move after every bout,
             // and this screen is shown again between matches — so both are
@@ -1015,8 +1331,11 @@ namespace PoSumo
                 string bName = b != null ? b.behaviorName.ToUpperInvariant() : "?";
                 // No arena suffix any more: every bout is on the same clay, so
                 // naming it on every line was noise rather than information.
-                _statusLabel.text = $"MATCH {Systems_TournamentState.CurrentMatch + 1} of " +
-                                    $"{Systems_TournamentState.MATCH_COUNT} — {aName} v {bName}";
+                // BOUTS, not match slots — a bye is a walkover nobody plays, so
+                // five fighters are four bouts in the seven-slot frame.
+                _statusLabel.text = $"BOUT {Systems_TournamentState.BoutsPlayed + 1} of " +
+                                    $"{Systems_TournamentState.BoutCount} — {aName} v {bName}";
+                _statusLabel.style.color = Systems_UiKit.Gold;
                 _actionButton.text = _autoPlay ? "PLAYING…" : "PLAY MATCH";
                 return;
             }
@@ -1026,20 +1345,42 @@ namespace PoSumo
             // tournamentPointsToWin on GameTuning.asset — which is exactly what
             // the project's tuning convention tells you to do — left this screen
             // stating a rule the game no longer followed.
-            // SLOTS, not entrants. SEED_COUNT is 8 but the roster is 5, so three
-            // fighters are drawn TWICE and can meet themselves — and a mirror bout
-            // scores for nobody (`Systems_CareerRecorder` logs a warning saying so).
-            // Calling eight slots "8 entrants" told the player there were eight
-            // distinct fighters and made the repeats look like a seeding bug.
-            _statusLabel.text = $"{Systems_TournamentState.SEED_COUNT} slots · {DistinctFighters()} fighters"
-                                + " · single elimination" + BestOfClause();
+            // SLOTS, fighters and BYES, each counted off the live draw. SEED_COUNT
+            // is 8 and the roster is 5: every fighter is drawn once and the other
+            // three slots are byes. (They used to be filled by drawing fighters
+            // twice, which is where the mirror bouts came from.)
+            _statusLabel.style.color = Systems_UiKit.Gold;
+            if (offerResume)
+            {
+                // The saved bracket outranks the draw summary: it is the reason
+                // there are three buttons, and the only place that says what
+                // RESUME would resume.
+                _statusLabel.text = $"saved bracket · bout {_saved.BoutNumber} of {_saved.BoutCount} — " +
+                                    $"{_saved.FighterA.ToUpperInvariant()} v {_saved.FighterB.ToUpperInvariant()}";
+                _actionButton.text = "START NEW";
+                return;
+            }
+            int byes = Systems_TournamentState.ByeCount;
+            string byeClause = byes == 0 ? string.Empty : byes == 1 ? " · 1 bye" : $" · {byes} byes";
+            // ONE LINE at 720pt, and that is a layout constraint, not a taste:
+            // with the bye clause added to the old sentence it wrapped, and the
+            // second line took 35pt out of a 4:3 pane that had none to give
+            // (HudOverflowAudit, 1200x1600). "single elimination" is what went —
+            // a bracket drawn on the screen above already says it.
+            _statusLabel.text = $"{Systems_TournamentState.SEED_COUNT} slots · "
+                                + $"{Systems_TournamentState.FighterCount} fighters" + byeClause
+                                + BestOfClause();
             _actionButton.text = "START TOURNAMENT";
         }
 
         /// Repaint one chip in place. Rebuilding the element would lose the
         /// registered drag callbacks, so only the visuals are swapped.
-        private static void ApplyChip(VisualElement chip, Agent_CharacterDefinition character)
+        private static void ApplyChip(VisualElement chip, Agent_CharacterDefinition character,
+                                      string emptyLabel)
         {
+            // An empty chip recedes: a BYE is furniture, not an entrant, and at
+            // full strength three of them out-shouted the one real quarterfinal.
+            chip.style.opacity = character != null ? 1f : 0.55f;
             var icon = chip[0];
             var name = (Label)chip[1];
             chip.style.borderLeftColor = character != null ? character.teamColor : Systems_UiKit.Chip;
@@ -1049,7 +1390,7 @@ namespace PoSumo
             icon.style.backgroundImage = character != null && character.headSprite != null
                 ? new StyleBackground(character.headSprite)
                 : new StyleBackground();
-            name.text = ChipName(character);
+            name.text = ChipName(character, emptyLabel);
             name.style.color = character != null ? character.teamColor : Systems_UiKit.TextLow;
         }
 
@@ -1253,13 +1594,43 @@ namespace PoSumo
             {
                 if (!Systems_TournamentState.SeedsReady())
                 {
-                    _statusLabel.text = "every slot needs a fighter";
+                    _statusLabel.text = "a bracket needs at least two fighters";
                     return;
                 }
+                // Writes bracket.json over any saved bracket, so the offer to
+                // resume the old one is gone the moment a new one starts.
                 Systems_TournamentState.BeginTournament();
+                _hasSaved = false;
             }
             LaunchCurrentMatch();
         }
+
+        /// Restore the bracket the app was closed in the middle of. From here it
+        /// is an ordinary running bracket: auto-play launches its next bout after
+        /// the usual pause, or PLAY MATCH does with AUTO off.
+        private void OnResume()
+        {
+            bool resumed = Systems_TournamentState.TryResume(_roster);
+            _hasSaved = false;
+            _autoTimer = 0f;
+            Refresh();
+            if (!resumed)
+            {
+                _statusLabel.text = "the saved bracket could not be restored";
+            }
+            else
+            {
+                Systems_Log.Info($"[TOURNAMENT] resumed saved bracket at bout " +
+                                 $"{Systems_TournamentState.BoutsPlayed + 1}/{Systems_TournamentState.BoutCount}");
+            }
+        }
+
+        /// RESUME, reachable without a pointer — same reason as PressAction.
+        public void PressResume() => OnResume();
+
+        /// True while a saved bracket is on offer. Read by the harness and the
+        /// screenshot flow; the button itself is the player's view of it.
+        public bool ResumeOffered => _hasSaved && !BracketLocked;
 
         private void LaunchCurrentMatch()
         {
