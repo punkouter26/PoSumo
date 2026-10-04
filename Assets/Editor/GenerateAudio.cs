@@ -71,6 +71,9 @@ namespace PoSumo.EditorTools
                     written += Write($"SFX_Scuff{(char)('A' + v)}", Scuff(v));
                 }
                 written += Write("SFX_Scuff", Scuff(0));
+                // The continuous counterpart: looped by Systems_FootScrape under a
+                // gain that follows planted-foot slip x load.
+                written += Write("SFX_ScrapeLoop", ScrapeLoop());
 
                 // --- Effort vocals. The loudest thing missing from a wrestling
                 // game is the wrestlers making noise.
@@ -198,6 +201,38 @@ namespace PoSumo.EditorTools
                 buffer[bufferIndex] = n * env;
             }
             return Normalize(buffer, 0.6f);
+        }
+
+        /// A loaded foot dragged across clay, as a seamless loop.
+        ///
+        /// Same material as Scuff - band-passed noise - but with no envelope of
+        /// its own: Systems_FootScrape supplies the envelope from the physics, so
+        /// the clip only has to be a steady texture. Two bands rather than one, a
+        /// low gritty body and a thinner dry edge, and a slow irregular flutter
+        /// across both so it reads as grains catching and releasing instead of as
+        /// a hiss held at one level. Lower and darker than the scuffs (700 Hz
+        /// against 1500+): a sustained 1.5 kHz noise band is exactly the hiss two
+        /// earlier always-on layers were removed for.
+        ///
+        /// LoopWrap folds the tail over the head, so the returned clip is the
+        /// fade length shorter than the buffer and loops without a click.
+        private static float[] ScrapeLoop()
+        {
+            var rng = new System.Random(4100);
+            float[] buffer = New(2.4f);
+            var body = Biquad.BandPass(700f, 0.9f, SAMPLE_RATE);
+            var edge = Biquad.BandPass(2100f, 1.4f, SAMPLE_RATE);
+            // The flutter is low-passed noise, not an LFO: a sine at a fixed rate
+            // is audible as a wobble within a second of looping.
+            var flutter = Biquad.LowPass(11f, 0.7f, SAMPLE_RATE);
+            for (int bufferIndex = 0; bufferIndex < buffer.Length; bufferIndex++)
+            {
+                float white = (float)(rng.NextDouble() * 2 - 1);
+                float grain = flutter.Process((float)(rng.NextDouble() * 2 - 1)) * 60f;
+                float level = Mathf.Clamp(0.72f + grain, 0.35f, 1f);
+                buffer[bufferIndex] = (body.Process(white) + edge.Process(white) * 0.35f) * level;
+            }
+            return Normalize(LoopWrap(buffer, 0.4f), 0.6f);
         }
 
         // ============================================================= vocals

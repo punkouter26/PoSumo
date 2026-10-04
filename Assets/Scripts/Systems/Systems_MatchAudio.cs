@@ -482,10 +482,14 @@ namespace PoSumo
             // and both sides report, so a short global cooldown dedupes them.
             var otherBody = c.collider.GetComponentInParent<Agent_BipedBody>();
             if (otherBody == null || otherBody == sensor.owner) return;
-            if (speed < thudMinSpeed || now < _nextThudTime) return;
+            // Weight as well as speed. A slow chest-to-chest shove transfers more
+            // momentum than most strikes (measured: the heaviest contact of a bout
+            // arrived at 1.3 m/s) and was inaudible under the speed gate alone.
+            float heaviness = Sensor_Impact.Heaviness(c);
+            if ((speed < thudMinSpeed && heaviness <= 0f) || now < _nextThudTime) return;
             _nextThudTime = now + 0.06f;
 
-            PlayLayeredThud(speed, 1f, pan, slapScale: 1f, dustScale: 0.7f);
+            PlayLayeredThud(speed, 1f, pan, slapScale: 1f, dustScale: 0.7f, heaviness: heaviness);
             MaybeGrunt(sensor.owner, speed, pan);
 
             // Tension spikes on contact and bleeds off in Update.
@@ -501,9 +505,20 @@ namespace PoSumo
         /// The three-layer impact. `t` decides both the gains and the relative
         /// balance: a light contact is nearly all slap and dust with no body under
         /// it, a heavy one is dominated by mass.
-        private void PlayLayeredThud(float speed, float pitchScale, float pan, float slapScale, float dustScale)
+        ///
+        /// `heaviness` is Sensor_Impact.Heaviness for a body-on-body contact, and
+        /// negative for an arena contact — those keep the plain speed ramp, since
+        /// a body landing on clay is weighed by the floor, not by an opponent, and
+        /// its impulses sit in a different range (measured p50 4.1, p90 14.1 N·s
+        /// against 0.5 and 3.1 body-on-body).
+        private void PlayLayeredThud(float speed, float pitchScale, float pan, float slapScale,
+                                     float dustScale, float heaviness = -1f)
         {
             float t = Mathf.Clamp01((speed - thudMinSpeed) / Mathf.Max(0.01f, thudFullSpeed - thudMinSpeed));
+            if (heaviness >= 0f)
+            {
+                t = Sensor_Impact.Strength(t, heaviness);
+            }
             _thudVariant = (_thudVariant + 1) % 3;
             float pitch = pitchScale * Random.Range(0.93f, 1.07f);
 

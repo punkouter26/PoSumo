@@ -122,6 +122,7 @@ namespace PoSumo
         private bool enableCrowdMomentum = true;
         private bool enablePerfHud = true;
         private bool enableFeelFx = true;
+        private bool enableFootScrape = true;
         private bool enableShockwave = true;
         private bool enableRingSqueezeCue = true;
         private bool enableFighterPanel = true;
@@ -427,6 +428,7 @@ namespace PoSumo
                 enableCrowdMomentum = tuning.enableCrowdMomentum;
                 enablePerfHud = tuning.enablePerfHud;
                 enableFeelFx = tuning.enableFeelFx;
+                enableFootScrape = tuning.enableFootScrape;
                 enableShockwave = tuning.enableShockwave;
                 enableRingSqueezeCue = tuning.enableRingSqueezeCue;
                 enableFighterPanel = tuning.enableFighterPanel;

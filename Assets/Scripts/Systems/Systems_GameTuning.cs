@@ -168,6 +168,9 @@ namespace PoSumo
         [Tooltip("Device haptics on the big moments, plus camera shake on the discrete events that produced none (head KO, dismemberment, gib, round end). Presentation only — it reads outcomes and changes nothing a referee sees, so it is safe in a bracket and needs no retraining.\n\nHaptics are Android-only and additionally respect the player's own switch (Systems_FeelFx.HapticsEnabled, persisted in PlayerPrefs). This flag decides whether the system exists at all.")]
         public bool enableFeelFx = true;
 
+        [Tooltip("A looping clay-scrape voice per fighter whose gain follows planted-foot slip speed x foot load, so being driven back across the mat is audible. Presentation only: it reads the foot load the body already samples and writes nothing.\n\nPaused outright below its floor, so a fighter standing still makes no sound - this project has removed two always-on noise layers already and this must not become a third.")]
+        public bool enableFootScrape = true;
+
         [Tooltip("Danger bands standing on the LIVE edge of the mat, brightening from amber to red as it closes. Presentation only: it reads the ring width and changes nothing a referee sees, so it is safe in a bracket and needs no retraining.\n\nMeasured over 17 rounds of live bracket play, 16 ran past shrinkStartSeconds and every one ended in a ring-out — the contraction, not a push, is what decides almost every round, and nothing on screen said so. Pairs with the MAT meter in the dock: this is the thing, that is the number.")]
         public bool enableRingSqueezeCue = true;
 

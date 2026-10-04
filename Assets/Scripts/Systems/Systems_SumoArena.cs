@@ -40,6 +40,7 @@ namespace PoSumo
         public Collider2D FloorCollider { get; private set; }
         private readonly List<TawaraRef> _tawara = new List<TawaraRef>();
         private Transform _platform, _surface, _baseLip;
+        private Transform _shikiriLeft, _shikiriRight;
         private float _currentHalf = -1f;
 
         /// The dohyo's CURRENT half-width in metres. Anything drawn against the
@@ -66,6 +67,11 @@ namespace PoSumo
         /// off, and the round simply cannot end. Measured in play as a permanent
         /// stall with both fighters "floating" over the crowd.
         private const float VANISH_HALF = 0.12f;
+
+        // Shikiri-sen: the two start lines, metres from ring centre / long / deep.
+        private const float SHIKIRI_OFFSET = 0.35f;
+        private const float SHIKIRI_WIDTH = 0.25f;
+        private const float SHIKIRI_DEPTH = 0.03f;
 
         public void SetPlatformHalfWidth(float half)
         {
@@ -101,6 +107,12 @@ namespace PoSumo
                 _baseLip.localScale = new Vector3(width + 0.7f, 0.16f, 1f);
                 _baseLip.gameObject.SetActive(!vanishNow);
             }
+
+            // The start lines are paint on the clay, so they go when the clay
+            // under them does. Renderer-only objects: nothing physical changes.
+            bool linesOnClay = half >= SHIKIRI_OFFSET + SHIKIRI_WIDTH * 0.5f;
+            if (_shikiriLeft != null) _shikiriLeft.gameObject.SetActive(linesOnClay);
+            if (_shikiriRight != null) _shikiriRight.gameObject.SetActive(linesOnClay);
 
             EnsureTawaraBands(half);
             if (vanishNow) return;   // no clay left — the bales went with it
@@ -369,8 +381,17 @@ namespace PoSumo
         private static readonly Color WALL_BOTTOM = new Color(0.46f, 0.36f, 0.29f);
 
         private static Sprite GradientSprite(Color top, Color bottom) =>
-            SourceSprite("WallGradient", 128f, false, new Vector2(0.5f, 0.5f), () =>
+            SourceSprite(WALL_SPRITE, 128f, false, new Vector2(0.5f, 0.5f),
+                         () => GradientTexture(top, bottom));
+
+        private const string WALL_SPRITE = "WallGradient";
+
+        private static Texture2D GradientTexture(Color top, Color bottom)
         {
+            // 4 texels wide: it is a vertical gradient, there is nothing to store
+            // across it. That makes the SPRITE 4/128 = 0.031 units wide, which is
+            // why the wall is sized through SizeToMetres and never by writing a
+            // width straight into localScale.
             const int S = 128;
             var tex = new Texture2D(4, S, TextureFormat.RGBA32, false);
             for (int rowIndex = 0; rowIndex < S; rowIndex++)
@@ -380,7 +401,50 @@ namespace PoSumo
             }
             tex.Apply();
             return tex;
-        });
+        }
+
+        /// Scales a renderer's transform so its sprite covers `width` x `height`
+        /// metres, whatever size the sprite itself is.
+        ///
+        /// Every Box-style piece of dressing here is a one-unit sprite, so writing
+        /// metres into localScale is right for all of them — and wrong for the
+        /// wall, whose gradient is 0.031 units wide. Scaled to `floorWidth` (34)
+        /// that way, the "back wall" rendered as a strip **1.06 m wide**
+        /// (measured live 2026-10-04: bounds 1.06 x 12.0): one hard-edged column
+        /// of warm light behind the fighters, with the camera's clear colour
+        /// either side of it. That is the real reason the hall read as a void,
+        /// and why the placeholder grid was the only thing that appeared to be
+        /// behind the fight at all.
+        private static void SizeToMetres(SpriteRenderer renderer, float width, float height)
+        {
+            Vector2 unit = renderer.sprite != null ? (Vector2)renderer.sprite.bounds.size : Vector2.one;
+            renderer.transform.localScale = new Vector3(
+                width / Mathf.Max(0.0001f, unit.x), height / Mathf.Max(0.0001f, unit.y), 1f);
+        }
+
+#if UNITY_EDITOR
+        /// Editor-only: rewrite the baked `WallGradient.png` from the current
+        /// constants, in place.
+        ///
+        /// SourceSprite hands back an EXISTING asset untouched, so a change to
+        /// WALL_TOP / WALL_BOTTOM never reaches disk on its own.
+        /// The bytes are overwritten rather than the file re-created so the
+        /// `.meta` — GUID, sprite import settings, atlas membership — survives
+        /// and every baked reference keeps resolving. Called by
+        /// PoSumo -> Rebuild Arena (FULL) before it rebuilds.
+        public static void RegenerateWallGradient()
+        {
+            string path = $"Assets/Art/Generated/{WALL_SPRITE}.png";
+            if (!System.IO.File.Exists(path))
+            {
+                return;   // first bake: SourceSprite will create and import it
+            }
+            Texture2D tex = GradientTexture(WALL_TOP, WALL_BOTTOM);
+            System.IO.File.WriteAllBytes(path, tex.EncodeToPNG());
+            DestroyImmediate(tex);
+            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+        }
+#endif
 
         private static Sprite ConeSprite() =>
             SourceSprite("SpotCone", 128f, false, new Vector2(0.5f, 0f), () =>
@@ -510,19 +574,18 @@ namespace PoSumo
                 else if (n == "DohyoPlatform") _platform = child;
                 else if (n == "ClaySurface") _surface = child;
                 else if (n == "DohyoBase") _baseLip = child;
-                // The back wall and the grid carry GENERATED sprites, and the arena
-                // scenes are baked — so a change to WALL_TOP / WALL_BOTTOM or to
-                // GridSprite would otherwise never reach SCN_SUMO, because Build()
-                // does not run there. Re-assigning them here is what makes the
-                // backdrop colours editable in code at all.
+                else if (n == "ShikiriLeft") _shikiriLeft = child;
+                else if (n == "ShikiriRight") _shikiriRight = child;
+                // The wall is NOT re-assigned here any more. It used to be handed
+                // a runtime-generated gradient on every load so that WALL_TOP /
+                // WALL_BOTTOM were editable without a re-bake — which took the
+                // wall out of ArenaAtlas (a draw call of its own) for a colour
+                // that changes about once a quarter. The baked sprite is the
+                // atlas one; RegenerateWallGradient + Rebuild Arena (FULL) is how
+                // a colour change reaches it.
                 //
-                // Cheap: SourceSprite caches by name, so this hands back the same
-                // instance every arena and every reload.
-                else if (n == "ArenaWall")
-                {
-                    var wallRenderer = child.GetComponent<SpriteRenderer>();
-                    if (wallRenderer != null) wallRenderer.sprite = GradientSprite(WALL_TOP, WALL_BOTTOM);
-                }
+                // The grid still is: only the non-deluxe arenas carry one now,
+                // and those are the training scenes nobody re-bakes.
                 else if (n == "Grid")
                 {
                     var gridRenderer = child.GetComponent<SpriteRenderer>();
@@ -595,12 +658,21 @@ namespace PoSumo
             {
                 var line = new GameObject(s < 0 ? "ShikiriLeft" : "ShikiriRight");
                 line.transform.SetParent(transform, false);
-                line.transform.localPosition = new Vector3(s * 0.35f, 0.015f, 0f);
-                line.transform.localScale = new Vector3(0.25f, 0.035f, 1f);
+                // INLAID, top edge flush with the clay. They used to be centred
+                // 1.5 cm ABOVE the mat and 3.5 cm tall — and this is a side view,
+                // so a line painted on the ground was being drawn as a white slab
+                // standing on it. Two of them, bright white, at the middle of the
+                // ring: reported as "white fragments lying on the mat" by someone
+                // looking for a severed limb (2026-10-04). Sunk into the surface
+                // band and toned toward the clay they read as paint.
+                line.transform.localPosition =
+                    new Vector3(s * SHIKIRI_OFFSET, -SHIKIRI_DEPTH * 0.5f, 0f);
+                line.transform.localScale = new Vector3(SHIKIRI_WIDTH, SHIKIRI_DEPTH, 1f);
                 var lsr = line.AddComponent<SpriteRenderer>();
                 lsr.sprite = Box();
-                lsr.color = new Color(0.95f, 0.93f, 0.88f);
+                lsr.color = new Color(0.90f, 0.85f, 0.74f);
                 lsr.sortingOrder = -3;
+                if (s < 0) _shikiriLeft = line.transform; else _shikiriRight = line.transform;
             }
 
             // --- Deluxe: gradient arena wall behind everything.
@@ -609,10 +681,55 @@ namespace PoSumo
                 var wall = new GameObject("ArenaWall");
                 wall.transform.SetParent(transform, false);
                 wall.transform.localPosition = new Vector3(0f, 4.4f, 0f);
-                wall.transform.localScale = new Vector3(floorWidth, 12f, 1f);
                 var wsr = wall.AddComponent<SpriteRenderer>();
                 wsr.sprite = GradientSprite(WALL_TOP, WALL_BOTTOM);
                 wsr.sortingOrder = -12;
+                SizeToMetres(wsr, floorWidth, 12f);
+
+                // Below the wall: the dark well the front tiers stand in. The
+                // wall stops at y = -1.6 and the tiers leave gaps between their
+                // faces, so without this the camera's clear colour shows through
+                // them and under the last tier in every wide shot.
+                var pit = new GameObject("ArenaPit");
+                pit.transform.SetParent(transform, false);
+                pit.transform.localPosition = new Vector3(0f, -7.6f, 0f);
+                pit.transform.localScale = new Vector3(floorWidth, 12f, 1f);
+                var pitRenderer = pit.AddComponent<SpriteRenderer>();
+                pitRenderer.sprite = Box();
+                pitRenderer.color = new Color(0.115f, 0.09f, 0.085f);
+                pitRenderer.sortingOrder = -12;
+
+                // Timber frame: posts and one head rail, a shade darker than the
+                // wall behind them. This is ALL the wall carries. The placeholder
+                // grid is gone, and so are the four saturated banners — at
+                // gameplay framing the top of frame cut each banner off a short
+                // way up, so what reached the screen was an unexplained ochre
+                // block with a cream square in one corner. A post cropped by the
+                // frame still reads as a post.
+                var timber = new Color(0.25f, 0.19f, 0.165f);
+                for (int postIndex = -3; postIndex <= 3; postIndex++)
+                {
+                    if (postIndex == 0)
+                    {
+                        continue;   // nothing dead centre behind the bout
+                    }
+                    var post = new GameObject("ArenaPost");
+                    post.transform.SetParent(transform, false);
+                    post.transform.localPosition = new Vector3(postIndex * 4.6f, 4.4f, 0f);
+                    post.transform.localScale = new Vector3(0.26f, 12f, 1f);
+                    var postRenderer = post.AddComponent<SpriteRenderer>();
+                    postRenderer.sprite = Box();
+                    postRenderer.color = timber;
+                    postRenderer.sortingOrder = -11;
+                }
+                var headRail = new GameObject("ArenaRail");
+                headRail.transform.SetParent(transform, false);
+                headRail.transform.localPosition = new Vector3(0f, 3.3f, 0f);
+                headRail.transform.localScale = new Vector3(floorWidth, 0.16f, 1f);
+                var headRailRenderer = headRail.AddComponent<SpriteRenderer>();
+                headRailRenderer.sprite = Box();
+                headRailRenderer.color = timber;
+                headRailRenderer.sortingOrder = -11;
             }
 
             // --- Warm gridded backdrop (1 m cells, heavy line each 5 m).
@@ -629,14 +746,23 @@ namespace PoSumo
             // Systems_CameraFollow.feetDrop. It costs one tiled sprite's worth of
             // extra area on a renderer that is already in the scene, behind
             // everything at sortingOrder -10.
-            var grid = new GameObject("Grid");
-            grid.transform.SetParent(transform, false);
-            grid.transform.localPosition = new Vector3(0f, 1.2f, 0f);
-            var gsr2 = grid.AddComponent<SpriteRenderer>();
-            gsr2.sprite = GridSprite();
-            gsr2.drawMode = SpriteDrawMode.Tiled;
-            gsr2.size = new Vector2(floorWidth, 20f);
-            gsr2.sortingOrder = -10;
+            //
+            // PLAIN ARENAS ONLY since 2026-10-04. The grid is a placeholder: in the
+            // deluxe arena it was a 1 m graph-paper lattice drawn over the back of
+            // the hall, and it only looked like the backdrop because the real wall
+            // was a 1 m strip (see SizeToMetres). With the wall the right size the
+            // deluxe arena is covered top to bottom by wall + pit and needs none.
+            if (!deluxe)
+            {
+                var grid = new GameObject("Grid");
+                grid.transform.SetParent(transform, false);
+                grid.transform.localPosition = new Vector3(0f, 1.2f, 0f);
+                var gsr2 = grid.AddComponent<SpriteRenderer>();
+                gsr2.sprite = GridSprite();
+                gsr2.drawMode = SpriteDrawMode.Tiled;
+                gsr2.size = new Vector2(floorWidth, 20f);
+                gsr2.sortingOrder = -10;
+            }
 
             if (!showPosts) return;
 
@@ -648,6 +774,9 @@ namespace PoSumo
                 new Color(0.3f, 0.2f, 0.17f), new Color(0.2f, 0.27f, 0.21f),
                 new Color(0.28f, 0.25f, 0.18f)
             };
+            var galleryShade = new Color(0.34f, 0.27f, 0.235f);
+            const float GALLERY_BODY_W = 0.40f;
+            const float GALLERY_BODY_H = 0.52f;
             int gallerySeats = Mathf.FloorToInt(floorWidth / 0.6f);
             for (int gallerySeatIndex = 0; gallerySeatIndex < gallerySeats; gallerySeatIndex++)
             {
@@ -655,22 +784,32 @@ namespace PoSumo
                 float jitter = ((gallerySeatIndex * 13) % 5) * 0.025f;
                 var c = galleryKimono[(gallerySeatIndex * 7) % galleryKimono.Length];
 
+                // Rounded shoulders, not a box, and pulled most of the way toward
+                // the wall colour. These sit directly behind the fighters at head
+                // and chest height: as saturated kimono-coloured rectangles they
+                // were the busiest thing in the frame and read as blocks. A figure
+                // here only has to say "people are watching"; the eye belongs on
+                // the bout. Opaque as well — the old 0.85 alpha bought nothing over
+                // a flat wall and cost a blended layer across the whole width.
                 var gbody = new GameObject("GallerySpectator");
                 gbody.transform.SetParent(transform, false);
-                gbody.transform.localPosition = new Vector3(gx, 0.3f + jitter, 0f);
-                gbody.transform.localScale = new Vector3(0.34f, 0.46f, 1f);
+                gbody.transform.localPosition = new Vector3(gx, 0.18f + jitter, 0f);
+                gbody.transform.localScale = new Vector3(GALLERY_BODY_W, GALLERY_BODY_H, 1f);
                 var gsr = gbody.AddComponent<SpriteRenderer>();
-                gsr.sprite = Box();
-                gsr.color = new Color(c.r, c.g, c.b, 0.85f);
+                gsr.sprite = Circle();
+                gsr.color = new Color(Mathf.Lerp(c.r, galleryShade.r, 0.62f),
+                                      Mathf.Lerp(c.g, galleryShade.g, 0.62f),
+                                      Mathf.Lerp(c.b, galleryShade.b, 0.62f), 1f);
                 gsr.sortingOrder = -9;
 
                 var ghead = new GameObject("Head");
                 ghead.transform.SetParent(gbody.transform, false);
-                ghead.transform.localScale = new Vector3(0.2f / 0.34f, 0.2f / 0.46f, 1f);
-                ghead.transform.localPosition = new Vector3(0f, 0.72f, 0f);
+                ghead.transform.localScale =
+                    new Vector3(0.2f / GALLERY_BODY_W, 0.2f / GALLERY_BODY_H, 1f);
+                ghead.transform.localPosition = new Vector3(0f, 0.6f, 0f);
                 var ghsr = ghead.AddComponent<SpriteRenderer>();
                 ghsr.sprite = Circle();
-                ghsr.color = new Color(0.5f, 0.42f, 0.36f, 0.85f);
+                ghsr.color = new Color(0.44f, 0.36f, 0.31f, 1f);
                 ghsr.sortingOrder = -9;
             }
 
@@ -790,32 +929,7 @@ namespace PoSumo
                     lsr2.sortingOrder = -5;
                 }
 
-                // Wall banners.
-                var bannerCols = new[]
-                {
-                    new Color(0.55f, 0.16f, 0.14f), new Color(0.16f, 0.3f, 0.45f),
-                    new Color(0.5f, 0.38f, 0.12f), new Color(0.2f, 0.38f, 0.24f)
-                };
-                for (int index = 0; index < 4; index++)
-                {
-                    float bx = Mathf.Lerp(-(half + 4.2f), half + 4.2f, index / 3f);
-                    var banner = new GameObject("Banner");
-                    banner.transform.SetParent(transform, false);
-                    banner.transform.localPosition = new Vector3(bx, 3.6f, 0f);
-                    banner.transform.localScale = new Vector3(0.55f, 1.5f, 1f);
-                    var bsr3 = banner.AddComponent<SpriteRenderer>();
-                    bsr3.sprite = Box();
-                    bsr3.color = bannerCols[index % bannerCols.Length];
-                    bsr3.sortingOrder = -9;
-                    var motif = new GameObject("Motif");
-                    motif.transform.SetParent(banner.transform, false);
-                    motif.transform.localScale = new Vector3(0.6f, 0.18f, 1f);
-                    motif.transform.localPosition = new Vector3(0f, 0.22f, 0f);
-                    var msr = motif.AddComponent<SpriteRenderer>();
-                    msr.sprite = Box();
-                    msr.color = new Color(0.94f, 0.9f, 0.82f, 0.9f);
-                    msr.sortingOrder = -8;
-                }
+                // No wall banners — see the timber frame above for why.
 
                 // Distant back-row crowd silhouettes on both sides.
                 for (int s = -1; s <= 1; s += 2)
@@ -890,11 +1004,14 @@ namespace PoSumo
         /// to y = 0, so the frame runs to roughly y = -5.2. Everything between was
         /// empty. These four tiers cover exactly that gap.
         ///
-        /// They are drawn as near-BLACK silhouettes on purpose. A real hall's
-        /// front rows are between the viewer and the lit dohyo, so they read as
-        /// shape rather than detail — which means the dead space becomes
-        /// deliberate foreground rather than void, at a handful of quads, with no
-        /// lighting cost and nothing for the 2D light rig to have to reach.
+        /// They are a LIT crowd since 2026-10-04: muted kimono colours on warm
+        /// timber steps, darkening tier by tier toward the viewer. They started
+        /// as near-black silhouettes on the reasoning that a hall's front rows
+        /// sit between the viewer and the lit dohyo — true, and the result was
+        /// that the lower third of every portrait frame, which the enlarged band
+        /// never ended up needing, was a flat dark slab with black cut-outs in it
+        /// that read as nothing being drawn. Same quads, same shared lit material
+        /// and the same two atlas sprites, so the cost has not moved.
         ///
         /// **Sorting stays BELOW the fighters (negative orders).** A wrestler
         /// thrown off the dohyo lands on `ArenaFloor` at about y = -1.1, which
@@ -936,7 +1053,10 @@ namespace PoSumo
 
             // Tier fronts, descending toward the viewer. Each is wider than the
             // one behind it so the tiers read as steps rather than as stripes.
-            float[] tierY = { -1.65f, -2.55f, -3.55f, -4.7f };
+            // The first tier starts exactly where ArenaFloor ends (-platformDrop
+            // - 1 = -1.6); at -1.65 a 5 cm slot of the pit showed between them as
+            // a dark hairline right across the frame.
+            float[] tierY = { -1.6f, -2.5f, -3.5f, -4.7f };
             // Sized off the DOHYO, not off floorWidth. floorWidth is 34 m, and
             // with the band on the camera shows roughly 8 m across — so building
             // tiers to the floor's full span put ~500 spectator renderers outside
@@ -958,6 +1078,20 @@ namespace PoSumo
             // far below the dohyo's own brightness, so the tiers remain background;
             // they simply stop reading as a hole.
             float[] tierValue = { 0.20f, 0.155f, 0.115f, 0.082f };
+            // Brightness of the people on each tier, as a multiplier on the
+            // palette below. Still a ramp toward the viewer — that is the soft
+            // gradient down the frame — but it ends at "dim", not at "black".
+            float[] crowdValue = { 0.74f, 0.62f, 0.51f, 0.42f };
+            // Muted on purpose: enough spread that the stand reads as individual
+            // people, not enough to compete with two team colours on the dohyo.
+            var tierKimono = new[]
+            {
+                new Color(0.50f, 0.36f, 0.44f), new Color(0.36f, 0.44f, 0.54f),
+                new Color(0.56f, 0.42f, 0.32f), new Color(0.40f, 0.50f, 0.42f),
+                new Color(0.55f, 0.50f, 0.38f), new Color(0.46f, 0.38f, 0.36f),
+                new Color(0.62f, 0.58f, 0.52f)
+            };
+            var tierSkin = new Color(0.80f, 0.66f, 0.54f);
 
             var tierRoot = new GameObject("ForegroundTiers");
             tierRoot.transform.SetParent(transform, false);
@@ -974,11 +1108,18 @@ namespace PoSumo
                 // The step face itself.
                 var step = new GameObject("Tier" + tierIndex);
                 step.transform.SetParent(tierRoot.transform, false);
-                step.transform.localPosition = new Vector3(0f, y - 0.45f, 0f);
-                step.transform.localScale = new Vector3(width, 0.9f, 1f);
+                // Each face runs down to the top of the next tier, so the stand is
+                // one continuous surface. They were a fixed 0.9 m against spacings
+                // of 0.9, 1.0 and 1.2, which left slots of pit between tiers.
+                float faceHeight = tierIndex + 1 < tierY.Length
+                    ? y - tierY[tierIndex + 1] + 0.04f
+                    : 1.4f;
+                step.transform.localPosition = new Vector3(0f, y - faceHeight * 0.5f, 0f);
+                step.transform.localScale = new Vector3(width, faceHeight, 1f);
                 var stepRenderer = step.AddComponent<SpriteRenderer>();
                 stepRenderer.sprite = Box();
-                stepRenderer.color = new Color(value, value * 0.92f, value * 0.88f, 1f);
+                // Warm timber, lifted well clear of the pit behind it.
+                stepRenderer.color = new Color(value * 1.55f, value * 1.22f, value * 1.02f, 1f);
                 stepRenderer.sortingOrder = sorting;
 
                 // A slightly lighter rail along the top edge, which is what makes
@@ -989,7 +1130,7 @@ namespace PoSumo
                 rail.transform.localScale = new Vector3(width, 0.07f, 1f);
                 var railRenderer = rail.AddComponent<SpriteRenderer>();
                 railRenderer.sprite = Box();
-                railRenderer.color = new Color(value * 2.4f, value * 2.1f, value * 1.8f, 1f);
+                railRenderer.color = new Color(value * 2.5f, value * 2.05f, value * 1.65f, 1f);
                 railRenderer.sortingOrder = sorting;
 
                 // Seated silhouettes along the tier. Deterministic spacing and
@@ -1021,13 +1162,21 @@ namespace PoSumo
                     // a repeated sprite.
                     float lift = ((hash % 7) / 7f - 0.5f) * 0.05f;
 
+                    // Colour from a second hash so it does not march in step with
+                    // the size and stagger above, and a small per-seat brightness
+                    // wobble so a row is not one flat value.
+                    Color kimono = tierKimono[(seatIndex * 5 + tierIndex * 3 + hash) % tierKimono.Length];
+                    float light = crowdValue[tierIndex] * (0.9f + (hash % 4) * 0.05f);
+
+                    // Shoulders as an ellipse resting on the rail: the Circle
+                    // sprite, so the whole stand is still two atlas sprites.
                     var body = new GameObject("TierSpectator");
                     body.transform.SetParent(tierRoot.transform, false);
-                    body.transform.localPosition = new Vector3(px, y + scale * 0.5f + lift, 0f);
-                    body.transform.localScale = new Vector3(scale * 1.05f, scale, 1f);
+                    body.transform.localPosition = new Vector3(px, y + scale * 0.44f + lift, 0f);
+                    body.transform.localScale = new Vector3(scale * 1.3f, scale, 1f);
                     var bodyRenderer = body.AddComponent<SpriteRenderer>();
-                    bodyRenderer.sprite = Box();
-                    bodyRenderer.color = new Color(value * 0.6f, value * 0.55f, value * 0.55f, 1f);
+                    bodyRenderer.sprite = Circle();
+                    bodyRenderer.color = new Color(kimono.r * light, kimono.g * light, kimono.b * light, 1f);
                     bodyRenderer.sortingOrder = sorting;
 
                     var head = new GameObject("TierHead");
@@ -1037,7 +1186,7 @@ namespace PoSumo
                     head.transform.localScale = new Vector3(scale * 0.42f, scale * 0.42f, 1f);
                     var headRenderer = head.AddComponent<SpriteRenderer>();
                     headRenderer.sprite = Circle();
-                    headRenderer.color = new Color(value * 0.7f, value * 0.62f, value * 0.6f, 1f);
+                    headRenderer.color = new Color(tierSkin.r * light, tierSkin.g * light, tierSkin.b * light, 1f);
                     headRenderer.sortingOrder = sorting;
                 }
             }

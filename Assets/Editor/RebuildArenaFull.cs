@@ -42,6 +42,11 @@ namespace PoSumo.EditorTools
             int scenesTouched = 0;
             int arenasRebuilt = 0;
 
+            // Generated art first: Build() reuses whatever sprite asset is already
+            // on disk, so a changed wall gradient has to be rewritten before the
+            // arena that references it is rebuilt, not after.
+            Systems_SumoArena.RegenerateWallGradient();
+
             foreach (string scenePath in ArenaScenes)
             {
                 if (System.IO.File.Exists(scenePath) == false)

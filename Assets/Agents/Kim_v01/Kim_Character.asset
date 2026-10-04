@@ -27,7 +27,7 @@ MonoBehaviour:
   - Kim_Sad_3
   clothing:
     legs: 4
-    legsColor: {r: 0.15, g: 0.16, b: 0.3, a: 1}
+    legsColor: {r: 0.4, g: 0.18, b: 0.42, a: 1}
     torso: 0
     torsoColor: {r: 1, g: 1, b: 1, a: 1}
     arms: 0

@@ -154,36 +154,59 @@ Shader "PoSumo/BodyLit"
                 return frac(sin(dot(p, half2(41.7h, 289.3h))) * 43758.5453h);
             }
 
-            // A capsule normal in sprite tangent space, derived from the UV and the
-            // part's WORLD aspect. The shared cylinder map lights every part as the
-            // same horizontal tube; this one knows whether it is shading a thigh,
-            // a trunk slab or a near-spherical head. Convention matches the
-            // sampled map exactly — x sweeps across the width (|x| is the rim/
-            // edge term's silhouette input), y stays flat, z is out of the screen
-            // and feeds the sweat/wet specular bands. No texture fetch.
+            // A rounded-box ("stadium") normal in sprite tangent space, derived from
+            // the UV and the part's WORLD aspect. The shared cylinder map lights
+            // every part as the same tube; this one knows whether it is shading a
+            // thigh, a trunk slab or a near-spherical head. x sweeps across the
+            // width (|x| is the rim/edge term's silhouette input), z is out of the
+            // screen and feeds the sweat/wet specular bands. No texture fetch.
+            //
+            // REWRITTEN 2026-10-04. The first version had two geometric faults that
+            // between them made the rim and back light a wash rather than an edge:
+            //
+            //  - the tube radius was HALF the part's half-width (min(aspect * 0.5,
+            //    0.5) against a part space spanning +/-aspect), so the outer half
+            //    of every limb sat past the radius and was shaded as silhouette;
+            //    and the spine was always vertical, so on a WIDE part - pelvis,
+            //    the three trunk slabs, the feet - about three quarters of the
+            //    surface was "edge";
+            //  - the lateral component was the unit direction d.x / dist, i.e.
+            //    +/-1 even on the centreline, so after the caller's normalize the
+            //    edge term never fell below 0.707 anywhere on any part and z never
+            //    rose above it.
+            //
+            // Measured consequences, with the albedo confirmed correct on the
+            // renderer: a dark-red singlet reached the screen pink and rust jeans
+            // salmon, because a blue rim plus the back light were being added
+            // across the whole slab; and pow(z, 20) peaked at 0.001, so the sweat
+            // and wet bands this shader exists to draw were invisible.
+            //
+            // Now: the radius is the SHORT half-extent, the spine runs along the
+            // LONG one whichever way that is, and the lateral components scale
+            // with distance from the spine - zero on it, one at the silhouette.
             half3 CapsuleNormal(half2 uv, half2 quadScaleWS)
             {
                 half aspect = max(quadScaleWS.x, 1e-3h) / max(quadScaleWS.y, 1e-3h);
-                // Part space: [-1..1] tall, [-aspect..aspect] wide.
-                half2 p = (uv - 0.5h) * half2(aspect, 1.0h) * 2.0h;
+                // Part space: half extents (aspect, 1).
+                half2 extent = half2(aspect, 1.0h);
+                half2 p = (uv - 0.5h) * 2.0h * extent;
 
-                // Vertical spine between the two cap centres; the cap radius is the
-                // tube radius, so a wide slab becomes a rounded box and a 1:1 part
+                half r = min(extent.x, extent.y) * 0.96h;
+                // Half-length of the spine on each axis. One of the two is ~0: the
+                // spine is a segment along the long axis, and a 1:1 part
                 // degenerates into a ball.
-                half r = min(aspect * 0.5h, 0.5h) * 0.96h;
-                half halfLen = max(1.0h - r, 0.06h);
+                half2 spine = max(extent - r, 0.0h);
 
-                // Closest point on the spine segment, then the direction out.
-                half along = saturate((p.y + halfLen) / (2.0h * halfLen));
-                half2 d = p - half2(0.0h, -halfLen + along * 2.0h * halfLen);
-                half dist = max(length(d), 1e-4h);
-
-                half nx = d.x / dist;
+                // Vector from the closest point on the spine out to this texel.
+                half2 d = p - clamp(p, -spine, spine);
+                half dist = length(d);
                 half rr = saturate(dist / max(r, 1e-4h));
+                half2 lateral = d / max(dist, 1e-4h) * rr;
+
                 // Floor z slightly above zero so the silhouette edge (rr -> 1)
                 // never feeds a degenerate normal into the lighting.
                 half nz = sqrt(max(1.0h - rr * rr, 0.04h));
-                return half3(nx, 0.0h, nz);
+                return half3(lateral, nz);
             }
 
             Varyings BodyVertex(Attributes input)

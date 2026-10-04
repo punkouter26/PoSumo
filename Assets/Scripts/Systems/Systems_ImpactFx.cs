@@ -65,6 +65,9 @@ namespace PoSumo
         /// accumulates and the camera squares it, so this is the ceiling of ONE
         /// blow, not of a flurry.
         private const float SHAKE_PER_HIT = 0.55f;
+        /// Extra sweat thrown off a fully spent fighter, as a fraction of the
+        /// normal spray. Subtle on purpose: fatigue should be noticed, not shown.
+        private const float FATIGUE_SWEAT_BOOST = 0.5f;
 
         private void EnsureCamera()
         {
@@ -85,7 +88,12 @@ namespace PoSumo
             }
 
             float speed = collision.relativeVelocity.magnitude;
-            if (speed < minSpeed)
+            // Heaviness is the normal impulse the solver actually transferred. A
+            // slow chest-to-chest shove can carry more of it than any strike in
+            // the bout (measured: 20.9 N·s at 1.3 m/s), and the speed gate alone
+            // dropped every one of those before a single particle was drawn.
+            float heaviness = Sensor_Impact.Heaviness(collision);
+            if (speed < minSpeed && heaviness <= 0f)
             {
                 return;
             }
@@ -98,20 +106,35 @@ namespace PoSumo
             // `mean` is deliberately the value from BEFORE this hit folded in —
             // otherwise every hit is partly measured against itself, and the harder
             // it lands the more it raises its own bar.
+            //
+            // Only contacts that clear the SPEED gate feed it. The heavy slow
+            // shoves admitted above would otherwise drag the mean down toward
+            // walking pace and promote every ordinary strike to a highlight.
             float mean = _meanSpeed > 0f ? _meanSpeed : speed;
-            _meanSpeed = Mathf.Lerp(mean, speed, MEAN_BLEND);
+            if (speed >= minSpeed)
+            {
+                _meanSpeed = Mathf.Lerp(mean, speed, MEAN_BLEND);
+            }
 
-            float strength = Mathf.Clamp01((speed - minSpeed) / Mathf.Max(0.01f, maxSpeed - minSpeed));
+            float speed01 = Mathf.Clamp01((speed - minSpeed) / Mathf.Max(0.01f, maxSpeed - minSpeed));
+            // Speed and impulse together: a fast tap with nothing behind it tops
+            // out at 0.6, a slow shove with full weight behind it at 0.7.
+            float strength = Sensor_Impact.Strength(speed01, heaviness);
 
             // Camera shake scales with the SAME strength the FX use, so what you
             // feel and what you see come from one number. Fed on every qualifying
             // contact rather than only on the "good hits" below: the cooldowns
             // there govern whether a burst is DRAWN, and a camera that only shook
             // for drawn bursts would go still during the fastest exchanges.
+            //
+            // Speed only, exactly as before the impulse term existed. A slow heavy
+            // shove earns dust and a heavier thud, but it is a sustained push and
+            // not a blow: shaking the frame for it would add trauma all through a
+            // clinch, which is the one time the picture most needs to hold still.
             EnsureCamera();
-            if (_camera != null && strength > 0f)
+            if (_camera != null && speed01 > 0f)
             {
-                _camera.AddTrauma(strength * SHAKE_PER_HIT);
+                _camera.AddTrauma(speed01 * SHAKE_PER_HIT);
             }
 
             Vector3 point = collision.contactCount > 0
@@ -146,7 +169,13 @@ namespace PoSumo
             // direction. Only on real shoves — a light contact does not spray.
             if (strength > 0.3f)
             {
-                Systems_DustPuff.SweatSpray(point, away, Mathf.RoundToInt(Mathf.Lerp(2f, 9f, strength)));
+                // A tired fighter is a wetter one: up to half as much spray again
+                // off a body whose stamina is spent. Stamina is already averaged
+                // per physics step by the body, so this is one property read.
+                float fatigue = 1f - Mathf.Clamp01(reporter.owner.Stamina);
+                float sprayScale = 1f + FATIGUE_SWEAT_BOOST * fatigue;
+                Systems_DustPuff.SweatSpray(
+                    point, away, Mathf.RoundToInt(Mathf.Lerp(2f, 9f, strength) * sprayScale));
             }
         }
     }

@@ -74,6 +74,10 @@ namespace PoSumo
             // correctness — trauma is commutative — but it keeps the reading order
             // of the two effects the same as the order they are documented in.
             SpawnCompanion<Systems_FeelFx>(enableFeelFx, "FeelFx");
+            // Rides enableAudio as well as its own flag: with the match audio off
+            // the player has asked for a silent bout, and a lone scrape loop is
+            // not what that means.
+            SpawnCompanion<Systems_FootScrape>(enableAudio && enableFootScrape, "FootScrape");
             // Draws into the shared Systems_HudRoot like Systems_FightHud does,
             // so it needs no PanelSettings of its own and cannot fight the HUD
             // for draw order — that was the bug three separate UIDocuments at

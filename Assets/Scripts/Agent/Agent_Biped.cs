@@ -737,9 +737,15 @@ namespace PoSumo
             }
         }
 
-        /// Deliberately a strong, flat blue: it has to read against the dark arena
-        /// and against the four fighters' skin-toned face photos.
-        private static readonly Color BOT_HEAD_COLOR = new Color(0.16f, 0.45f, 1f);
+        /// RED, like the rest of it. The standing colour rule is that the
+        /// heuristic bot is red and nothing else is, and for a while this disc was
+        /// a strong flat blue — chosen to read against the arena — which put the
+        /// one fighter that must be red under the largest blue shape in the frame.
+        /// A notch brighter than Bot_Character's teamColor (0.85, 0.16, 0.14)
+        /// because the head is drawn UNLIT while the body is shaded by the rig, so
+        /// equal numbers would render the head as the darker of the two. The flat
+        /// disc with no face is what still tells it apart from a photo head.
+        private static readonly Color BOT_HEAD_COLOR = new Color(0.92f, 0.20f, 0.16f);
 
         public override void Heuristic(in ActionBuffers actionsOut)
         {

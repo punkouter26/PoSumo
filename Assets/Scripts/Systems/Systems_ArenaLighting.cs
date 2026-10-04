@@ -601,7 +601,19 @@ namespace PoSumo
             colour.postExposure.Override(0.12f);
 
             var split = profile.Add<SplitToning>();
-            split.shadows.Override(new Color(0.22f, 0.3f, 0.5f));
+            // Shadows are NEUTRAL (0.5 grey is split toning's identity). They were
+            // a blue (0.22, 0.30, 0.50), which is a pleasant grade on a photograph
+            // and was quietly re-colouring this game: split toning acts on every
+            // darker pixel, so navy, rust, brown and dark red all slid toward the
+            // same violet. Measured 2026-10-04 with the albedo confirmed correct on
+            // the renderer - rust jeans (0.74, 0.37, 0.08) reached the screen as
+            // salmon pink and dark-brown shoes as lavender grey - and it is half
+            // of why two fighters in different team colours were reported as
+            // rendering alike (the other half was clay staining, see
+            // Systems_BodySurface.maxDirt). Colour is identity in this project; an
+            // always-on grade does not get to vote on it. The warm highlight tint
+            // below is kept: it only touches what is already bright.
+            split.shadows.Override(new Color(0.5f, 0.5f, 0.5f));
             split.highlights.Override(new Color(1f, 0.86f, 0.62f));
             split.balance.Override(-8f);
 

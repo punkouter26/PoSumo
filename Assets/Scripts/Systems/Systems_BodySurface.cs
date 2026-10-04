@@ -36,19 +36,34 @@ namespace PoSumo
         public float sweatRise = 0.22f;
         [Tooltip("How fast it fades when a wrestler stops working. Slower than the rise — nobody dries off instantly.")]
         public float sweatFall = 0.07f;
-        [Range(0f, 1f)] public float maxSweat = 0.85f;
+        // 0.85 -> 0.4 on 2026-10-04, with maxWet 0.8 -> 0.4. Both were tuned while
+        // the shader's capsule normal capped z at 0.707, which put the specular
+        // band at pow(0.707, 20) = 0.001 - i.e. these ceilings were set against a
+        // highlight nobody could see. With the normal corrected a sweat of 0.2
+        // already draws a clear pale band down every limb, and 0.85 would be a
+        // white stripe.
+        [Range(0f, 1f)] public float maxSweat = 0.4f;
 
         [Header("Clay")]
-        [Tooltip("Clay picked up per m/s of arena contact. Accumulates across the whole match.")]
-        public float dirtPerImpactSpeed = 0.018f;
+        [Tooltip("Clay picked up per m/s of arena contact. Accumulates across the whole match.\n\nCut 0.018 -> 0.005 with maxDirt on 2026-10-04: these gaits touch the mat constantly, so at 0.018 a fighter reached the ceiling within seconds of the first bell and the term stopped being a record of the bout.")]
+        public float dirtPerImpactSpeed = 0.005f;
         [Tooltip("Contacts below this are footsteps, not falls, and stain far less.")]
         public float dirtMinSpeed = 1.2f;
-        [Range(0f, 1f)] public float maxDirt = 0.7f;
+        [Tooltip("Ceiling on clay staining.\n\nCut 0.7 -> 0.28 on 2026-10-04. MEASURED at 0.70 seconds into a live bout on both fighters: the shader lerps the lower ~60% of every part up to 0.8 x _Dirt toward the clay colour, so at 0.7 more than half of each garment was tan. Tan over navy, over dark red and over brown all land on the same lavender-pink, which is why Matt and Nick were reported as rendering alike and why dark shoes came out pale grey. The stain is a detail on a fighter; it must not outvote the team colour.")]
+        [Range(0f, 1f)] public float maxDirt = 0.28f;
 
         [Header("Wetness")]
         [Tooltip("Sweat level at which beads join up into a sheet of water. Below this _Wet stays 0 — a lightly working fighter is shiny, not soaked.")]
-        [Range(0f, 1f)] public float wetOnsetSweat = 0.45f;
-        [Range(0f, 1f)] public float maxWet = 0.8f;
+        [Range(0f, 1f)] public float wetOnsetSweat = 0.25f;
+        [Range(0f, 1f)] public float maxWet = 0.4f;
+
+        [Header("Fatigue")]
+        [Tooltip("Sheen a fully spent fighter carries even while standing still. Stamina is the body's own fatigue state (1 fresh, 0 spent), so this is the visible half of a number that already decides how hard the fighter can push.")]
+        [Range(0f, 1f)] public float fatigueSweat = 0.3f;
+        [Tooltip("Wetness a fully spent fighter carries. Below maxWet on purpose: exhaustion should read as a duller, wetter body, not as a second hit flash.")]
+        [Range(0f, 1f)] public float fatigueWet = 0.3f;
+        [Tooltip("Fatigue (1 - stamina) below which nothing shows. A fresh fighter must look fresh.")]
+        [Range(0f, 1f)] public float fatigueOnset = 0.15f;
 
         [Header("Hit flash")]
         [Tooltip("Contact speed (m/s) that produces a full-strength flash. Measured strike speeds in this project run 3.9-5.3 m/s and knockbacks reach 8.8, so this sits inside the distribution rather than above it — the mistake Systems_StrikeImpulse's curve made once already.")]
@@ -94,6 +109,7 @@ namespace PoSumo
         private float _dirt;
         private float _wet;
         private float _flash;
+        private float _fatigueWet;
         private float _writtenSweat = -1f;
         private float _writtenDirt = -1f;
         private float _writtenWet = -1f;
@@ -198,6 +214,7 @@ namespace PoSumo
             _dirt = 0f;
             _wet = 0f;
             _flash = 0f;
+            _fatigueWet = 0f;
         }
 
         /// Two separate consequences of one contact, and they deliberately do NOT
@@ -249,7 +266,12 @@ namespace PoSumo
                 return;
             }
 
-            float target = Mathf.Clamp01(Exertion() / exertionForFull) * maxSweat;
+            // Fatigue is a FLOOR under the exertion term, not an addition to it:
+            // a spent fighter standing still stays shiny, and one working flat out
+            // is no shinier for also being tired.
+            float fatigue = Mathf.InverseLerp(fatigueOnset, 1f, 1f - Mathf.Clamp01(body.Stamina));
+            float target = Mathf.Max(Mathf.Clamp01(Exertion() / exertionForFull) * maxSweat,
+                                     fatigue * fatigueSweat);
             // Asymmetric: sweat builds under load and lingers afterwards.
             float rate = target > _sweat ? sweatRise : sweatFall;
             _sweat = Mathf.MoveTowards(_sweat, target, rate * Time.deltaTime);
@@ -258,6 +280,11 @@ namespace PoSumo
             // join into a sheet only once a fighter is genuinely working. It
             // therefore inherits sweat's asymmetric rise and fall for free.
             _wet = Mathf.Clamp01(Mathf.InverseLerp(wetOnsetSweat, maxSweat, _sweat)) * maxWet;
+            // The fatigue floor again, eased toward rather than written, so the
+            // sheet of water creeps in over the round instead of tracking the
+            // per-joint fatigue integrator step for step.
+            _fatigueWet = Mathf.MoveTowards(_fatigueWet, fatigue * fatigueWet, sweatRise * Time.deltaTime);
+            _wet = Mathf.Max(_wet, _fatigueWet);
 
             if (_flash > 0f)
             {
