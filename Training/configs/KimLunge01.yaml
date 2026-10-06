@@ -1,0 +1,91 @@
+# Kim LUNGE 01 - the lunge becomes the fighter's own move. Created 2026-10-05.
+#
+# Everything below `behaviors:` is KimSumo01's, unchanged. What changed is the BRAIN
+# CONTRACT: 14 actions (13 motors + lunge intent), still 51 observations. Action 14
+# above 0.5 launches the whole body at the opponent when a foot is planted, with a 3 s
+# cooldown (Agent_Biped). The referee's random lunge/dive is OFF for this generation
+# (GameTuning.diveChancePerSecond 0), so an attack only happens if the policy asks.
+#
+# WARM START BY SURGERY. --initialize-from needs matching shapes, so the Sumo01
+# checkpoint was widened offline: one extra row on the action head (bias -0.5, so
+# the new output starts mostly "no"), one extra log_sigma, and the Adam state dropped
+# (the trainer logs "Failed to load for module Optimizer:value_optimizer" - expected).
+# Staged at Training/results/kim_lungeinit. Everything the fighter knew about standing
+# is carried over; only the lunge is new.
+#
+# Judge on ELO shape and Referee/Kim/RoundSeconds coming DOWN from the 20 s bound.
+#
+# Launch: Training/Start-StaminaExtension.ps1 -Phase Lunge01 -InitializeFromPhase Lungeinit
+
+behaviors:
+  Kim:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 3.0e-4
+      beta: 5.0e-3
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:
+      normalize: true
+      hidden_units: 512
+      num_layers: 3
+      vis_encode_type: simple
+    reward_signals:
+      extrinsic:
+        gamma: 0.997
+        strength: 1.0
+    keep_checkpoints: 5
+    checkpoint_interval: 250000
+    max_steps: 15000000
+    time_horizon: 1000
+    summary_freq: 30000
+    threaded: false   # self-play: ML-Agents recommends false. Changed 2026-10-04; shipped Rebuild01 brains trained with true.
+    self_play:
+      window: 25
+      play_against_latest_model_ratio: 0.25
+      save_steps: 50000
+      swap_steps: 50000
+      team_change: 250000
+
+# Ring-width curriculum. Systems_SumoMatchManager randomises each round's platform
+# half-width within startHalfRange (1.7 .. 2.275); platform_difficulty controls how far
+# toward the narrow end it may go.
+#
+# THIS LESSON ONLY STARTS WORKING WITH THIS RUN. Its purpose is to teach edge
+# distance across SCALES rather than let the policy memorise one mat width - and
+# until change 1 above, the width it varied was not in the observation vector at
+# all, so every lesson looked identical from inside the policy. Expect it to bite
+# for the first time here, and expect the wide -> mixed -> full progression to
+# actually cost something.
+environment_parameters:
+  platform_difficulty:
+    curriculum:
+      - name: wide
+        completion_criteria:
+          measure: progress
+          behavior: Kim
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.3
+        value: 0.0
+      - name: mixed
+        completion_criteria:
+          measure: progress
+          behavior: Kim
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.6
+        value: 0.5
+      - name: full
+        value: 1.0
+
+  # GET-UP TRAINING (new in Sumo01). Share of WALK-LANE episodes that open flat on
+  # the clay, face up or face down at random. Until the fighter is back on its
+  # feet (torso >= 0.85 m, upright) a fall is not terminal and only rising pays;
+  # standing is +1, then the ordinary walk rules apply. Read by Agent_Biped in
+  # OnEpisodeBegin. Sumo bouts are unaffected: down is still a loss there.
+  get_up_chance: 0.3

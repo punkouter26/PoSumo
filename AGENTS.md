@@ -24,6 +24,58 @@ family's MuJoCo siblings rather than PoSumo's current pipeline.
 
 ---
 
+## UU_AGENT rules (as given by the user, 2026-10-05)
+
+The current wording of the family rule list, recorded verbatim. It restates the
+2026-10-04 list below and adds one rule (**Data Logging**). Where the two differ in
+wording, this one is newer. The 2026-10-04 section is kept because it carries the
+PoSumo-specific status notes and the two stated discrepancies, which still apply.
+
+### Project Setup & Git Workflow
+* **Project Context:** Check the `/DOCS` root folder for an overall project summary.
+* **Git Operations:** Work strictly on the `master` branch unless instructed otherwise. Always commit all pending changes before running a git sync.
+* **Scene Construction:** Generate prefabs/objects via MCP or Unity CLI rather than runtime instantiation to enable manual transform adjustments.
+* **Unity Performance Safeguards:** Prevent background throttling via MCP or Unity CLI  by enabling **No Throttling** (Editor Preferences), **Run In Background** (Player Settings), and continuous auto-ticking.
+* **UI Updates:** Document UI changes in an HTML report containing annotated before-and-after screenshots.
+
+### Training Environment & Execution
+*(Rule Override: Ignore all MuJoCo, Newton, or Isaac Lab instructions if the project uses `mlagents`.)*
+* **Engines & Android Build:** Conduct training in MuJoCo/Newton. Use [https://github.com/joanllobera/mujoco-bin/](https://github.com/joanllobera/mujoco-bin/) for Android builds.
+* **Model Pipeline:** Request a skinned mesh prior to training; extract its rig structure and import it into MuJoCo/Newton.
+* **Visualizing Training:** Expose the MuJoCo, Isaac Lab, or Newton UI during and after training to monitor creature movement.
+* **Resource Optimization:** Close Unity/Unreal during pure RL runs or when training exceeds 30 minutes if it accelerates performance; notify when training ends and editors can reopen.
+* Launch TensorBoard immediately on training start, removing any obsolete behaviors first.
+* For runs exceeding 30 minutes, generate an HTML report containing screenshots of the 3 most consequential TensorBoard metrics, a performance comparison against prior runs, and explanations across 3 comprehension tiers (Toddler, Child, Adult).
+* **Data Logging:** Log all agent actions to file logs or Azure Tables to analyze movement profiles, win/loss patterns, and success vectors.
+
+### Physics, Biomechanics & Self-Collision
+* **Physical Realism:** Enforce Earth gravity, scaled mass distribution, and realistic human joint velocities/forces.
+* **Environment Collisions:** Ensure accurate collision bounds; prevent agents from clipping through themselves, other creatures, or the environment.
+* **Collider Geometry:** Fit primitive colliders (capsules, boxes, spheres) inside the skinned mesh; never use bones or visual meshes.
+* **Exclusions & Limits:** Collide all body-part pairs except direct parent–child links and resting-pose overlaps (mitigated via joint limits).
+* **Validation:** Confirm zero self-contact during T-pose, resting stance, and natural arm/leg swings before training.
+* **Reward Shaping & Initialization:** Never terminate episodes on self-contact; apply a slight contact-force penalty if exploited. Warm-start new skills from policies trained without self-collision or from a preceding milestone.
+
+### Response Formatting
+* Add a 20-word TLDR summary at the end of any response exceeding 100 words.
+
+### How these land in PoSumo (notes, not part of the rules)
+
+- PoSumo trains with `mlagents`, so the override applies: the MuJoCo / Newton / Isaac Lab
+  lines (engines, `mujoco-bin`, skinned-mesh pipeline, simulator UI) are recorded and not
+  acted on here.
+- **Data Logging** is `Systems_ActionLog` (game only, behind `GameTuning.enableActionLog`):
+  `actions_<session>.csv` and `bouts_<session>.csv` under `Logs/ActionLogs/` in the Editor
+  and `persistentDataPath/ActionLogs/` on a device, summarised by
+  `python Tools/action_log_report.py`. Local files, not Azure Tables.
+- **Self-collision** still differs from the all-pairs rule, as the discrepancy note in the
+  section below explains. On 2026-10-05 the user also said, for this biped, that a
+  fighter's two legs should not collide with each other; that is how the body already is.
+- **Scene Construction** still differs from this project's built-in-code structure; see
+  the discrepancy note under *Scene authoring* below.
+
+---
+
 ## Standing rules (as given by the user, 2026-10-04)
 
 The family-wide `UNITY_AGENT` rule list, recorded as given. It came with one override:

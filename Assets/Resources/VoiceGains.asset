@@ -14,6 +14,21 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PoSumo.Systems_VoiceGains
   _targetRmsDb: -20
   _clipNames:
+  - Grandma_Happy_1
+  - Grandma_Happy_2
+  - Grandma_Happy_3
+  - Grandma_Happy_4
+  - Grandma_Happy_5
+  - Grandma_Insult_1
+  - Grandma_Insult_2
+  - Grandma_Insult_3
+  - Grandma_Insult_4
+  - Grandma_Insult_5
+  - Grandma_Sad_1
+  - Grandma_Sad_2
+  - Grandma_Sad_3
+  - Grandma_Sad_4
+  - Grandma_Sad_5
   - Kim_Happy_1
   - Kim_Happy_2
   - Kim_Happy_3
@@ -59,22 +74,22 @@ MonoBehaviour:
   - Nick_Sad_3
   - Nick_Sad_4
   - Nick_Sad_5
-  - Standard_Happy_1
-  - Standard_Happy_2
-  - Standard_Happy_3
-  - Standard_Happy_4
-  - Standard_Happy_5
-  - Standard_Insult_1
-  - Standard_Insult_2
-  - Standard_Insult_3
-  - Standard_Insult_4
-  - Standard_Insult_5
-  - Standard_Sad_1
-  - Standard_Sad_2
-  - Standard_Sad_3
-  - Standard_Sad_4
-  - Standard_Sad_5
   _gains:
+  - 0.71024543
+  - 0.72411424
+  - 0.71238935
+  - 0.72182673
+  - 0.71994436
+  - 0.7297901
+  - 0.7205976
+  - 0.72037977
+  - 0.72057146
+  - 0.71636474
+  - 0.7189819
+  - 0.7154655
+  - 0.7177649
+  - 0.730874
+  - 0.7225105
   - 0.70516545
   - 0.71401083
   - 0.7144383
@@ -120,18 +135,3 @@ MonoBehaviour:
   - 0.7085229
   - 0.7101876
   - 0.70926774
-  - 0.71024543
-  - 0.72411424
-  - 0.71238935
-  - 0.72182673
-  - 0.71994436
-  - 0.7297901
-  - 0.7205976
-  - 0.72037977
-  - 0.72057146
-  - 0.71636474
-  - 0.7189819
-  - 0.7154655
-  - 0.7177649
-  - 0.730874
-  - 0.7225105

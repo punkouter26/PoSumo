@@ -32,6 +32,9 @@ namespace PoSumo
     /// and the portrait layout check drive it; there is no UI for it.
     public sealed class Systems_SafeArea : MonoBehaviour
     {
+        /// Least share of the screen height kept clear at the top on a phone.
+        private const float MIN_TOP_SHARE = 0.06f;
+
         private VisualElement[] _targets;
         private Rect _lastSafeArea;
         private Vector2Int _lastScreen;
@@ -179,6 +182,10 @@ namespace PoSumo
             float right = Mathf.Max(0f, (screen.x - safe.xMax) / screen.x * rootSize.x);
             float bottom = Mathf.Max(0f, safe.yMin / screen.y * rootSize.y);
             float top = Mathf.Max(0f, (screen.y - safe.yMax) / screen.y * rootSize.y);
+            // A phone always gets at least this much. Measured on a Pixel 9 Pro
+            // 2026-10-05: the reported safe area left the top row drawn under the
+            // front camera. Raise MIN_TOP_SHARE to push the top HUD further down.
+            if (Application.isMobilePlatform) top = Mathf.Max(top, MIN_TOP_SHARE * rootSize.y);
 
             for (int targetIndex = 0; targetIndex < _targets.Length; targetIndex++)
             {

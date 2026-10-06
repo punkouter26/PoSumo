@@ -45,14 +45,7 @@ namespace PoSumo
         private const float COMEBACK_MEMORY = 5f;
         private float _wasLostAtA = -99f, _wasLostAtB = -99f;
 
-        // ---- Blowout detector ------------------------------------------------
-        private const float BLOWOUT_WP = 0.90f;
-        private const float BLOWOUT_HOLD = 3.5f;
-        private float _blowoutFor;
-        private bool _blowoutSideA;
-
         // ---- Separation / clinch ---------------------------------------------
-        private const float SEPARATION_SHARE = 0.62f;
         private const float CLINCH_DISTANCE = 1.0f;
         private const float CLINCH_HOLD = 5f;
         private const float CLINCH_TENSION = 0.65f;
@@ -114,7 +107,6 @@ namespace PoSumo
         {
             ResolveWrestlers();
             _wasLostAtA = _wasLostAtB = -99f;
-            _blowoutFor = 0f;
             _clinchFor = 0f;
             _coolUntil = 0f;
         }
@@ -138,7 +130,6 @@ namespace PoSumo
 
             float wpA = _tension != null ? _tension.WinProbA : FallbackWpA();
             float dt = Time.unscaledDeltaTime;
-            float ring = Mathf.Max(0.5f, _manager.CurrentRingHalfWidth);
             float separation = Mathf.Abs(_wrestlerA.TorsoX - _wrestlerB.TorsoX);
 
             // -- Comeback: a near-lost side back into contention.
@@ -155,30 +146,9 @@ namespace PoSumo
                 return;
             }
 
-            // -- Blowout: sustained near-certainty earns a territory wide.
-            if (wpA >= BLOWOUT_WP || wpA <= 1f - BLOWOUT_WP)
-            {
-                _blowoutFor += dt;
-                if (_blowoutFor >= BLOWOUT_HOLD)
-                {
-                    _blowoutFor = 0f;
-                    _camera.PullBackWide(1.8f, SHOT_BLEND);
-                    _coolUntil = Time.realtimeSinceStartup + SHOT_COOLDOWN * 2f;
-                    return;
-                }
-            }
-            else
-            {
-                _blowoutFor = 0f;
-            }
-
-            // -- Separation: explain the quiet.
-            if (separation > SEPARATION_SHARE * ring)
-            {
-                _camera.PullBackWide(1.5f, SHOT_BLEND);
-                _coolUntil = Time.realtimeSinceStartup + SHOT_COOLDOWN * 1.5f;
-                return;
-            }
+            // The blowout and separation WIDE shots were removed 2026-10-05 at the
+            // player's request: the camera goes wide at the start of a match and
+            // at its end, never in the middle of one.
 
             // -- Clinch: two fighters, no decision, real stakes.
             if (separation < CLINCH_DISTANCE && (_tension == null || _tension.Tension01 >= CLINCH_TENSION))

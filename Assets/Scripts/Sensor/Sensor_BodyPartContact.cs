@@ -8,8 +8,14 @@ namespace PoSumo
     {
         private Agent_Biped _agent;
         private int _touching;
+        /// Cached once: `name` allocates a new string on every read.
+        private string _partName;
 
-        private void Start() { _agent = GetComponentInParent<Agent_Biped>(); }
+        private void Start()
+        {
+            _agent = GetComponentInParent<Agent_Biped>();
+            _partName = gameObject.name;
+        }
 
         private static bool IsStatic(Collision2D c) =>
             c.rigidbody == null || c.rigidbody.bodyType == RigidbodyType2D.Static;
@@ -18,7 +24,12 @@ namespace PoSumo
         {
             if (!IsStatic(c)) return;
             _touching++;
-            if (_agent != null) _agent.NonFootGroundContacts++;
+            if (_agent != null)
+            {
+                _agent.NonFootGroundContacts++;
+                // The FIRST part down is how the fall is described afterwards.
+                if (_agent.NonFootGroundContacts == 1) _agent.FirstDownPart = _partName;
+            }
         }
 
         private void OnCollisionExit2D(Collision2D c)

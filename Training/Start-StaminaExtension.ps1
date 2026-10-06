@@ -91,7 +91,7 @@ param(
     # Training/results/<name>_rebuild01 on disk, and otherwise starts cold.
     # 'Buffer01' exists for Matt only (-Fighters Matt): MattRebuild02 with the PPO
     # buffer and batch doubled, judged on ELO shape against matt_rebuild02.
-    [ValidateSet('Stamina01', 'Gait01', 'Obs01', 'Assist01', 'Rebuild01', 'Rebuild02', 'Buffer01')]
+    [ValidateSet('Stamina01', 'Gait01', 'Obs01', 'Assist01', 'Rebuild01', 'Rebuild02', 'Buffer01', 'Sumo01', 'Lunge01')]
     [string]$Phase = 'Stamina01',
 
     # Source run for --initialize-from, e.g. 'stamina01'. Resolves BY BEHAVIOR NAME

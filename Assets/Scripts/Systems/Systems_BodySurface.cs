@@ -70,7 +70,10 @@ namespace PoSumo
         public float flashFullSpeed = 6f;
         [Tooltip("Contacts below this do not flash at all, or a fighter standing still would strobe from foot contacts.")]
         public float flashMinSpeed = 2.5f;
-        [Range(0f, 1f)] public float maxFlash = 0.7f;
+        // 0 = OFF (2026-10-05, at the player's request). With belt grips and lunges the
+        // bodies are in near-constant hard contact, so the white pulse fired over and
+        // over and read as the fighters flickering. Was 0.7.
+        [Range(0f, 1f)] public float maxFlash = 0f;
         [Tooltip("Flash decay per second. A hit flash is one or two frames of impression, not a glow.")]
         public float flashDecay = 4.5f;
 

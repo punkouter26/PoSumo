@@ -103,6 +103,7 @@ namespace PoSumo
             // pass and looked up, not spawned here.
             SpawnCompanion<Systems_TensionEngine>(enableTensionEngine, "TensionEngine");
             SpawnCompanion<Systems_BiometricsCard>(enableBiometrics, "BiometricsCard");
+            SpawnCompanion<Systems_ActionLog>(enableActionLog, "ActionLog");
             SpawnCompanion<Systems_JointHeatmap>(enableJointHeatmap, "JointHeatmap");
             SpawnCompanion<Systems_Caster>(enableCaster, "Caster");
             SpawnCompanion<Systems_DirectorAI>(enableDirectorAI, "DirectorAI");

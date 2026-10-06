@@ -18,36 +18,44 @@ MonoBehaviour:
   horizontalMargin: 0.8
   smoothing: 4
   wideOrtho: 14
-  ringHalfWidth: 3.5
-  neutralGapHalf: 2.5
+  ringHalfWidth: 2.275
+  neutralGapHalf: 0.9
   surfaceFriction: 0.55
-  tawaraBandWidth: 1.2
-  tawaraFriction: 0.18
-  shrinkStartSeconds: 8
+  tawaraBandWidth: 0.2
+  tawaraFriction: 1
+  shrinkStartSeconds: 0
   shrinkToHalfWidth: 1.8
   shrinkSeconds: 12
-  enableWalkIn: 1
-  walkInHalfWidth: 3.5
-  walkInStartGapHalf: 2.5
+  enableWalkIn: 0
+  walkInHalfWidth: 2.275
+  walkInStartGapHalf: 1.8
   walkInTouchGap: 0.6
   walkInTimeout: 30
-  pointsToWin: 3
-  tournamentPointsToWin: 2
+  pointsToWin: 1
+  tournamentPointsToWin: 1
   roundTimeoutSeconds: 0
   betweenRoundsPause: 2.5
   graceSeconds: 0.4
-  gibLosesRound: 1
+  gibLosesRound: 0
   ringOutOnFloorContact: 1
-  knockoutsToLoseMatch: 2
+  touchDownLoses: 1
+  tawaraHeight: 0.05
+  tachiaiStart: 1
+  tachiaiGraceSeconds: 0.6
+  beltGrips: 1
+  diveChancePerSecond: 0
+  diveSpeed: 3.5
+  allowKnockout: 0
+  knockoutsToLoseMatch: 0
   knockoutAnnounceSeconds: 2.2
   roundFatigueCarry: 0
   regionRedAt: 2.5
   detachAtRedMultiple: 10
   headDetachAtRedMultiple: 1.2
   regionDamageRefractory: 0.15
-  allowDetach: 1
+  allowDetach: 0
   limbDetachChance: 0.5
-  allowGib: 1
+  allowGib: 0
   gibSpeed: 11
   gibChance: 0.01
   enableArenaBand: 0
@@ -65,14 +73,14 @@ MonoBehaviour:
   enableAtmosphere: 1
   enableMusic: 0
   enableBodyDamage: 1
-  enableStrikeImpulse: 1
+  enableStrikeImpulse: 0
   enableKimarite: 1
-  enableCrowdMomentum: 1
+  enableCrowdMomentum: 0
   enablePerfHud: 1
   enableShockwave: 1
   enableFeelFx: 1
   enableFootScrape: 1
-  enableRingSqueezeCue: 1
+  enableRingSqueezeCue: 0
   enableFighterPanel: 1
   enableScreenChrome: 1
   enableAgentDebug: 1
@@ -81,5 +89,6 @@ MonoBehaviour:
   enableDirectorAI: 1
   enableCaster: 1
   enableStorylines: 1
-  enableArenaMutators: 1
+  enableArenaMutators: 0
   enableBiometrics: 1
+  enableActionLog: 1

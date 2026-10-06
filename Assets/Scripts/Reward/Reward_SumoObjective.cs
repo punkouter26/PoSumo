@@ -58,6 +58,12 @@ namespace PoSumo
             _bendFloor = character.straightLegEarnFraction;
         }
 
+        /// Torso-to-torso distance inside which a fighter is wrestling, metres.
+        private const float ENGAGE_RANGE = 0.7f;
+        /// Per-step reward at zero gap. Not on the character sheet: it is the
+        /// floor of what sumo IS, not a style.
+        private const float ENGAGE_REWARD = 0.001f;
+
         /// Summed shaping for one step. Term order is preserved exactly as it was
         /// when it lived inline in `Agent_Biped.OnActionReceived` — these are small
         /// floats accumulated at 50 Hz, and reordering them changes the arithmetic.
@@ -76,6 +82,13 @@ namespace PoSumo
                 float toward = Mathf.Sign(ctx.OpponentX - ctx.TorsoPosition.x);
                 float closing = Reward_Context.San(tv.x) * toward;
                 total += closing * _rClosing * bendGate;
+                // CHEST TO CHEST. Closing above is a velocity, so it pays nothing to
+                // two fighters already stopped a stride apart — which is where the
+                // first Sumo01 brains parked, feet touching and torsos 1.2 m apart.
+                // This pays for BEING inside wrestling range, rising as the gap
+                // closes; at most ENGAGE_REWARD a step, about 1.0 over a 20 s bout.
+                float gap = Mathf.Abs(ctx.OpponentX - ctx.TorsoPosition.x);
+                total += Mathf.Clamp01(1f - gap / ENGAGE_RANGE) * ENGAGE_REWARD;
                 // Lunge: explosive bursts toward the opponent pay extra.
                 if (closing > _lungeThresh)
                 {

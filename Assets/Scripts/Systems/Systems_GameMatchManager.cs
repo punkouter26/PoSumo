@@ -46,6 +46,14 @@ namespace PoSumo
         // Systems_SumoMatchManager.ringOutOnFloorContact.
         [UnityEngine.Serialization.FormerlySerializedAs("ringOutOnHeadFloor")]
         public bool ringOutOnFloorContact = true;
+        // Real sumo loss. MUST match Systems_SumoMatchManager.touchDownLoses.
+        public bool touchDownLoses = true;
+        // Fists start on the clay; non-foot contact is not a loss this early.
+        public float tachiaiGraceSeconds = 0.6f;
+        // The dive — MUST match Systems_SumoMatchManager. See Systems_Dive.
+        public float diveChancePerSecond = 0.35f;
+        public float diveSpeed = 3.5f;
+        private float _nextDiveCheck;
 
         /// How far below the mat top a static contact has to be to count as "the
         /// floor". The mat top and the tawara bands sit at 0..-0.08; the platform
@@ -138,6 +146,7 @@ namespace PoSumo
         private bool enableCaster = true;
         private bool enableArenaMutators = true;
         private bool enableBiometrics = true;
+        private bool enableActionLog = true;
         private bool enablePostFx = true;
         private bool enableLanterns = true;
         private bool enableHitSmear = true;
@@ -350,6 +359,9 @@ namespace PoSumo
         /// each new one is a new thing every companion may come to depend on.
         /// Set in `EndRound` BEFORE `RoundEnded` fires.
         public RoundOutcome LastOutcome { get; private set; }
+        /// The technique Systems_KimariteCaller named for the last bout. Written by that
+        /// companion onto its own manager so others can read it without reaching across.
+        public string LastKimarite { get; internal set; }
 
         /// The referee for the loaded arena, set in Awake and cleared in OnDestroy.
         /// Companions that look the manager up may read this instead of
@@ -404,6 +416,10 @@ namespace PoSumo
                 graceSeconds = tuning.graceSeconds;
                 gibLosesRound = tuning.gibLosesRound;
                 ringOutOnFloorContact = tuning.ringOutOnFloorContact;
+                touchDownLoses = tuning.touchDownLoses;
+                tachiaiGraceSeconds = tuning.tachiaiGraceSeconds;
+                diveChancePerSecond = tuning.diveChancePerSecond;
+                diveSpeed = tuning.diveSpeed;
                 knockoutsToLoseMatch = tuning.knockoutsToLoseMatch;
                 shrinkStartSeconds = tuning.shrinkStartSeconds;
                 shrinkToHalfWidth = tuning.shrinkToHalfWidth;
@@ -443,6 +459,7 @@ namespace PoSumo
                 enableCaster = tuning.enableCaster;
                 enableArenaMutators = tuning.enableArenaMutators;
                 enableBiometrics = tuning.enableBiometrics;
+                enableActionLog = tuning.enableActionLog;
                 enablePostFx = tuning.enablePostFx;
                 enableLanterns = tuning.enableLanterns;
                 enableHitSmear = tuning.enableHitSmear;
@@ -477,6 +494,11 @@ namespace PoSumo
             ResolveWrestlers();
             _bodyA = wrestlerA.GetComponent<Agent_BipedBody>();
             _bodyB = wrestlerB.GetComponent<Agent_BipedBody>();
+            // Tachiai: every ResetPose from here on is the shikiri crouch.
+            _bodyA.startCrouched = tuning != null && tuning.tachiaiStart;
+            _bodyB.startCrouched = tuning != null && tuning.tachiaiStart;
+            _bodyA.beltGrips = tuning != null && tuning.beltGrips;
+            _bodyB.beltGrips = tuning != null && tuning.beltGrips;
             wrestlerA.opponent = wrestlerB;
             wrestlerB.opponent = wrestlerA;
             wrestlerA.ringHalfWidth = ringHalfWidth;
@@ -510,6 +532,7 @@ namespace PoSumo
                 // three arena scenes each used to serialize their own copy of.
                 _arena.tawaraBandWidth = tuning.tawaraBandWidth;
                 _arena.tawaraFriction = tuning.tawaraFriction;
+                _arena.tawaraHeight = tuning.tawaraHeight;
                 _arena.SetSurfaceFriction(tuning.surfaceFriction);
                 _arena.SetPlatformHalfWidth(tuning.ringHalfWidth);
                 _arena.EnsureTawaraBands(tuning.ringHalfWidth);
@@ -1699,6 +1722,10 @@ namespace PoSumo
             _elapsed += Time.fixedDeltaTime;
 
             TickShrinkingRing();
+            // Never inside the tachiai grace: the clock restarts at 0 every bout.
+            if (_elapsed < tachiaiGraceSeconds) _nextDiveCheck = tachiaiGraceSeconds;
+            Systems_Dive.Tick(ref _nextDiveCheck, _elapsed, wrestlerA, _bodyA, wrestlerB, _bodyB,
+                              transform.position.x, CurrentRingHalfWidth, diveChancePerSecond, diveSpeed);
 
             // Anyone off the mat goes limp the instant a foot dips below it, so
             // the ragdoll flop plays out before the result is announced. Under
@@ -1717,8 +1744,13 @@ namespace PoSumo
             // The ring-out is the ONLY losing condition (2026-08-26). Down-out,
             // knockdown and head-touch were all deleted from both referees; the
             // shrinking mat squeezes a fighter who stays down off the edge instead.
-            bool aOut = aOffMat;
-            bool bOut = bOffMat;
+            // Real sumo (touchDownLoses, both referees): a foot over the edge is out
+            // at once, and anything but a sole on the clay is down.
+            bool aRingOut = aOffMat || (touchDownLoses && aFootOff);
+            bool bRingOut = bOffMat || (touchDownLoses && bFootOff);
+            bool downCounts = touchDownLoses && _elapsed >= tachiaiGraceSeconds;
+            bool aOut = aRingOut || (downCounts && wrestlerA.IsDown);
+            bool bOut = bRingOut || (downCounts && wrestlerB.IsDown);
 
             // A GIB OUTRANKS EVERY OTHER LOSING CONDITION, and is checked before
             // them. A fighter taken apart has parts scattered across and off the
@@ -1738,8 +1770,8 @@ namespace PoSumo
                 // Both finished in the same physics step.
                 EndRound(null, RoundOutcome.DoubleOut, "DOUBLE OUT — DRAW");
             }
-            else if (aOut) EndRound(wrestlerB, RoundOutcome.RingOut, null);
-            else if (bOut) EndRound(wrestlerA, RoundOutcome.RingOut, null);
+            else if (aOut) EndRound(wrestlerB, aRingOut ? RoundOutcome.RingOut : RoundOutcome.Knockdown, null);
+            else if (bOut) EndRound(wrestlerA, bRingOut ? RoundOutcome.RingOut : RoundOutcome.Knockdown, null);
             // There is NO clock: the mat keeps closing (TickShrinkingRing runs it
             // past shrinkToHalfWidth to zero) until somebody is stood on nothing.
             // Every round therefore ends on a ring-out, which is the sport's own

@@ -59,9 +59,24 @@ namespace PoSumo
         // below normally ends a round well before it. The four training scenes
         // serialize 20.
         public float roundTimeoutSeconds = 20f;
+        [Tooltip("TRAINING ONLY. Reward taken from BOTH fighters when the episode bound expires with nobody down or out. 0 = a stalemate is free, which is what taught the first Sumo01 brain to stand and wait.")]
+        public float timeoutPenalty = 1f;   // 0.25 was measured too weak: bouts stayed pinned at the bound. 1 = a stalemate is as bad as losing.
         [Tooltip("Ring-out = ANY body part touches the arena floor below the dohyo (a static contact more than FLOOR_MARGIN under the mat top). Must match GameTuning.ringOutOnFloorContact (true since 2026-08-26). OFF restores the foot-below-footOffMatY rule. The torso backstop is 2 m under the floor.")]
         [UnityEngine.Serialization.FormerlySerializedAs("ringOutOnHeadFloor")]
         public bool ringOutOnFloorContact = true;
+        [Tooltip("Real sumo loss: any part but the soles on the clay, or a foot off the edge. Must match GameTuning.touchDownLoses.")]
+        public bool touchDownLoses = true;
+        [Tooltip("Height of the tawara bale above the clay. Must match GameTuning.tawaraHeight.")]
+        public float tawaraHeight = 0.005f;
+        [Tooltip("Must match GameTuning.tachiaiGraceSeconds: fists start on the clay, so non-foot contact is not a loss this early.")]
+        public float tachiaiGraceSeconds = 0.6f;
+        private bool _tachiaiStart = true;
+        [Tooltip("Must match GameTuning.diveChancePerSecond / diveSpeed. See Systems_Dive.")]
+        public float diveChancePerSecond = 0.35f;
+        public float diveSpeed = 3.5f;
+        private float _nextDiveCheck;
+        /// Strikes carrying extra momentum are not sumo; follows GameTuning.enableStrikeImpulse.
+        private bool _strikeImpulse = true;
         private const float FLOOR_MARGIN = 0.3f;   // must match Systems_GameMatchManager
         public float fallY = -0.2f;
         [Tooltip("Game parity: a foot dropping below this height loses the bout (stepping out). Must match Systems_GameMatchManager.footOffMatY.")]
@@ -154,6 +169,13 @@ namespace PoSumo
             shrinkToHalfWidth = tuning.shrinkToHalfWidth;
             shrinkSeconds = tuning.shrinkSeconds;
             ringOutOnFloorContact = tuning.ringOutOnFloorContact;
+            touchDownLoses = tuning.touchDownLoses;
+            tawaraHeight = tuning.tawaraHeight;
+            _strikeImpulse = tuning.enableStrikeImpulse;
+            _tachiaiStart = tuning.tachiaiStart;
+            tachiaiGraceSeconds = tuning.tachiaiGraceSeconds;
+            diveChancePerSecond = tuning.diveChancePerSecond;
+            diveSpeed = tuning.diveSpeed;
         }
 
         private void Start()
@@ -179,12 +201,13 @@ namespace PoSumo
             {
                 arena.tawaraBandWidth = tawaraBandWidth;
                 arena.tawaraFriction = tawaraFriction;
+                arena.tawaraHeight = tawaraHeight;
             }
             // Strikes launch in training too, so a policy meets the same physics it
             // will fight under. Sensor_Impact.AnyImpact is a STATIC event, so one
             // instance serves every body in the scene — and a training scene holds
             // several referees, hence the scene-wide check rather than one each.
-            if (FindAnyObjectByType<Systems_StrikeImpulse>() == null)
+            if (_strikeImpulse && FindAnyObjectByType<Systems_StrikeImpulse>() == null)
             {
                 new GameObject("StrikeImpulse").AddComponent<Systems_StrikeImpulse>();
             }
@@ -202,6 +225,11 @@ namespace PoSumo
             wrestlerB.arenaCenterX = transform.position.x;
             _bodyA = wrestlerA.GetComponent<Agent_BipedBody>();
             _bodyB = wrestlerB.GetComponent<Agent_BipedBody>();
+            // Every ResetPose from here on (EndEpisode -> OnEpisodeBegin) is the crouch.
+            _bodyA.startCrouched = _tachiaiStart;
+            _bodyB.startCrouched = _tachiaiStart;
+            _bodyA.beltGrips = tuning == null || tuning.beltGrips;
+            _bodyB.beltGrips = tuning == null || tuning.beltGrips;
             _preShrinkKey = "Referee/" + wrestlerA.behaviorName + "/PreShrinkFinish";
             _roundSecondsKey = "Referee/" + wrestlerA.behaviorName + "/RoundSeconds";
             if (arena != null)
@@ -232,6 +260,8 @@ namespace PoSumo
             }
 
             TickShrinkingRing();
+            Systems_Dive.Tick(ref _nextDiveCheck, _elapsed, wrestlerA, _bodyA, wrestlerB, _bodyB,
+                              transform.position.x, _appliedHalf, diveChancePerSecond, diveSpeed);
 
             // Ring-out is the ONLY losing condition, in both referees (2026-08-26).
             bool aOut = Loses(wrestlerA);
@@ -245,7 +275,7 @@ namespace PoSumo
             }
             else if (_elapsed >= roundTimeoutSeconds)
             {
-                Draw();
+                Draw(timedOut: true);
             }
         }
 
@@ -319,6 +349,15 @@ namespace PoSumo
 
         private bool Loses(Agent_Biped w)
         {
+            // Real sumo, mirrored in Systems_GameMatchManager: anything but a sole
+            // on the clay, or a foot over the edge, and the bout is lost.
+            if (touchDownLoses)
+            {
+                if (w.IsDown && _elapsed >= tachiaiGraceSeconds) return true;
+                Agent_BipedBody feet = w == wrestlerA ? _bodyA : _bodyB;
+                float edge = transform.position.y + footOffMatY;
+                if (feet != null && (feet.FootNear.position.y < edge || feet.FootFar.position.y < edge)) return true;
+            }
             // Stepping out, matching the deployed game exactly: a foot below the
             // mat surface has gone over the edge. Training previously used only
             // the torso test, so policies never learned that a stray foot is
@@ -379,9 +418,17 @@ namespace PoSumo
             ResetRound();
         }
 
-        private void Draw()
+        private void Draw(bool timedOut = false)
         {
             RecordRoundStats(decided: false);
+            // With no shrinking mat, standing apart until the bell was free: measured
+            // 2026-10-05, the 1.75M-step Matt brain stood 1.2 m from its mirror for
+            // 55 s without engaging. A stalemate now costs both fighters.
+            if (timedOut)
+            {
+                wrestlerA.AddReward(-timeoutPenalty);
+                wrestlerB.AddReward(-timeoutPenalty);
+            }
             // Interrupted (not terminal) so value bootstrapping stays correct.
             wrestlerA.EpisodeInterrupted();
             wrestlerB.EpisodeInterrupted();
@@ -391,6 +438,7 @@ namespace PoSumo
         private void ResetRound()
         {
             _elapsed = 0f;
+            _nextDiveCheck = tachiaiGraceSeconds;
             _nextShoveTime = Random.Range(2f, 5f);
 
             // Curriculum lessons override the dials each round.

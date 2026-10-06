@@ -235,6 +235,8 @@ namespace PoSumo
         public float tawaraBandWidth = 0.7f;
         [Tooltip("Friction inside the tawara band.")]
         public float tawaraFriction = 0.18f;
+        [Tooltip("Metres the band's top stands above the clay. Written by both referees from GameTuning.tawaraHeight.")]
+        public float tawaraHeight = 0.005f;
 
         private Transform _bandLeft, _bandRight;
         private PhysicsMaterial2D _tawaraMatInstance;
@@ -319,7 +321,7 @@ namespace PoSumo
             // contact against the platform collider it overlaps.
             float centre = side * (half - tawaraBandWidth * 0.5f);
             t.localScale = new Vector3(tawaraBandWidth, 0.08f, 1f);
-            t.localPosition = new Vector3(centre, 0.005f - 0.04f, 0.01f);
+            t.localPosition = new Vector3(centre, tawaraHeight - 0.04f, 0.01f);
             return t;
         }
 

@@ -108,17 +108,36 @@ namespace PoSumo
         /// standing torso (1.06). Added to `arenaGroundY`, never used as a world Y:
         /// see the walk branch of CollectObservations.
         private const float WALK_TARGET_HEIGHT = 1.2f;
-        public const int ActionCount = 13;      // hips, knees, ankles, 3 spine, shoulders, elbows
+        public const int MotorCount = 13;       // hips, knees, ankles, 3 spine, shoulders, elbows
+        /// What the brain outputs: the 13 motors plus ONE lunge intent (2026-10-05).
+        /// Every joint loop uses MotorCount; only the ActionSpec uses this. Changing
+        /// it is a new output layer for every brain.
+        public const int ActionCount = MotorCount + 1;
+        private const int LUNGE_ACTION = MotorCount;
+        /// Intent above this fires the lunge, if it is available.
+        private const float LUNGE_THRESHOLD = 0.5f;
+        /// Whole-body launch speed, m/s. Was the referee's random stand-off lunge.
+        private const float LUNGE_SPEED = 2.6f;
+        /// Seconds before the same fighter can lunge again.
+        private const float LUNGE_COOLDOWN = 3f;
+        private float _nextLungeTime;
+        /// For Systems_ActionLog: the last lunge intent the policy sent, and how many
+        /// lunges this fighter has actually thrown since the scene loaded.
+        [System.NonSerialized] public float LastLungeIntent;
+        [System.NonSerialized] public int LungesThrown;
+        /// The body part that most recently went from nothing-down to something-down.
+        /// Set by Sensor_BodyPartContact; read by Systems_ActionLog to describe a fall.
+        [System.NonSerialized] public string FirstDownPart;
 
         /// Last motor commands as sent to the joints (for HUD display).
-        [System.NonSerialized] public float[] LastActions = new float[ActionCount];
+        [System.NonSerialized] public float[] LastActions = new float[MotorCount];
 
         private Agent_BipedBody _b;
         private Agent_BipedBody _opponentBody;
         /// Resolved once — the ragdoll is built in Awake and never gains or loses a
         /// part, so re-fetching this every episode only allocated a fresh array.
         private Sensor_BodyPartContact[] _contactSensors;
-        private readonly float[] _prevActions = new float[ActionCount];
+        private readonly float[] _prevActions = new float[MotorCount];
         private float _pendingImpact;
         private float _lastTorsoY;
 
@@ -360,6 +379,7 @@ namespace PoSumo
                 _contactSensors[sensorIndex].Clear();
             }
             NonFootGroundContacts = 0;
+            FirstDownPart = null;
             if (_b.FloorSensors != null)
             {
                 for (int floorIndex = 0; floorIndex < _b.FloorSensors.Length; floorIndex++)
@@ -370,8 +390,35 @@ namespace PoSumo
             _pendingImpact = 0f;
             _lastTorsoY = _b.Torso.position.y;
             _cadence.Reset();
-            for (int actionIndex = 0; actionIndex < ActionCount; actionIndex++) _prevActions[actionIndex] = 0f;
+            for (int actionIndex = 0; actionIndex < MotorCount; actionIndex++) _prevActions[actionIndex] = 0f;
+
+            _nextLungeTime = 0f;   // the tachiai charge is available at once
+            // GET-UP TRAINING. A share of walk-lane episodes open flat on the
+            // clay; see the walk branch of OnActionReceived. `get_up_chance` is
+            // absent from every config before *Sumo01, so they train what they
+            // always did.
+            _gettingUp = false;
+            if (mode == Mode.Walk && !suppressEpisodeControl && Academy.IsInitialized)
+            {
+                float chance = Academy.Instance.EnvironmentParameters.GetWithDefault("get_up_chance", 0f);
+                if (Random.value < chance)
+                {
+                    _b.LieDown(Random.value < 0.5f);
+                    _gettingUp = true;
+                    _lastTorsoY = _b.Torso.position.y;
+                }
+            }
         }
+
+        /// True from a flat start until the fighter is back on its feet.
+        private bool _gettingUp;
+        /// Torso height above the clay that counts as standing (upright pose is 1.06).
+        private const float GET_UP_HEIGHT = 0.85f;
+        /// Paid once for standing up. Walk terminals are fall -1 / graduation +3.
+        private const float GET_UP_BONUS = 1f;
+        /// Per metre of torso height gained while getting up. Paid on the CHANGE,
+        /// so it sums to at most ~0.4 and cannot be farmed by lying still.
+        private const float GET_UP_RISE_REWARD = 0.5f;
 
         private float Fs => _b.facingSign;
         public Rigidbody2D Torso => _b.Torso;
@@ -566,7 +613,7 @@ namespace PoSumo
             Observe(sensor,San(lean * Fs / 180f));                         // 1
             Observe(sensor,San(_b.Chest.angularVelocity * Fs / 500f));     // 1
 
-            for (int actionIndex = 0; actionIndex < ActionCount; actionIndex++)                                 // 26
+            for (int actionIndex = 0; actionIndex < MotorCount; actionIndex++)                                 // 26
             {
                 Observe(sensor,San(_b.JointAngleNorm(actionIndex)));
                 Observe(sensor,San(_b.JointSpeedNorm(actionIndex)));
@@ -715,7 +762,7 @@ namespace PoSumo
         {
             if (!actionsEnabled)
             {
-                for (int actionIndex = 0; actionIndex < ActionCount; actionIndex++)
+                for (int actionIndex = 0; actionIndex < MotorCount; actionIndex++)
                 {
                     _b.ApplyMotor(actionIndex, 0f);
                     LastActions[actionIndex] = 0f;
@@ -726,7 +773,7 @@ namespace PoSumo
             }
             var a = actions.ContinuousActions;
             float energy = 0f, jerk = 0f, effort = 0f;
-            for (int actionIndex = 0; actionIndex < ActionCount; actionIndex++)
+            for (int actionIndex = 0; actionIndex < MotorCount; actionIndex++)
             {
                 _b.ApplyMotor(actionIndex, a[actionIndex] * actionScale);
                 float clamped = Mathf.Clamp(a[actionIndex], -1f, 1f);
@@ -736,16 +783,31 @@ namespace PoSumo
                 jerk += Mathf.Abs(clamped - _prevActions[actionIndex]);
                 _prevActions[actionIndex] = clamped;
             }
-            energy /= ActionCount;
+            energy /= MotorCount;
             // QUADRATIC, unlike `energy`. An L1 cost has a constant gradient, so it
             // shifts every action down uniformly and a policy can pay it off by
             // being slightly less lazy everywhere. A squared cost rises steeply
             // toward the rails, which is what actually discourages slamming a motor
             // to full torque — and slamming is exactly what was measured: 7 to 12
             // of the 13 motors sat above |0.9| with a mean magnitude of 0.75-0.91.
-            effort /= ActionCount;
-            jerk /= ActionCount;
+            effort /= MotorCount;
+            jerk /= MotorCount;
+            LastLungeIntent = Mathf.Clamp(a[LUNGE_ACTION], -1f, 1f);
             _b.ClampAngularVelocities();
+
+            // THE LUNGE - the fighter's own choice. A whole-body launch at the
+            // opponent, available in a bout when at least one foot is planted and
+            // the cooldown has run out. It is a gamble under touchDownLoses: miss,
+            // or fall with him, and the lunger is the one on the clay.
+            if (mode == Mode.Sumo && opponent != null && !suppressEpisodeControl
+                && a[LUNGE_ACTION] > LUNGE_THRESHOLD && Time.fixedTime >= _nextLungeTime
+                && !IsDown && (_b.FootDownNear || _b.FootDownFar))
+            {
+                _nextLungeTime = Time.fixedTime + LUNGE_COOLDOWN;
+                LungesThrown++;
+                _b.Launch(Mathf.Sign(opponent.TorsoX - TorsoX), LUNGE_SPEED);
+                Systems_Log.Info($"[DIVE] {name} lunges at {opponent.name}");
+            }
 
             // Presentation layer owns the body: motors only, no rewards or
             // episode control (prevents Walk-mode terminations mid-walk-in).
@@ -764,6 +826,25 @@ namespace PoSumo
                 Fs, arenaGroundY, Torso.position, Torso.linearVelocity, _lastTorsoY,
                 upright, KneeBendFactor(), energy, effort, jerk, _pendingImpact,
                 IsDown, hasOpponent, hasOpponent ? opponent.TorsoX : 0f);
+
+            if (mode == Mode.Walk && _gettingUp)
+            {
+                // On the ground on purpose: no fall terminal, no walk shaping (it
+                // pays forward speed, which down here is a crawl). Only rising
+                // pays, then the bonus, then the ordinary walk rules take over.
+                // MaxStep (1500) bounds a fighter that never makes it.
+                if (torsoY - arenaGroundY >= GET_UP_HEIGHT && upright > 0.8f && !IsDown)
+                {
+                    AddReward(GET_UP_BONUS);
+                    _gettingUp = false;
+                }
+                else
+                {
+                    AddReward(GET_UP_RISE_REWARD * (torsoY - _lastTorsoY));
+                }
+                _lastTorsoY = torsoY;
+                return;
+            }
 
             if (mode == Mode.Walk)
             {

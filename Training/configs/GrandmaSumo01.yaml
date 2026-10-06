@@ -1,0 +1,119 @@
+# Grandma SUMO 01 - real sumo rules. Created 2026-10-05. COLD START, no warm trunk.
+#
+# Hyperparameters, network and self-play block are GrandmaRebuild02's, unchanged.
+# What changed is the ENVIRONMENT, all of it read from GameTuning.asset by
+# Systems_SumoMatchManager.ApplyTuning - so this run trains on the game's rules
+# by construction:
+#
+#   touchDownLoses 1        any part but the soles on the clay, or a foot off
+#                           the edge, is -1 at once (after tachiaiGraceSeconds)
+#   tachiaiStart 1          every episode opens in the shikiri crouch, fists down,
+#                           0.9 m either side of centre (neutralGapHalf)
+#   ringHalfWidth 2.275     the 4.55 m ring
+#   shrinkStartSeconds 0    the ring does not shrink - so NO `shrink_start` here;
+#                           adding that parameter would switch the shrink back on
+#   tawara 0.2 m / mu 1.0 / 5 cm proud   a bale to brace against, not a slick strip
+#   enableStrikeImpulse 0   no extra momentum on strikes
+#   beltGrips 1             a forearm on the opponent's pelvis pins there, breaks at 700 N
+#   diveChancePerSecond 0.35  the inside man sometimes launches at an opponent near the rim
+#   get_up_chance 0.3       (below) 30% of walk-lane episodes start lying down
+#
+# WHY COLD. Rule, arena and start pose all changed; the Rebuild01 brains go down
+# in 1-6 s under touchDownLoses (measured 2026-10-05, bracket of 3 bouts). The
+# vector is still 51 slots / 13 actions, so a warm start is shape-compatible if a
+# Rebuild trunk is ever recreated, but nothing in it knows how to stay up.
+#
+# WHAT TO EXPECT. Early episodes last about a second: both fighters collapse out
+# of the crouch and the +1 goes to whoever touches down second. That IS the
+# gradient toward standing - self-play pays for outlasting first, pushing later.
+# The episode bound is still 20 s (roundTimeoutSeconds on the referee) and a
+# timeout is a draw; with no shrink, expect draws to RISE once both can stand.
+# REJECT if Referee/Grandma/RoundSeconds pins at 20 late in the run: that is two
+# fighters who learned to stand and never engage, and the fix is the drive /
+# closing terms on the character sheet, not more steps.
+#
+# Judge on ELO shape, never mean reward. num-envs: 4 - record it if changed.
+#
+# PRECONDITIONS: rebuild the env first (*PoSumo -> Build Grandma Training Env*) - an
+# env built before 2026-10-05 has none of the rules above. TensorBoard running.
+# Do not use the Unity Editor while it trains.
+#
+# Launch:
+#   Training/Start-StaminaExtension.ps1 -Phase Sumo01
+# or by hand:
+#   Training/venv/Scripts/mlagents-learn.exe Training/configs/GrandmaSumo01.yaml
+#     --run-id=grandma_sumo01 --results-dir=Training/results
+#     --env=Builds/GrandmaEnv/GrandmaEnv.exe --num-envs=4 --no-graphics --base-port=5005
+
+behaviors:
+  Grandma:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 3.0e-4
+      beta: 5.0e-3
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:
+      normalize: true
+      hidden_units: 512
+      num_layers: 3
+      vis_encode_type: simple
+    reward_signals:
+      extrinsic:
+        gamma: 0.997
+        strength: 1.0
+    keep_checkpoints: 5
+    checkpoint_interval: 250000
+    max_steps: 15000000
+    time_horizon: 1000
+    summary_freq: 30000
+    threaded: false   # self-play: ML-Agents recommends false. Changed 2026-10-04; shipped Rebuild01 brains trained with true.
+    self_play:
+      window: 25
+      play_against_latest_model_ratio: 0.25
+      save_steps: 50000
+      swap_steps: 50000
+      team_change: 250000
+
+# Ring-width curriculum. Systems_SumoMatchManager randomises each round's platform
+# half-width within startHalfRange (1.7 .. 2.275); platform_difficulty controls how far
+# toward the narrow end it may go.
+#
+# THIS LESSON ONLY STARTS WORKING WITH THIS RUN. Its purpose is to teach edge
+# distance across SCALES rather than let the policy memorise one mat width - and
+# until change 1 above, the width it varied was not in the observation vector at
+# all, so every lesson looked identical from inside the policy. Expect it to bite
+# for the first time here, and expect the wide -> mixed -> full progression to
+# actually cost something.
+environment_parameters:
+  platform_difficulty:
+    curriculum:
+      - name: wide
+        completion_criteria:
+          measure: progress
+          behavior: Grandma
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.3
+        value: 0.0
+      - name: mixed
+        completion_criteria:
+          measure: progress
+          behavior: Grandma
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.6
+        value: 0.5
+      - name: full
+        value: 1.0
+
+  # GET-UP TRAINING (new in Sumo01). Share of WALK-LANE episodes that open flat on
+  # the clay, face up or face down at random. Until the fighter is back on its
+  # feet (torso >= 0.85 m, upright) a fall is not terminal and only rising pays;
+  # standing is +1, then the ordinary walk rules apply. Read by Agent_Biped in
+  # OnEpisodeBegin. Sumo bouts are unaffected: down is still a loss there.
+  get_up_chance: 0.3

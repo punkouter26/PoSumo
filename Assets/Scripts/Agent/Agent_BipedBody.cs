@@ -876,6 +876,8 @@ namespace PoSumo
 
                 // Ground-contact reporter on every non-foot part.
                 if (!d.isFoot) go.AddComponent<Sensor_BodyPartContact>();
+                // Forearms (PART_DEFS 11 and 13) are the hands that can take a belt.
+                if (index == 11 || index == 13) go.AddComponent<Sensor_BeltGrip>();
                 // Floor-contact reporter on EVERY part, feet included: a foot on
                 // the arena floor is as out as a head on it.
                 floorSensors.Add(go.AddComponent<Sensor_FloorContact>());
@@ -1005,9 +1007,115 @@ namespace PoSumo
                 Parts[partIndex].linearVelocity = Vector2.zero;
                 Parts[partIndex].angularVelocity = 0f;
             }
+            ReleaseGrips();
+            if (startCrouched) ApplyCrouch();
             // Tiny random kick on the thighs so left/right symmetry breaks.
             foreach (var t in _thighs)
                 t.angularVelocity = Random.Range(-12f, 12f);
+            Physics2D.SyncTransforms();
+        }
+
+        /// Hands take the opponent's belt on contact — see Sensor_BeltGrip. Set by
+        /// either referee from GameTuning.beltGrips.
+        [System.NonSerialized] public bool beltGrips;
+        private Sensor_BeltGrip[] _grips;
+
+        private void ReleaseGrips()
+        {
+            if (_grips == null) _grips = GetComponentsInChildren<Sensor_BeltGrip>();
+            for (int gripIndex = 0; gripIndex < _grips.Length; gripIndex++) _grips[gripIndex].Release();
+        }
+
+        /// TACHIAI START. When set (by either referee, from GameTuning.tachiaiStart)
+        /// ResetPose leaves the body in the shikiri crouch — squatting, trunk
+        /// pitched forward, both fists on the clay — instead of standing.
+        [System.NonSerialized] public bool startCrouched;
+
+        // The crouch, as facing-normalised jointAngle targets in JOINT_DEFS order
+        // (degrees; same sign convention as the limits in that table) plus the
+        // pelvis pitch. Chosen so the feet stay FLAT (pitch - hip - knee - ankle = 0)
+        // and the arms hang plumb (chest pitch - shoulder = 0) with the fists
+        // reaching the clay. Verified by screenshot, not by reasoning.
+        private const float CROUCH_PELVIS_PITCH = -20f;
+        private static readonly float[] CROUCH_ANGLES =
+        {
+            -120f, 120f, -20f,   -120f, 120f, -20f,   // hip, knee, ankle x2
+            30f, 30f, 30f,                             // spine
+            -110f, 0f,   -110f, 0f,                    // shoulder, elbow x2
+            0f, 0f,                                    // toes
+        };
+        private Vector2[] _posePos;
+        private float[] _poseRot;
+
+        private static Vector2 Rotated(Vector2 v, float degrees)
+        {
+            float rad = degrees * Mathf.Deg2Rad, c = Mathf.Cos(rad), s = Mathf.Sin(rad);
+            return new Vector2(v.x * c - v.y * s, v.x * s + v.y * c);
+        }
+
+        /// Standing position of a part in the RIGHT-FACING root frame.
+        private Vector2 StandPos(int part) =>
+            new Vector2(_initialLocalPos[part].x * facingSign, _initialLocalPos[part].y);
+
+        /// Forward kinematics down JOINT_DEFS (parents always precede children),
+        /// done in the right-facing frame and mirrored on the way out. jointAngle
+        /// is the NEGATIVE of the geometric rotation, hence the minus below.
+        private void ApplyCrouch()
+        {
+            int n = Parts.Length;
+            if (_posePos == null) { _posePos = new Vector2[n]; _poseRot = new float[n]; }
+            var hip = new Vector2(JOINT_DEFS[0].ax, JOINT_DEFS[0].ay + SPAWN_CLEARANCE);
+            _poseRot[0] = CROUCH_PELVIS_PITCH;
+            _posePos[0] = hip + Rotated(StandPos(0) - hip, CROUCH_PELVIS_PITCH);
+            for (int jointIndex = 0; jointIndex < JOINT_DEFS.Length; jointIndex++)
+            {
+                JointDef d = JOINT_DEFS[jointIndex];
+                var anchor = new Vector2(d.ax, d.ay + SPAWN_CLEARANCE);
+                Vector2 pivot = _posePos[d.parent] + Rotated(anchor - StandPos(d.parent), _poseRot[d.parent]);
+                _poseRot[d.child] = _poseRot[d.parent] - CROUCH_ANGLES[jointIndex];
+                _posePos[d.child] = pivot + Rotated(StandPos(d.child) - anchor, _poseRot[d.child]);
+            }
+            // Feet are flat by construction; put the near foot back where it stood.
+            Vector2 shift = StandPos(3) - _posePos[3];
+            for (int partIndex = 0; partIndex < n; partIndex++)
+            {
+                Vector2 p = _posePos[partIndex] + shift;
+                Transform t = Parts[partIndex].transform;
+                t.localPosition = new Vector3(p.x * facingSign, p.y, _initialLocalPos[partIndex].z);
+                t.localRotation = _initialLocalRot[partIndex] * Quaternion.Euler(0f, 0f, _poseRot[partIndex] * facingSign);
+            }
+        }
+
+        /// Throws the whole body in one direction: the same velocity change on every
+        /// part, so it goes as one piece instead of being spun by a shove on a single
+        /// segment. Used by the fighter's own lunge (Agent_Biped) and by Systems_Dive.
+        public void Launch(float direction, float speed)
+        {
+            const float lift = 0.4f;   // a flat leap, not a jump
+            var launch = new Vector2(direction * speed, speed * lift);
+            for (int partIndex = 0; partIndex < Parts.Length; partIndex++)
+            {
+                Parts[partIndex].AddForce(launch * Parts[partIndex].mass, ForceMode2D.Impulse);
+            }
+        }
+
+        /// GET-UP TRAINING. Lays the standing pose flat on the clay — on its back or
+        /// on its face — a few centimetres up so it settles rather than spawning
+        /// inside the ground. Call straight after ResetPose.
+        public void LieDown(bool faceUp)
+        {
+            // Turned about the root origin (between the feet). The widest part
+            // reaches ~0.2 m from the body's axis, hence the lift.
+            const float lift = 0.25f;
+            float turn = (faceUp ? 90f : -90f) * facingSign;
+            for (int partIndex = 0; partIndex < Parts.Length; partIndex++)
+            {
+                Vector3 stand = _initialLocalPos[partIndex];
+                Vector2 flat = Rotated(new Vector2(stand.x, stand.y), turn);
+                Transform t = Parts[partIndex].transform;
+                t.localPosition = new Vector3(flat.x, flat.y + lift, stand.z);
+                t.localRotation = _initialLocalRot[partIndex] * Quaternion.Euler(0f, 0f, turn);
+            }
             Physics2D.SyncTransforms();
         }
 
@@ -1067,6 +1175,7 @@ namespace PoSumo
         {
             if (IsLimp) return;
             IsLimp = true;
+            ReleaseGrips();
             for (int jointIndex = 0; jointIndex < Joints.Length; jointIndex++)
             {
                 HingeJoint2D joint = Joints[jointIndex];
@@ -1402,11 +1511,11 @@ namespace PoSumo
             {
                 if (_fatigue == null) return 1f;
                 float sum = 0f;
-                for (int jointIndex = 0; jointIndex < Agent_Biped.ActionCount; jointIndex++)
+                for (int jointIndex = 0; jointIndex < Agent_Biped.MotorCount; jointIndex++)
                 {
                     sum += _fatigue[jointIndex];
                 }
-                return 1f - sum / Agent_Biped.ActionCount;
+                return 1f - sum / Agent_Biped.MotorCount;
             }
         }
 
@@ -1592,7 +1701,7 @@ namespace PoSumo
         /// resting. Isometric work is most of what a sumo bout is.
         private void IntegrateFatigue(float dt)
         {
-            for (int jointIndex = 0; jointIndex < Agent_Biped.ActionCount; jointIndex++)
+            for (int jointIndex = 0; jointIndex < Agent_Biped.MotorCount; jointIndex++)
             {
                 HingeJoint2D joint = Joints[jointIndex];
                 // A limp body, a severed limb or a disabled joint is doing no work.

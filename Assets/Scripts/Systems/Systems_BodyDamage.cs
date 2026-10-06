@@ -353,6 +353,7 @@ namespace PoSumo
                 allowGib = tuning.allowGib;
                 gibSpeed = tuning.gibSpeed;
                 gibChance = tuning.gibChance;
+                if (!tuning.allowKnockout) koSpeed = float.PositiveInfinity;
             }
 
             // The player's switch wins over the asset, and only ever turns things

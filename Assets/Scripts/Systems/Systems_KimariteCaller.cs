@@ -184,6 +184,7 @@ namespace PoSumo
 
             // The two non-techniques (draw, decision) are still worth showing —
             // they explain an outcome that otherwise reads as the game giving up.
+            _manager.LastKimarite = result.Name;
             _call.text = result.Name;
             _gloss.text = result.Gloss;
             _call.style.color = result.IsTechnique

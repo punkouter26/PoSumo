@@ -156,7 +156,7 @@ re-run training locally to recreate that directory.
 | Package | com.unity.ml-agents | **4.1.0** | LOCAL `file:` package with patches. Upgraded from 4.0.0 (release_23) on 2026-08-06 — re-fetching is now a documented procedure, not a prohibition, but it still LOSES the patches below |
 | Package | com.unity.ai.inference | 2.6.1 | auto-dependency of ML-Agents (`Unity.InferenceEngine.ModelAsset`). Was 2.2.1 |
 | Package | URP | 17.5.0 | project template |
-| MCP | unity-mcp-cli (npm) | **not installed** | `npm ls -g` is empty and there is no global bin. Every `unity-mcp-cli` invocation in the `.claude/skills/*/SKILL.md` files therefore fails — use `Tools/unity.py` instead |
+| MCP | unity-mcp-cli (npm) | **not installed** | `npm ls -g` is empty and there is no global bin. The 85 `.claude/skills/*` folders that invoked it were deleted 2026-10-05 (only `unity-skills` and the category folders remain) — use `Tools/unity.py` instead. The `unity-skill-generate` flow of `com.ivanmurzak.unity.mcp` can regenerate them; do not re-run it without installing the CLI |
 | MCP | com.ivanmurzak.unity.mcp | **0.93.2** (manifest, 2026-10-04; compiles clean with `animation` 1.2.32) — was **0.90.0** | measured live 2026-08-25; was 0.88.0. Ships NuGet `McpPlugin` / `McpPlugin.Common` **8.3.0** under `Assets/Plugins/NuGet/` — those move WITH the package, so `.nuget-installed.json` and the two DLLs are part of the same version decision. Upgrading it reverts the plugin `.meta` platform flags — re-run *PoSumo → Fix Plugin Platforms* |
 | MCP | com.ivanmurzak.unity.mcp.animation | 1.2.28 | add-on, resolved against core 0.90.0 |
 | MCP | com.ivanmurzak.unity.mcp.particlesystem | **NOT INSTALLED** (measured 2026-08-26) | This row said "1.2.30 — BACK, and compiling" as of 2026-08-25; on 2026-08-26 it is in neither `manifest.json` nor `packages-lock.json` and has no `PackageCache` dir. The history is still worth keeping: removed 2026-08-16 because 1.2.30 did not match core **0.88.0** (referenced a namespace `AIGD` that version did not ship) and **the whole project failed to compile**, which blocks Play mode entirely; under core **0.90.0** the same version was measured resolving clean. The add-on was never the defect; the *pairing* was. Re-check the pair if it is ever added back |
@@ -2487,3 +2487,106 @@ above that contradict this are stale.
 tachiai, grip, arm collision, recovery-step reward, neck hinge), the four env builds, a
 shipped `FontAsset`, and any history rewrite to shrink `.git` (1.3 GB; `git gc` reclaimed
 nothing).
+
+## Session of 2026-10-05 — real sumo rules (ALL FOUR BRAINS ARE STALE AGAIN)
+
+The user's brief: the most lifelike sumo possible. Six changes landed, all driven from
+`GameTuning.asset` and read by BOTH referees. Sections above that describe the shrinking
+mat, rounds/points, strike impulse, the slick tawara band, the walk-in, dismemberment or
+head KOs describe the game as it was BEFORE this date.
+
+| Change | Where | Asset field(s) |
+|---|---|---|
+| Any part but the soles on the clay, or a foot off the edge, loses | `Loses` / the Fighting branch of `FixedUpdate`; reported as `RoundOutcome.Knockdown` | `touchDownLoses 1` |
+| 4.55 m ring that does not shrink, with a raised bale to brace on | `Systems_SumoArena.tawaraHeight` | `ringHalfWidth 2.275`, `shrinkStartSeconds 0`, `tawaraBandWidth 0.2`, `tawaraFriction 1`, `tawaraHeight 0.05` |
+| Tachiai: shikiri crouch, simultaneous release | `Agent_BipedBody.startCrouched` / `ApplyCrouch` (FK down `JOINT_DEFS`) | `tachiaiStart 1`, `tachiaiGraceSeconds 0.6`, `neutralGapHalf 0.9`, `enableWalkIn 0` |
+| No strikes, no gore, no KO | training referee now gates `Systems_StrikeImpulse` on the asset | `enableStrikeImpulse 0`, `allowDetach 0`, `allowGib 0`, `allowKnockout 0`, `knockoutsToLoseMatch 0` |
+| One bout, one winner | asset only | `pointsToWin 1`, `tournamentPointsToWin 1` |
+| Belt grips | `Sensor_BeltGrip` on both forearms: free hinge to the opponent's pelvis, breaks at 700 N | `beltGrips 1` |
+
+Also off because they belonged to the old rules: `enableArenaMutators`,
+`enableRingSqueezeCue`, `enableCrowdMomentum`.
+
+**Measured with the Rebuild01 brains, which have never seen any of it:** every bout ends
+`Knockdown` in about a second (harness: 6 bouts, longest 1.3 s; bracket harness PASS, 0
+errors). That is the rules working and the policies not — the game is not worth playing
+until the `*Sumo01` runs exist. To get the old game back without a retrain, restore the
+asset fields in the table; no code needs reverting.
+
+Things worth knowing before touching this:
+
+- **`tachiaiGraceSeconds` exists because the fists START on the clay.** Without it
+  `IsDown` is true on the first step of every bout. It is the same number in both referees.
+- **The crouch leaves the fists ~6 cm above the clay, not on it.** The ankle's 20°
+  dorsiflexion limit stops a deeper flat-footed squat, and the spine's 3 x 30° stops more
+  forward pitch. Real rikishi get lower by spreading the knees sideways, which a sagittal
+  model does not have. The body settles onto its hands in the first tenth of a second.
+- **The grip is automatic** (reach the belt and you hold it; pull past 700 N and it lets
+  go), so the contract is still 13 actions / 51 slots. An intentional grip is a 14th/15th
+  action plus observation slots — a new input AND output layer.
+- **With no shrink and no clock the GAME has no stall-breaker.** Nothing stalled in the
+  measurements above because the stale brains fall at once; a retrained pair that can both
+  stand and never engage would. The training referee still draws at 20 s. Re-measure after
+  the retrain before deciding whether the game needs a mizu-iri.
+- `Training/venv`, `Training/results` and `Builds/` are all ABSENT (measured 2026-10-05),
+  whatever the earlier sections say. Recreate the venv, rebuild the four envs, then
+  `Training/Start-StaminaExtension.ps1 -Phase Sumo01`.
+
+**Added later the same day, both also retrain items:**
+
+- **The dive** (`Systems_Dive`, a stateless static ticked by BOTH referees;
+  `diveChancePerSecond 0.35`, `diveSpeed 3.5`). When one fighter has the other within
+  0.9 m of the rim and 0.3-1.5 m away, he sometimes launches his whole body outward at
+  him — the same velocity change on every part, so he leaps as one piece. It is a
+  referee-applied impulse, NOT a policy choice; a chosen dive is a 14th action. Under
+  `touchDownLoses` it is a real gamble, because the diver lands on the clay. Verified by
+  staging the geometry in Play mode: `[DIVE] Matt dives at Grandma, 0.86 m` followed by a
+  RingOut. It has never fired in an unstaged bout — the stale brains fall first.
+- **Get-up training** (`Agent_BipedBody.LieDown`, `_gettingUp` in `Agent_Biped`). The
+  `get_up_chance` environment parameter (0.3 in `*Sumo01`, absent and therefore 0
+  everywhere else) opens that share of WALK-LANE episodes flat on the clay, face up or
+  down. Until the torso is back above 0.85 m and upright, a fall is not terminal and the
+  walk shaping is not paid — only torso height GAINED (potential-style, so lying still
+  earns nothing), then +1 for standing, then the ordinary walk rules. This is `Mode.Recover`
+  back as a flag inside `Mode.Walk`, so no enum value or observation moved. **It is
+  training only: in a bout a fighter who is down has already lost**, so nothing in the
+  game uses the skill yet. `gait01` is the warning to re-read if it produces crawling.
+
+Not built: an intentional grip action, matta (needs fighter-controlled start timing), a
+gyoji, grip-aware kimarite (uwatenage and friends), footprints on the clay, an upright
+walk-in ceremony.
+
+### Evening of 2026-10-05 — the brain contract is now 14 actions
+
+Supersedes the "13 actions" statements above and the dive/lunge notes in this section.
+
+- **`Agent_Biped.ActionCount` is 14: `MotorCount` (13) + one lunge intent.** Every joint
+  loop uses `MotorCount`. Intent above 0.5, with a foot planted and a 3 s cooldown, calls
+  `Agent_BipedBody.Launch` at the opponent. Observations are still 51. The shipped `.onnx`
+  files are the `*_lunge01` checkpoints (Matt 0.75M, Grandma 1.5M, Nick 1.25M, Kim 1.25M
+  steps on top of `*_sumo01`); a 13-action model is rejected.
+- **The 13 -> 14 move was a WARM start by checkpoint surgery**, not a cold retrain: one
+  zero row and a -0.5 bias appended to the action head, one `log_sigma`, the Adam state
+  dropped, staged as `<name>_lungeinit`. First summaries read 10-14 s bouts, not the 0.7 s
+  of a cold brain, which is the check that the graft held.
+- **The referee's random lunge/dive is OFF** (`diveChancePerSecond 0`). `Systems_Dive`
+  stays as the switchable referee-triggered version.
+- Training-only incentives added the same day: `timeoutPenalty` 1.0 on the training
+  referee (a stalemate costs both fighters what a loss does) and a chest-to-chest
+  `ENGAGE_REWARD` in `Reward_SumoObjective`.
+- **`Systems_ActionLog`** (`enableActionLog`, game only) writes `actions_<session>.csv`
+  and `bouts_<session>.csv` to `Logs/ActionLogs/` (Editor) or
+  `persistentDataPath/ActionLogs/` (device); `python Tools/action_log_report.py` reads
+  them. A bout row carries technique, a one-word cause, the loser's first part down and
+  both fighters' end state. `Systems_KimariteCaller` publishes its call as
+  `Systems_GameMatchManager.LastKimarite`.
+- Presentation, at the player's request: hit flash off (`Systems_BodySurface.maxFlash 0`),
+  `Systems_DirectorAI`'s mid-bout wide shots removed, and phones keep the top 6% of the
+  screen clear (`Systems_SafeArea.MIN_TOP_SHARE`).
+- Grandma's 15 voice clips were still named `Standard_*` and so never loaded; renamed and
+  `VoiceGains.asset` regenerated.
+- A leftover auto-stop timer from a cancelled `Start-StaminaExtension.ps1 -Minutes` run
+  keeps sleeping and will stop the NEXT run. Kill stray `pwsh ... Start-Sleep` processes
+  before relaunching.
+- Measured, trained brains, before the chosen lunge: bouts 13-68 s with no stalls. The
+  game still has no stall-breaker of its own.

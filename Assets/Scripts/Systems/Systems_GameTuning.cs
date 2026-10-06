@@ -93,6 +93,22 @@ namespace PoSumo
         [Tooltip("THE RING-OUT RULE (2026-08-26). ON: a fighter is out when ANY body part touches the arena floor below the dohyo — a static contact more than 0.3 m under the mat top (Sensor_FloorContact on every part, feet and head included). Feet dipping over the edge no longer end the round by themselves — they cut the motors so the fall plays out (see GoLimp) — and the torso backstop is 2 m below the floor. OFF: the old rule, a foot below footOffMatY.\n\nIt was 'the HEAD only' for one afternoon and a bracket stalled forever on two limp fighters resting on each other with neither head down; any-part was chosen to replace it.\n\nBoth referees carry this; Systems_SumoMatchManager.ringOutOnFloorContact must stay equal.")]
         [UnityEngine.Serialization.FormerlySerializedAs("ringOutOnHeadFloor")]
         public bool ringOutOnFloorContact = true;
+        [Tooltip("REAL SUMO LOSS (2026-10-05). ON: a fighter loses the instant any part other than the soles of the feet touches the clay (Agent_Biped.IsDown), or a foot drops off the edge of the dohyo. Read by BOTH referees. Every brain trained before this date has never met the rule and goes down within seconds under it — retrain before judging a bout.")]
+        public bool touchDownLoses = true;
+        [Tooltip("TACHIAI. ON: every bout opens from the shikiri crouch (Agent_BipedBody.startCrouched) — squatting, fists on the clay — and both fighters are released on the same physics step. Read by both referees. Pair with a small neutralGapHalf and enableWalkIn off.")]
+        public bool tachiaiStart = true;
+        [Tooltip("Seconds after the release during which touchDownLoses ignores non-foot contact, so the fists that start on the clay are not a loss. Both referees.")]
+        public float tachiaiGraceSeconds = 0.6f;
+        [Tooltip("BELT GRIPS. ON: a forearm that touches the opponent's pelvis pins itself there (Sensor_BeltGrip) until the pull exceeds its break force. Automatic — no grip action or observation, so the 13-action / 51-slot contract is unchanged. Read by both referees.")]
+        public bool beltGrips = true;
+        [Tooltip("THE DIVE. Chance per second, while one fighter has the other within 0.9 m of the rim and 1.5 m away, that he launches his whole body at him (Systems_Dive). 0 disables it. A gamble under touchDownLoses: the diver lands on the clay. Read by both referees.")]
+        public float diveChancePerSecond = 0.35f;
+        [Tooltip("Launch speed of a dive, m/s, applied to every part of the diver. Both referees.")]
+        public float diveSpeed = 3.5f;
+        [Tooltip("Head knockouts (motors cut, blood spray). OFF for real sumo: a head clash is not a finish and there is no blood. Bruise marks are unaffected.")]
+        public bool allowKnockout = false;
+        [Tooltip("How far the tawara bale stands proud of the clay, in metres. With tawaraFriction near 1 and a narrow tawaraBandWidth this is a real bale a heel can brace against; at 0.005 with a slick wide band it is the old slide-out strip. Read by both referees.")]
+        public float tawaraHeight = 0.005f;
         [Tooltip("Head knockouts one fighter can suffer before losing the whole match on the spot — boxing's three-knockdown rule. 0 disables it. GAME-ONLY: Systems_SumoMatchManager has no equivalent, so the brains never train against it; it is a spectacle rule layered on top of the sumo rules, not one of them.")]
         public int knockoutsToLoseMatch = 3;
         [Tooltip("Realtime seconds between the deciding knockout and the result card. Must outlast Systems_MatchPresentation.koSlowMoRealSeconds or the card cuts off the slow-motion replay of the hit that ended it.")]
@@ -228,5 +244,7 @@ namespace PoSumo
         public bool enableArenaMutators = true;
         [Tooltip("Biometrics card in the dock: a 27-second stamina history per fighter plus peak impact delivered and the crowd-adrenaline peak, drawn PerfHud-style as fixed ring bars written only when a value moves. Read-only with respect to the fight.")]
         public bool enableBiometrics = true;
+        [Tooltip("Record every fighter's actions and state to CSV (Systems_ActionLog): Logs/ActionLogs in the Editor, persistentDataPath/ActionLogs on a device. Read-only w.r.t. the fight. About 25 MB per hour of live fighting; the newest 20 sessions are kept.")]
+        public bool enableActionLog = true;
     }
 }
