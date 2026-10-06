@@ -117,7 +117,9 @@ namespace PoSumo
         /// Intent above this fires the lunge, if it is available.
         private const float LUNGE_THRESHOLD = 0.5f;
         /// Whole-body launch speed, m/s. Was the referee's random stand-off lunge.
-        private const float LUNGE_SPEED = 2.6f;
+        // 2.6 -> 3.6 (2026-10-05): at 2.6 the lunger won only 7 of 16 bouts that ended
+        // within 3 s of his lunge, and nobody was ever driven out of the ring.
+        private const float LUNGE_SPEED = 3.6f;
         /// Seconds before the same fighter can lunge again.
         private const float LUNGE_COOLDOWN = 3f;
         private float _nextLungeTime;

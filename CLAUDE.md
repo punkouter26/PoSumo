@@ -2590,3 +2590,13 @@ Supersedes the "13 actions" statements above and the dive/lunge notes in this se
   before relaunching.
 - Measured, trained brains, before the chosen lunge: bouts 13-68 s with no stalls. The
   game still has no stall-breaker of its own.
+
+**Lunge strengthened late on 2026-10-05:** `LUNGE_SPEED` 2.6 -> 3.6 and `Launch`'s lift
+0.4 -> 0.2. Measured on the SAME `*_lunge01` brains, 11 bouts before against 12 after:
+ring-outs driven by a lunge 0 -> 2, the lunger winning a bout that ended within 3 s of his
+lunge 44% -> 53%, the busier lunger winning 2 of 6 -> 5 of 6. Small samples. The brains
+have NOT been retrained at the new speed beyond ~250k steps on Matt
+(`matt_lunge01` is at ~1.0M; the deployed `Matt.onnx` is still the 0.75M checkpoint).
+Launching the Editor directly with no Hub running sticks on a licence error — start Unity
+Hub first. With the CoplayDev server in HTTP mode (port 8080) `Tools/unity.py` finds no
+stdio bridge; POST JSON-RPC to `http://127.0.0.1:8080/mcp` instead.

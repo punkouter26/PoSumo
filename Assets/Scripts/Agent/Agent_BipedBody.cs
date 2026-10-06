@@ -1091,7 +1091,7 @@ namespace PoSumo
         /// segment. Used by the fighter's own lunge (Agent_Biped) and by Systems_Dive.
         public void Launch(float direction, float speed)
         {
-            const float lift = 0.4f;   // a flat leap, not a jump
+            const float lift = 0.2f;   // low and flat, so the momentum goes INTO the opponent (was 0.4)
             var launch = new Vector2(direction * speed, speed * lift);
             for (int partIndex = 0; partIndex < Parts.Length; partIndex++)
             {
